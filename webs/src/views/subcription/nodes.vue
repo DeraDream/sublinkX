@@ -1,6 +1,6 @@
 <script setup lang='ts'>
 import { ref,onMounted,nextTick  } from 'vue'
-import {getNodes,AddNodes,DelNode,UpdateNode,GetGroup,SetGroup} from "@/api/subcription/node"
+import {getNodes,AddNodes,DelNode,UpdateNode,GetGroup,SetGroup,TestNodeLatency} from "@/api/subcription/node"
 import type { ElTable } from 'element-plus'
 
 interface GroupNode {
@@ -57,6 +57,8 @@ const allNodes = ref<string[]>([]); // 所有节点
 const nodelistShow = ref(false); // 节点列表
 const SelectionNodeGroups = ref<string[]>([]); // 选中的分组
 const SelectionNode = ref(''); // 选中的节点
+const latencyLoading = ref(false);
+const latencyMap = ref<Record<number, { latency: number; success: boolean; msg: string; protocol: string }>>({});
 
 // const SelectionNodes = ref([]); // 选中的节点
 const RadioGroup = ref("1"); // 分组单选框
@@ -390,6 +392,34 @@ const selectCopy = async () => {
     }
   }
 };
+const testLatency = async () => {
+  const targets = multipleSelection.value.length > 0 ? multipleSelection.value : tableData.value;
+  if (targets.length === 0) {
+    ElMessage.warning('没有可测速的节点');
+    return;
+  }
+  latencyLoading.value = true;
+  try {
+    const { data } = await TestNodeLatency({
+      ids: targets.map(item => item.ID).join(','),
+    });
+    data.forEach((item: any) => {
+      latencyMap.value[item.id] = {
+        latency: item.latency,
+        success: item.success,
+        msg: item.msg,
+        protocol: item.protocol,
+      };
+    });
+    const successCount = data.filter((item: any) => item.success).length;
+    ElMessage.success(`测速完成：${successCount}/${data.length} 可连接`);
+  } catch (error) {
+    console.error("测速失败:", error);
+    ElMessage.error('测速失败');
+  } finally {
+    latencyLoading.value = false;
+  }
+};
 const handleSelectionChange = (val: Node[]) => {
   multipleSelection.value = val;
 };
@@ -509,6 +539,18 @@ watch(activeName, (newVal) => {
       :formatter="Groupformatter"
       show-overflow-tooltip>
     </el-table-column>
+        <el-table-column label="延迟" width="120">
+          <template #default="{row}">
+            <el-tag
+              v-if="latencyMap[row.ID]"
+              :type="latencyMap[row.ID].success ? 'success' : 'danger'"
+              effect="plain"
+            >
+              {{ latencyMap[row.ID].success ? `${latencyMap[row.ID].latency} ms` : '失败' }}
+            </el-tag>
+            <span v-else>-</span>
+          </template>
+        </el-table-column>
                 <el-table-column  label="操作" width="120">
               <template #default="scope">
                 <el-button link type="primary" size="small" @click="handleEditNode(scope.row)">编辑</el-button>
@@ -522,6 +564,7 @@ watch(activeName, (newVal) => {
    <el-button type="warning" @click="selectClear">取消选中</el-button>
       <el-button type="primary" @click="selectCopy">复制选中</el-button>
       <el-button type="danger" @click="selectDel">删除选中</el-button>
+      <el-button type="success" :loading="latencyLoading" @click="testLatency">测试延迟</el-button>
       <div style="margin-top: 20px" />
   </el-card>
   <!-- 显示表格数据结束 -->
