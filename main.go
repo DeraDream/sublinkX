@@ -12,6 +12,7 @@ import (
 	"sublink/models"
 	"sublink/routers"
 	"sublink/settings"
+	"sublink/telegram"
 	"sublink/utils"
 
 	"github.com/gin-gonic/gin"
@@ -76,7 +77,7 @@ func main() {
 	var port = config.Port        // 读取端口号
 	// 获取版本号
 	var Isversion bool
-	version = "2.5"
+	version = "2.6"
 	flag.BoolVar(&Isversion, "version", false, "显示版本号")
 	flag.Parse()
 	if Isversion {
@@ -118,6 +119,9 @@ func main() {
 }
 
 func Run(port int) {
+	if err := telegram.DefaultManager.Reload(models.ReadConfig().Telegram); err != nil {
+		log.Println("Telegram 机器人启动失败:", err)
+	}
 	// 初始化gin框架
 	r := gin.Default()
 	// 初始化日志配置
@@ -150,6 +154,7 @@ func Run(port int) {
 	routers.Clients(r)
 	routers.Total(r)
 	routers.Templates(r)
+	routers.Telegram(r)
 	routers.Version(r, version)
 	// 启动服务
 	r.Run(fmt.Sprintf("0.0.0.0:%d", port))

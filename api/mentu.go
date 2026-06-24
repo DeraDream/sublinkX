@@ -5,11 +5,12 @@ import (
 )
 
 type Meta struct {
-	Title     string   `json:"title"`
-	Icon      string   `json:"icon"`
-	Hidden    bool     `json:"hidden"`
-	Roles     []string `json:"roles"`
-	KeepAlive bool     `json:"keepAlive,omitempty"`
+	Title      string   `json:"title"`
+	Icon       string   `json:"icon"`
+	Hidden     bool     `json:"hidden"`
+	Roles      []string `json:"roles"`
+	KeepAlive  bool     `json:"keepAlive,omitempty"`
+	AlwaysShow bool     `json:"alwaysShow,omitempty"`
 }
 
 type Child struct {
@@ -101,6 +102,33 @@ func GetMenus(c *gin.Context) {
 					Meta: Meta{
 						Title:     "nodelist",
 						Icon:      "publish",
+						Hidden:    false,
+						Roles:     []string{"ADMIN"},
+						KeepAlive: true,
+					},
+				},
+			},
+		},
+		{
+			Path:      "/settings",
+			Component: "Layout",
+			Redirect:  "/settings/telegram",
+			Name:      "settings",
+			Meta: Meta{
+				Title:      "settingsmenu",
+				Icon:       "setting",
+				Hidden:     false,
+				Roles:      []string{"ADMIN"},
+				AlwaysShow: true,
+			},
+			Children: []Child{
+				{
+					Path:      "telegram",
+					Component: "settings/telegram",
+					Name:      "TelegramBot",
+					Meta: Meta{
+						Title:     "telegrambot",
+						Icon:      "message",
 						Hidden:    false,
 						Roles:     []string{"ADMIN"},
 						KeepAlive: true,

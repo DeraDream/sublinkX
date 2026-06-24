@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"sublink/utils"
+	"sync"
 
 	"gopkg.in/yaml.v3"
 )
@@ -17,15 +18,26 @@ import (
 
 // Config 配置结构体
 type Config struct {
-	JwtSecret  string `yaml:"jwt_secret"`  // JWT密钥
-	ExpireDays int    `yaml:"expire_days"` // 过期天数
-	Port       int    `yaml:"port"`        // 端口号
+	JwtSecret  string         `yaml:"jwt_secret"`
+	ExpireDays int            `yaml:"expire_days"`
+	Port       int            `yaml:"port"`
+	Telegram   TelegramConfig `yaml:"telegram"`
+}
+
+type TelegramConfig struct {
+	Enabled      bool   `yaml:"enabled"`
+	Token        string `yaml:"token"`
+	AdminChatIDs string `yaml:"admin_chat_ids"`
+	Language     string `yaml:"language"`
+	APIBaseURL   string `yaml:"api_base_url"`
 }
 
 var comment string = `# jwt_secret: JWT密钥
 # expire_days: token 过期天数
 # port: 启动端口
+# telegram: Telegram 机器人配置
 `
+var configMu sync.RWMutex
 
 // 初始化配置
 func ConfigInit() {
@@ -42,6 +54,10 @@ func ConfigInit() {
 			JwtSecret:  R, // 生成随机JWT密钥
 			ExpireDays: 14,
 			Port:       8000, // 默认端口
+			Telegram: TelegramConfig{
+				Language:   "zh-CN",
+				APIBaseURL: "https://api.telegram.org",
+			},
 		}
 
 		// 生成yaml文件
@@ -62,6 +78,8 @@ func ConfigInit() {
 
 // 读取配置
 func ReadConfig() Config {
+	configMu.RLock()
+	defer configMu.RUnlock()
 	file, err := os.ReadFile("./db/config.yaml")
 	if err != nil {
 		log.Println(err)
@@ -73,8 +91,9 @@ func ReadConfig() Config {
 
 // 设置配置
 func SetConfig(newCfg Config) {
-	oldCfg := ReadConfig() // 读取旧的配置文件
-	// 覆盖新的字段
+	configMu.Lock()
+	defer configMu.Unlock()
+	oldCfg := readConfigLocked()
 	if newCfg.JwtSecret != "" {
 		oldCfg.JwtSecret = newCfg.JwtSecret
 	}
@@ -84,11 +103,47 @@ func SetConfig(newCfg Config) {
 	if newCfg.Port != 0 {
 		oldCfg.Port = newCfg.Port
 	}
-	// 写入文件
-	data, err := yaml.Marshal(&oldCfg)
-	if err != nil {
+	if err := writeConfigLocked(oldCfg); err != nil {
 		log.Println(err)
 	}
+}
+
+func SetTelegramConfig(telegramConfig TelegramConfig) error {
+	configMu.Lock()
+	defer configMu.Unlock()
+	oldCfg := readConfigLocked()
+	if telegramConfig.Token == "" {
+		telegramConfig.Token = oldCfg.Telegram.Token
+	}
+	if telegramConfig.Language == "" {
+		telegramConfig.Language = "zh-CN"
+	}
+	if telegramConfig.APIBaseURL == "" {
+		telegramConfig.APIBaseURL = "https://api.telegram.org"
+	}
+	oldCfg.Telegram = telegramConfig
+	return writeConfigLocked(oldCfg)
+}
+
+func readConfigLocked() Config {
+	file, err := os.ReadFile("./db/config.yaml")
+	if err != nil {
+		log.Println(err)
+		return Config{}
+	}
+	cfg := Config{}
+	if err := yaml.Unmarshal(file, &cfg); err != nil {
+		log.Println(err)
+	}
+	return cfg
+}
+
+func writeConfigLocked(cfg Config) error {
+	// 写入文件
+	data, err := yaml.Marshal(&cfg)
+	if err != nil {
+		return err
+	}
 	data = []byte(comment + string(data)) // 添加注释
-	os.WriteFile("./db/config.yaml", data, 0644)
+	return os.WriteFile("./db/config.yaml", data, 0644)
 }

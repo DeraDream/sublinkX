@@ -44,6 +44,12 @@ surge支持协议:ss trojan vmess hy2 tuic
 ![1712594176714](webs/src/assets/1.png)
 ![1712594176714](webs/src/assets/2.png)
 
+## [2.6更新说明]
+
+- 新增 Telegram 机器人配置页面与二级菜单
+- 支持通过 Telegram 查看节点和订阅列表
+- 支持通过 Telegram 添加、删除节点，并限制管理员 Chat ID
+
 ## [2.5更新说明]
 
 - 模板编辑改为带行号、缩进和语法高亮的 YAML 编辑器

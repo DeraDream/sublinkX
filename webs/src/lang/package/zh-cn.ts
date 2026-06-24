@@ -9,6 +9,8 @@ export default {
     sublist:"订阅列表",
     subcription:"订阅管理",
     templatelist:"模板列表",
+    settingsmenu:"系统设置",
+    telegrambot:"Telegram 机器人",
   },
   // 登录页面国际化
   login: {
