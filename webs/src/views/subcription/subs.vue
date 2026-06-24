@@ -410,62 +410,77 @@ const toggleSelect = (name: string) => {
       </div>
     </template>
   </el-dialog>
+    <div class="page-heading">
+      <div>
+        <h1>订阅列表</h1>
+        <p>管理订阅地址、客户端入口和访问记录</p>
+      </div>
+      <el-button type="primary" @click="handleAddSub">添加订阅</el-button>
+    </div>
+
     <section class="work-surface">
-    <el-button type="primary" @click="handleAddSub">添加订阅</el-button>
-    <div style="margin-bottom: 10px"></div>
+      <div class="table-toolbar">
+        <span class="record-count">共 {{ tableData.length }} 条订阅</span>
+      </div>
 
-      <el-table ref="table" 
-      :data="currentTableData" 
-      style="width: 100%" 
-      stripe
-      @selection-change="handleSelectionChange" 
-      row-key="ID" 
-      :tree-props="{children: 'Nodes'}"
+      <el-table
+        ref="table"
+        :data="currentTableData"
+        row-key="ID"
+        :tree-props="{ children: 'Nodes' }"
+        @selection-change="handleSelectionChange"
       >
-    <el-table-column type="selection" fixed prop="ID" label="id"  />
-    <el-table-column prop="Name" label="订阅名称 / 节点"  >
-    <template #default="{row}">
-      <el-tag :type="!row.Nodes ? 'success' : 'primary'" >{{row.Name}}</el-tag>
-        </template>
-    </el-table-column>
-    <el-table-column prop="Link" label="链接" :show-overflow-tooltip="true" >
-      <template #default="{row}">
-        <div v-if="row.Nodes">
-          <el-link type="primary" size="small" @click="handleClient(row.Name)">客户端</el-link>
-        </div>
-        </template>
-      </el-table-column>
- 
-    <el-table-column prop="CreatedAt" label="创建时间" sortable  />
-    <el-table-column  label="操作" width="120">
-      <template #default="scope">
-        <div v-if="scope.row.Nodes">
-          <el-button link type="primary" size="small" @click="handleIplogs(scope.row)">记录</el-button>
-          <el-button link type="primary" size="small" @click="handleEdit(scope.row)">编辑</el-button>
-  <el-button link type="primary" size="small" @click="handleDel(scope.row)">删除</el-button>
-        </div>
-        <div v-else>
-          <el-button link type="primary" size="small" @click="copyInfo(scope.row)">复制</el-button>
-        </div>
+        <el-table-column type="selection" fixed width="48" />
+        <el-table-column prop="Name" label="订阅名称 / 节点" min-width="220">
+          <template #default="{ row }">
+            <span class="primary-cell">{{ row.Name }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="Link" label="客户端" min-width="160">
+          <template #default="{ row }">
+            <el-button
+              v-if="row.Nodes"
+              link
+              type="primary"
+              @click="handleClient(row.Name)"
+            >
+              查看客户端
+            </el-button>
+            <span v-else class="muted-cell">节点</span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="CreatedAt" label="创建时间" min-width="180" sortable />
+        <el-table-column label="操作" width="190" align="right">
+          <template #default="scope">
+            <template v-if="scope.row.Nodes">
+              <el-button link @click="handleIplogs(scope.row)">记录</el-button>
+              <el-button link type="primary" @click="handleEdit(scope.row)">编辑</el-button>
+              <el-button link type="danger" @click="handleDel(scope.row)">删除</el-button>
+            </template>
+            <el-button v-else link type="primary" @click="copyInfo(scope.row)">
+              复制
+            </el-button>
+          </template>
+        </el-table-column>
+      </el-table>
 
-      </template>
-    </el-table-column>
-  </el-table>
-  <div style="margin-top: 20px" />
-    <el-button type="info" @click="selectAll()">全选</el-button>
-    <el-button type="warning" @click="toggleSelection()">取消选择</el-button>
-    <el-button type="danger" @click="selectDel">批量删除</el-button>
-  <div style="margin-top: 20px"/>
-  <el-pagination
-  @size-change="handleSizeChange"
-  @current-change="handleCurrentChange"
-  :current-page="currentPage"
-  :page-size="pageSize"
-  layout="total, sizes, prev, pager, next, jumper"
-  :page-sizes="[10, 20, 30, 40]"
-  :total="tableData.length">
-</el-pagination>
-
+      <div class="table-footer">
+        <div class="batch-actions">
+          <el-button @click="selectAll()">全选</el-button>
+          <el-button @click="toggleSelection()">取消选择</el-button>
+          <el-button type="danger" plain @click="selectDel">批量删除</el-button>
+        </div>
+        <el-pagination
+          class="table-pagination"
+          :current-page="currentPage"
+          :page-size="pageSize"
+          layout="total, sizes, prev, pager, next, jumper"
+          :page-sizes="[10, 20, 30, 40]"
+          :total="tableData.length"
+          @size-change="handleSizeChange"
+          @current-change="handleCurrentChange"
+        />
+      </div>
     </section>
   </div>
 </template>
@@ -476,6 +491,16 @@ const toggleSelect = (name: string) => {
 }
 .el-tag{
   margin: 5px;
+}
+.record-count,
+.muted-cell {
+  font-size: 13px;
+  color: var(--el-text-color-secondary);
+}
+
+.primary-cell {
+  font-weight: 550;
+  color: var(--el-text-color-primary);
 }
 /**拖拽样式 */
 .draggable-item {

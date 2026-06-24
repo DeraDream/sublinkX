@@ -9,6 +9,7 @@
 <style lang="scss" scoped>
 .app-main {
   width: 100%;
+  min-width: 0;
   min-height: 100vh;
   padding-top: $navbar-height;
   overflow: hidden;

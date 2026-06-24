@@ -480,93 +480,93 @@ watch(activeName, (newVal) => {
 </el-dialog>
 
 
-  <!-- 显示表格数据 -->
-  <section class="work-surface">
-    <el-tabs v-model="activeName" >
-      <el-tab-pane :label="`全部(${allNodes.length})`" name="全部" />
-      <el-tab-pane :label="item" :name="item" v-for="item in allGroupNames" :key="item" />
-    </el-tabs>
-      <el-button type="primary" @click="handleAddNode">添加节点</el-button>
-      <div style="margin-bottom: 10px"></div>
-      <el-table
-      ref="multipleTable"
-    :data="tableData"
-    tooltip-effect="dark"
-    stripe
-    style="width: 100%"
-    row-key="ID" 
-    :tree-props="{children: 'Nodes'}"
-    @selection-change="handleSelectionChange"
-    >
-        <el-table-column
-      type="selection"
-      width="55">
-    </el-table-column>
+  <div class="page-heading">
+    <div>
+      <h1>节点列表</h1>
+      <p>管理代理节点、分组以及连通性测试</p>
+    </div>
+    <el-button type="primary" @click="handleAddNode">添加节点</el-button>
+  </div>
 
-    <el-table-column
-      type="index"
-      >
-    </el-table-column>
-    <el-table-column
-      prop="Name"
-      label="节点名"
-      sortable
-      >
-    <template #default="{row}">
-      <el-tag effect="plain" >{{row.Name}}</el-tag>
+  <section class="work-surface">
+    <div class="node-filters">
+      <el-tabs v-model="activeName">
+        <el-tab-pane :label="`全部 ${allNodes.length}`" name="全部" />
+        <el-tab-pane
+          v-for="item in allGroupNames"
+          :key="item"
+          :label="item"
+          :name="item"
+        />
+      </el-tabs>
+    </div>
+
+    <el-table
+      ref="multipleTable"
+      :data="tableData"
+      tooltip-effect="dark"
+      row-key="ID"
+      :tree-props="{ children: 'Nodes' }"
+      @selection-change="handleSelectionChange"
+    >
+      <el-table-column type="selection" width="48" />
+      <el-table-column type="index" width="56" label="#" />
+      <el-table-column prop="Name" label="节点名称" min-width="170" sortable>
+        <template #default="{ row }">
+          <span class="primary-cell">{{ row.Name }}</span>
         </template>
-    </el-table-column>
-    <el-table-column
-      prop="Link"
-      label="链接"
-      :show-overflow-tooltip="true"
-      >
-          <template #default="{row}">
-      <el-tag effect="plain" type="success" >{{row.Link}}</el-tag>
+      </el-table-column>
+      <el-table-column prop="Link" label="节点链接" min-width="320" show-overflow-tooltip>
+        <template #default="{ row }">
+          <code class="node-link">{{ row.Link }}</code>
         </template>
-    </el-table-column>
-    
-        <el-table-column
-      prop="CreatedAt"
-      label="创建时间"
-      :formatter="Timeformatter"
-      sortable
-      show-overflow-tooltip>
-    </el-table-column>
-            <el-table-column
-      label="所属分组"
-      :formatter="Groupformatter"
-      show-overflow-tooltip>
-    </el-table-column>
-        <el-table-column label="延迟" width="120">
-          <template #default="{row}">
-            <el-tag
-              v-if="latencyMap[row.ID]"
-              :type="latencyMap[row.ID].success ? 'success' : 'danger'"
-              effect="plain"
-            >
-              {{ latencyMap[row.ID].success ? `${latencyMap[row.ID].latency} ms` : '失败' }}
-            </el-tag>
-            <span v-else>-</span>
-          </template>
-        </el-table-column>
-                <el-table-column  label="操作" width="120">
-              <template #default="scope">
-                <el-button link type="primary" size="small" @click="handleEditNode(scope.row)">编辑</el-button>
-                <el-button link type="primary" size="small" @click="copyInfo(scope.row)">复制</el-button>
-                <el-button link type="primary" size="small" @click="handleDel(scope.row)">删除</el-button>
-              </template>
-            </el-table-column>
-  </el-table>
-   <div style="margin-top: 20px" />
-   <el-button type="info" @click="selectAll">全选</el-button>
-   <el-button type="warning" @click="selectClear">取消选中</el-button>
-      <el-button type="primary" @click="selectCopy">复制选中</el-button>
-      <el-button type="danger" @click="selectDel">删除选中</el-button>
-      <el-button type="success" :loading="latencyLoading" @click="testLatency">测试延迟</el-button>
-      <div style="margin-top: 20px" />
+      </el-table-column>
+      <el-table-column
+        prop="CreatedAt"
+        label="创建时间"
+        min-width="180"
+        :formatter="Timeformatter"
+        sortable
+        show-overflow-tooltip
+      />
+      <el-table-column
+        label="所属分组"
+        min-width="150"
+        :formatter="Groupformatter"
+        show-overflow-tooltip
+      />
+      <el-table-column label="延迟" width="100">
+        <template #default="{ row }">
+          <span
+            v-if="latencyMap[row.ID]"
+            class="latency"
+            :class="latencyMap[row.ID].success ? 'is-success' : 'is-failed'"
+          >
+            {{ latencyMap[row.ID].success ? `${latencyMap[row.ID].latency} ms` : '失败' }}
+          </span>
+          <span v-else class="muted-cell">未测试</span>
+        </template>
+      </el-table-column>
+      <el-table-column label="操作" width="170" align="right" fixed="right">
+        <template #default="scope">
+          <el-button link type="primary" @click="handleEditNode(scope.row)">编辑</el-button>
+          <el-button link @click="copyInfo(scope.row)">复制</el-button>
+          <el-button link type="danger" @click="handleDel(scope.row)">删除</el-button>
+        </template>
+      </el-table-column>
+    </el-table>
+
+    <div class="table-footer">
+      <div class="batch-actions">
+        <el-button @click="selectAll">全选</el-button>
+        <el-button @click="selectClear">取消选择</el-button>
+        <el-button type="primary" plain @click="selectCopy">复制选中</el-button>
+        <el-button type="danger" plain @click="selectDel">删除选中</el-button>
+        <el-button :loading="latencyLoading" @click="testLatency">测试延迟</el-button>
+      </div>
+      <span class="record-count">共 {{ tableData.length }} 个节点</span>
+    </div>
   </section>
-  <!-- 显示表格数据结束 -->
   </div>
 </template>
 <style scoped>
@@ -575,6 +575,44 @@ watch(activeName, (newVal) => {
   font-size: 14px;
   color: #333;
   line-height: 1.6;
-  margin-bottom: 10px;
+ margin-bottom: 10px;
  }
+
+.node-filters {
+  margin: -8px 0 12px;
+}
+
+.node-filters :deep(.el-tabs__header) {
+  margin-bottom: 0;
+}
+
+.primary-cell {
+  font-weight: 550;
+}
+
+.node-link {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  background: transparent;
+}
+
+.record-count,
+.muted-cell {
+  font-size: 13px;
+  color: var(--el-text-color-secondary);
+}
+
+.latency {
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.latency.is-success {
+  color: #15803d;
+}
+
+.latency.is-failed {
+  color: var(--el-color-danger);
+}
 </style>

@@ -43,17 +43,17 @@ surge support protocol:ss trojan vmess hy2 tuic
 ![1712594176714](webs/src/assets/1.png)
 ![1712594176714](webs/src/assets/2.png)
 
-## [2.3 Update]
+## [2.4 Update]
 
 #### Backend Update
 
-1. Remove the image captcha from login.
-2. Promote subscriptions, nodes, and templates to top-level navigation.
+1. Fix the administration workspace not filling the available width.
+2. Fix configuration directory creation on first local run.
 
 #### Front-end Update
 
-1. Remove the top tags view.
-2. Refresh the interface with a flat visual style.
+1. Redesign the subscription, node, and template tables and toolbars.
+2. Add the `dev-macos.sh` local development script.
 
 ## [Installation instructions]
 ### linux method:

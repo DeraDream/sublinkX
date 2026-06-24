@@ -29,6 +29,11 @@ var comment string = `# jwt_secret: JWT密钥
 
 // 初始化配置
 func ConfigInit() {
+	if err := os.MkdirAll("./db", 0755); err != nil {
+		log.Println("创建配置目录失败:", err)
+		return
+	}
+
 	// 检查配置文件是否存在
 	if _, err := os.Stat("./db/config.yaml"); os.IsNotExist(err) {
 		R := utils.RandString(31) // 生成随机字符串作为JWT密钥

@@ -170,40 +170,56 @@ const currentTableData = computed(() => {
       </div>
     </template>
   </el-dialog>
+    <div class="page-heading">
+      <div>
+        <h1>模板列表</h1>
+        <p>维护 Clash、Surge 等订阅输出模板</p>
+      </div>
+      <el-button type="primary" @click="handleAddTemp">添加模板</el-button>
+    </div>
+
     <section class="work-surface">
-    <el-button type="primary" @click="handleAddTemp">添加模版</el-button>
-    <div style="margin-bottom: 10px"></div>
-      <el-table ref="table" :data="currentTableData" style="width: 100%" @selection-change="handleSelectionChange">
-    <el-table-column type="selection" fixed prop="ID" label="id"  />
-    <el-table-column prop="file" label="模版文件名"  >
-      <template #default="scope">
-        <el-tag type="success">{{scope.row.file}}</el-tag>
-      </template>
-    </el-table-column>
-    <el-table-column prop="create_date" label="创建时间" sortable  />
-    <el-table-column fixed="right" label="操作" width="120">
-      <template #default="scope">
-        <el-button link type="primary" size="small" @click="handleEdit(scope.row)">编辑</el-button>
-  <el-button link type="primary" size="small" @click="handleDel(scope.row)">删除</el-button>
+      <div class="table-toolbar">
+        <span class="record-count">共 {{ tableData.length }} 个模板</span>
+      </div>
 
-      </template>
-    </el-table-column>
-  </el-table>
-  <div style="margin-top: 20px" />
-    <el-button type="info" @click="selectAll()">全选</el-button>
-    <el-button type="warning" @click="toggleSelection()">取消选择</el-button>
-    <el-button type="danger" @click="selectDel">批量删除</el-button>
-  <div style="margin-top: 20px"/>
-  <el-pagination
-  @size-change="handleSizeChange"
-  @current-change="handleCurrentChange"
-  :current-page="currentPage"
-  :page-size="pageSize"
-  layout="total, sizes, prev, pager, next, jumper"
-  :page-sizes="[10, 20, 30, 40]"
-  :total="tableData.length">
-</el-pagination>
+      <el-table
+        ref="table"
+        :data="currentTableData"
+        @selection-change="handleSelectionChange"
+      >
+        <el-table-column type="selection" fixed width="48" />
+        <el-table-column prop="file" label="模板文件名" min-width="320">
+          <template #default="scope">
+            <span class="primary-cell">{{ scope.row.file }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="create_date" label="创建时间" min-width="200" sortable />
+        <el-table-column fixed="right" label="操作" width="140" align="right">
+          <template #default="scope">
+            <el-button link type="primary" @click="handleEdit(scope.row)">编辑</el-button>
+            <el-button link type="danger" @click="handleDel(scope.row)">删除</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
 
+      <div class="table-footer">
+        <div class="batch-actions">
+          <el-button @click="selectAll()">全选</el-button>
+          <el-button @click="toggleSelection()">取消选择</el-button>
+          <el-button type="danger" plain @click="selectDel">批量删除</el-button>
+        </div>
+        <el-pagination
+          class="table-pagination"
+          :current-page="currentPage"
+          :page-size="pageSize"
+          layout="total, sizes, prev, pager, next, jumper"
+          :page-sizes="[10, 20, 30, 40]"
+          :total="tableData.length"
+          @size-change="handleSizeChange"
+          @current-change="handleCurrentChange"
+        />
+      </div>
     </section>
   </div>
 </template>
@@ -211,5 +227,14 @@ const currentTableData = computed(() => {
 <style scoped>
 .el-input{
   margin-bottom: 10px;
+}
+
+.record-count {
+  font-size: 13px;
+  color: var(--el-text-color-secondary);
+}
+
+.primary-cell {
+  font-weight: 550;
 }
 </style>@/api/subcription/temp

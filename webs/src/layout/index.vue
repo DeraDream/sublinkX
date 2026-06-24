@@ -73,6 +73,8 @@ function handleOutsideClick() {
 }
 
 .main-container {
+  width: calc(100% - $sidebar-width);
+  min-width: 0;
   min-height: 100vh;
   margin-left: $sidebar-width;
   transition: margin-left 0.2s ease;
@@ -93,6 +95,7 @@ function handleOutsideClick() {
   }
 
   .main-container {
+    width: calc(100% - $sidebar-width-collapsed);
     margin-left: $sidebar-width-collapsed;
   }
 
@@ -113,6 +116,7 @@ function handleOutsideClick() {
   }
 
   .main-container {
+    width: 100%;
     margin-left: 0;
   }
 
