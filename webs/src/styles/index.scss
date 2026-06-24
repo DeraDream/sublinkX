@@ -16,6 +16,7 @@
   padding: 20px;
   background: var(--el-bg-color);
   border: 1px solid var(--el-border-color-lighter);
+  border-radius: 6px;
 }
 
 .page-heading {
@@ -100,6 +101,31 @@
     margin-left: 0;
     overflow-x: auto;
   }
+
+  .el-overlay-dialog {
+    padding: 12px 8px;
+  }
+
+  .el-dialog {
+    width: calc(100vw - 16px) !important;
+    max-width: none;
+  }
+
+  .el-dialog__header,
+  .el-dialog__body,
+  .el-dialog__footer {
+    padding-right: 16px;
+    padding-left: 16px;
+  }
+
+  .el-dialog__body {
+    max-height: calc(100dvh - 164px);
+  }
+
+  .template-meta {
+    align-items: flex-start;
+    flex-direction: column;
+  }
 }
 
 .search-container {
@@ -159,6 +185,207 @@ html.dark {
 .el-select__wrapper,
 .el-dialog {
   border-radius: 4px;
+}
+
+.el-button {
+  font-weight: 500;
+}
+
+.el-button:active:not(.is-disabled) {
+  transform: translateY(1px);
+}
+
+.el-overlay {
+  background-color: rgb(15 23 42 / 48%);
+}
+
+.el-overlay-dialog {
+  padding: 24px 16px;
+  overflow: hidden;
+}
+
+.el-dialog {
+  max-width: calc(100vw - 32px);
+  margin: 24px auto 0 !important;
+  overflow: hidden;
+  border: 1px solid var(--el-border-color-lighter);
+  box-shadow: 0 16px 48px rgb(15 23 42 / 14%);
+}
+
+.el-dialog__header {
+  padding: 20px 24px 18px;
+  margin-right: 0;
+  border-bottom: 1px solid var(--el-border-color-lighter);
+}
+
+.el-dialog__title {
+  font-size: 17px;
+  font-weight: 650;
+  color: var(--el-text-color-primary);
+}
+
+.el-dialog__headerbtn {
+  top: 14px;
+  right: 16px;
+  width: 36px;
+  height: 36px;
+}
+
+.el-dialog__body {
+  max-height: min(calc(100dvh - 250px), 680px);
+  padding: 22px 24px;
+  overflow-y: auto;
+}
+
+.el-dialog__footer {
+  padding: 14px 24px;
+  background: var(--el-fill-color-lighter);
+  border-top: 1px solid var(--el-border-color-lighter);
+}
+
+.dialog-heading {
+  padding-right: 36px;
+}
+
+.dialog-heading h2 {
+  margin: 0;
+  color: var(--el-text-color-primary);
+  font-size: 17px;
+  font-weight: 650;
+  line-height: 1.4;
+}
+
+.dialog-heading p {
+  margin: 4px 0 0;
+  color: var(--el-text-color-secondary);
+  font-size: 13px;
+}
+
+.dialog-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.dialog-footer .el-button + .el-button {
+  margin-left: 0;
+}
+
+.dialog-form {
+  display: grid;
+  gap: 20px;
+}
+
+.field {
+  display: grid;
+  gap: 8px;
+}
+
+.field-label {
+  color: var(--el-text-color-primary);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.field-help {
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.form-section {
+  display: grid;
+  gap: 14px;
+  padding-top: 18px;
+  border-top: 1px solid var(--el-border-color-lighter);
+}
+
+.section-heading {
+  display: grid;
+  gap: 3px;
+}
+
+.section-heading strong {
+  font-size: 13px;
+}
+
+.section-heading span {
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+}
+
+.template-field {
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+  background: var(--el-fill-color-lighter);
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 4px;
+}
+
+.template-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13px;
+}
+
+.flat-segmented .el-radio-button__inner {
+  box-shadow: none !important;
+}
+
+.option-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.option-list .el-checkbox {
+  margin-right: 0;
+}
+
+.form-dialog .el-input__wrapper,
+.form-dialog .el-select__wrapper {
+  min-height: 38px;
+  box-shadow: 0 0 0 1px var(--el-border-color) inset;
+}
+
+.form-dialog .el-textarea__inner {
+  padding: 10px 12px;
+  line-height: 1.6;
+  box-shadow: 0 0 0 1px var(--el-border-color) inset;
+}
+
+.form-dialog .el-input__wrapper.is-focus,
+.form-dialog .el-select__wrapper.is-focused,
+.form-dialog .el-textarea__inner:focus {
+  box-shadow: 0 0 0 1px var(--el-color-primary) inset;
+}
+
+html.dark .el-dialog {
+  box-shadow: 0 20px 60px rgb(0 0 0 / 38%);
+}
+
+@media (max-width: 768px) {
+  .el-overlay-dialog {
+    padding: 12px 8px;
+  }
+
+  .el-dialog {
+    margin-top: 12px !important;
+  }
+
+  .el-dialog__header,
+  .el-dialog__body,
+  .el-dialog__footer {
+    padding-right: 16px;
+    padding-left: 16px;
+  }
+
+  .el-dialog__body {
+    max-height: calc(100dvh - 180px);
+  }
 }
 
 .el-table {

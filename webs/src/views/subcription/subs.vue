@@ -304,112 +304,147 @@ const toggleSelect = (name: string) => {
 
 <template>
   <div class="page-workspace">
-    <el-dialog v-model="Qrdialog" width="300px" style="text-align: center" :title="QrTitle">
-      <qrcode-vue :value="qrcode"  :size="200" level="H" />
-      <el-input
-      v-model="qrcode"
-      >
-      </el-input>
-      <el-button @click="copyUrl(qrcode)">复制</el-button>
-      <el-button @click="OpenUrl(qrcode)">打开</el-button>
+    <el-dialog v-model="Qrdialog" class="form-dialog qr-dialog" width="400px" :title="QrTitle">
+      <div class="qr-content">
+        <div class="qr-frame">
+          <qrcode-vue :value="qrcode" :size="196" level="H" />
+        </div>
+        <el-input v-model="qrcode" readonly />
+      </div>
+      <template #footer>
+        <div class="dialog-footer">
+          <el-button @click="copyUrl(qrcode)">复制地址</el-button>
+          <el-button type="primary" @click="OpenUrl(qrcode)">打开链接</el-button>
+        </div>
+      </template>
     </el-dialog>
 
-    <el-dialog v-model="ClientDiaLog" title="客户端(点击二维码获取地址)" style="text-align: center" width="80%">
-      <el-row>
-        <el-col>
-        <el-tag type="success" size="large">自动识别</el-tag>
-        <el-button @click="handleQrcode(ClientUrl,'自动识别客户端')">二维码</el-button>
-      </el-col>
-        <el-col v-for="(item,index) in ClientUrls" style="margin-bottom:10px;">
-          <el-tag type="success" size="large">{{index}}</el-tag>
-          <el-button @click="handleQrcode(`${item}&client=${index}`,index)">二维码</el-button>
-        </el-col>
-        </el-row>
+    <el-dialog v-model="ClientDiaLog" class="form-dialog" width="560px" title="选择客户端">
+      <p class="dialog-intro">选择客户端类型后生成对应的订阅二维码。</p>
+      <div class="client-list">
+        <button class="client-row" type="button" @click="handleQrcode(ClientUrl,'自动识别客户端')">
+          <span>
+            <strong>自动识别</strong>
+            <small>推荐，客户端自动判断订阅格式</small>
+          </span>
+          <span class="client-action">生成二维码</span>
+        </button>
+        <button
+          v-for="(item,index) in ClientUrls"
+          :key="index"
+          class="client-row"
+          type="button"
+          @click="handleQrcode(`${item}&client=${index}`, String(index))"
+        >
+          <span>
+            <strong>{{ index }}</strong>
+            <small>使用 {{ index }} 专用订阅地址</small>
+          </span>
+          <span class="client-action">生成二维码</span>
+        </button>
+      </div>
     </el-dialog>
     
-    <el-dialog v-model="iplogsdialog" title="访问记录" width="80%" draggable>
-  <template #footer>
-    <div class="dialog-footer">
-      <el-table :data="IplogsList" border style="width: 100%">
+    <el-dialog v-model="iplogsdialog" class="data-dialog" title="访问记录" width="min(880px, calc(100vw - 32px))">
+      <el-table :data="IplogsList" style="width: 100%">
         <el-table-column prop="IP" label="Ip" />
         <el-table-column prop="Count" label="总访问次数" />
         <el-table-column prop="Addr" label="来源" />
         <el-table-column prop="Date" label="最近时间" />
       </el-table>
-    </div>
-  </template>
-</el-dialog>
+    </el-dialog>
     <el-dialog
-    v-model="dialogVisible"
-    :title="SubTitle"
-    width="80%"
-  >
-  <el-input v-model="Subname" placeholder="请输入订阅名称" />
-  
-  <el-row >
-  <el-tag type="primary">clash模版选择</el-tag>
-  <el-radio-group v-model="clientradio" class="ml-4">
-      <el-radio value="1">本地</el-radio>
-      <el-radio value="2">url链接</el-radio>
-    </el-radio-group>
-  <el-select v-model="Clash" placeholder="clash模版文件"  v-if="clientradio === '1'">
-    <el-option v-for="template in templist" :key="template.file" :label="template.file" :value="'./template/'+template.file" />
-  </el-select>
-  <el-input v-model="Clash" placeholder="clash模版文件"  v-else />
-</el-row>
-<el-row >
-  <el-tag type="primary">surge模版选择</el-tag>
-  <el-radio-group v-model="clientradio" class="ml-4">
-      <el-radio value="1">本地</el-radio>
-      <el-radio value="2">url链接</el-radio>
-    </el-radio-group>
-  <el-select v-model="Surge" placeholder="surge模版文件"  v-if="clientradio === '1'">
-    <el-option v-for="template in templist" :key="template.file" :label="template.file" :value="'./template/'+template.file" />
-  </el-select>
-  <el-input v-model="Surge" placeholder="surge模版文件"  v-else />
-</el-row>
-
-  <el-row>
-    <el-tag type="primary">强制开启选项</el-tag>
-  <el-checkbox-group v-model="checkList"  style="margin: 5px;">
-    <el-checkbox :value="'udp'">udp</el-checkbox>
-    <el-checkbox :value="'cert'">跳过证书</el-checkbox>
-  </el-checkbox-group>
-</el-row>
-  <div class="m-4">
-    <p>选择已有的节点列表</p>
-    <el-select
-      v-model="value1"
-      multiple
-      placeholder="Select"
-      style="width: 100%"
+      v-model="dialogVisible"
+      class="form-dialog subscription-dialog"
+      width="760px"
+      :close-on-click-modal="false"
+      destroy-on-close
     >
-      <el-option
-        v-for="item in NodesList"
-        :key="item.Name"
-        :label="item.Name"
-        :value="item.Name"
-      />
-        <div style="margin-top: 20px">
+      <template #header>
+        <div class="dialog-heading">
+          <h2>{{ SubTitle }}</h2>
+          <p>配置订阅名称、输出模板和节点顺序。</p>
+        </div>
+      </template>
 
-  </div>
-    </el-select>
-    <p>已选节点（可拖拽排序）</p>
-    <VueDraggable v-model="value1" :animation="150" ghost-class="ghost">
-      <div v-for="(nodeName, index) in value1" :key="nodeName" class="draggable-item">
-        <span class="row-number">{{ index + 1 }}.</span> {{ nodeName }}
+      <div class="dialog-form">
+        <label class="field">
+          <span class="field-label">订阅名称</span>
+          <el-input v-model="Subname" placeholder="输入便于识别的订阅名称" />
+        </label>
+
+        <section class="form-section">
+          <div class="section-heading">
+            <strong>输出模板</strong>
+            <span>为不同客户端选择本地模板或 URL</span>
+          </div>
+
+          <div class="template-field">
+            <div class="template-meta">
+              <strong>Clash</strong>
+              <el-radio-group v-model="clientradio" class="flat-segmented" size="small">
+                <el-radio-button value="1">本地模板</el-radio-button>
+                <el-radio-button value="2">URL</el-radio-button>
+              </el-radio-group>
+            </div>
+            <el-select v-if="clientradio === '1'" v-model="Clash" placeholder="选择 Clash 模板">
+              <el-option v-for="template in templist" :key="template.file" :label="template.file" :value="'./template/'+template.file" />
+            </el-select>
+            <el-input v-else v-model="Clash" placeholder="输入 Clash 模板 URL" />
+          </div>
+
+          <div class="template-field">
+            <div class="template-meta">
+              <strong>Surge</strong>
+              <el-radio-group v-model="clientradio" class="flat-segmented" size="small">
+                <el-radio-button value="1">本地模板</el-radio-button>
+                <el-radio-button value="2">URL</el-radio-button>
+              </el-radio-group>
+            </div>
+            <el-select v-if="clientradio === '1'" v-model="Surge" placeholder="选择 Surge 模板">
+              <el-option v-for="template in templist" :key="template.file" :label="template.file" :value="'./template/'+template.file" />
+            </el-select>
+            <el-input v-else v-model="Surge" placeholder="输入 Surge 模板 URL" />
+          </div>
+        </section>
+
+        <div class="field">
+          <span class="field-label">连接选项</span>
+          <el-checkbox-group v-model="checkList" class="option-list">
+            <el-checkbox value="udp" border>启用 UDP</el-checkbox>
+            <el-checkbox value="cert" border>跳过证书验证</el-checkbox>
+          </el-checkbox-group>
+        </div>
+
+        <div class="field">
+          <span class="field-label">订阅节点</span>
+          <el-select v-model="value1" multiple filterable placeholder="搜索并选择节点" style="width: 100%">
+            <el-option
+              v-for="item in NodesList"
+              :key="item.Name"
+              :label="item.Name"
+              :value="item.Name"
+            />
+          </el-select>
+          <span class="field-help">已选择 {{ value1.length }} 个节点，可在下方拖拽调整顺序。</span>
+          <VueDraggable v-if="value1.length" v-model="value1" :animation="150" ghost-class="ghost" class="selected-nodes">
+            <div v-for="(nodeName, index) in value1" :key="nodeName" class="draggable-item">
+              <span class="drag-handle">⋮⋮</span>
+              <span class="row-number">{{ index + 1 }}</span>
+              <span>{{ nodeName }}</span>
+            </div>
+          </VueDraggable>
+          <div v-else class="empty-selection">尚未选择节点</div>
+        </div>
       </div>
-    </VueDraggable>
 
-
-  </div>
-    <template #footer>
-      <div class="dialog-footer">
-        <el-button @click="dialogVisible = false">关闭</el-button>
-        <el-button type="primary" @click="addSubs">确定</el-button>
-      </div>
-    </template>
-  </el-dialog>
+      <template #footer>
+        <div class="dialog-footer">
+          <el-button @click="dialogVisible = false">取消</el-button>
+          <el-button type="primary" @click="addSubs">保存订阅</el-button>
+        </div>
+      </template>
+    </el-dialog>
     <div class="page-heading">
       <div>
         <h1>订阅列表</h1>
@@ -486,12 +521,6 @@ const toggleSelect = (name: string) => {
 </template>
 
 <style scoped>
-.el-input{
-  margin-bottom: 10px;
-}
-.el-tag{
-  margin: 5px;
-}
 .record-count,
 .muted-cell {
   font-size: 13px;
@@ -504,27 +533,118 @@ const toggleSelect = (name: string) => {
 }
 /**拖拽样式 */
 .draggable-item {
-  padding: 8px 10px;
-  margin-bottom: 5px;
-  background-color: #f0f2f5;
-  border: 1px solid #dcdfe6;
-  border-radius: 4px;
-  display: flex;
+  display: grid;
+  grid-template-columns: 18px 24px minmax(0, 1fr);
+  gap: 8px;
   align-items: center;
+  min-height: 40px;
+  padding: 0 12px;
+  background: var(--el-bg-color);
+  border-bottom: 1px solid var(--el-border-color-lighter);
+  border-radius: 4px;
   cursor: grab;
 }
 
+.draggable-item:last-child {
+  border-bottom: 0;
+}
+
 .draggable-item:hover {
-  background-color: #e6e8eb;
+  background: var(--el-fill-color-light);
 }
 
 .ghost {
-  opacity: 0.5;
-  background: #c8ebfb;
+  opacity: 0.45;
+  background: var(--el-color-primary-light-9);
 }
 
 .row-number {
-  margin-right: 10px;
-  font-weight: bold;
+  color: var(--el-text-color-placeholder);
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+}
+
+.drag-handle {
+  color: var(--el-text-color-placeholder);
+  letter-spacing: -3px;
+}
+
+.selected-nodes {
+  max-height: 200px;
+  margin-top: 10px;
+  overflow: auto;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 4px;
+}
+
+.empty-selection {
+  margin-top: 10px;
+  padding: 18px;
+  color: var(--el-text-color-placeholder);
+  background: var(--el-fill-color-lighter);
+  border: 1px dashed var(--el-border-color);
+  border-radius: 4px;
+  font-size: 13px;
+  text-align: center;
+}
+
+.qr-content {
+  display: grid;
+  gap: 16px;
+}
+
+.qr-frame {
+  display: grid;
+  width: 228px;
+  height: 228px;
+  margin: 0 auto;
+  place-items: center;
+  background: #fff;
+  border: 1px solid var(--el-border-color-lighter);
+}
+
+.dialog-intro {
+  margin: 0 0 14px;
+  color: var(--el-text-color-secondary);
+  font-size: 13px;
+}
+
+.client-list {
+  border-top: 1px solid var(--el-border-color-lighter);
+}
+
+.client-row {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 0;
+  color: var(--el-text-color-primary);
+  background: transparent;
+  border-bottom: 1px solid var(--el-border-color-lighter);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.client-row:hover {
+  color: var(--el-color-primary);
+}
+
+.client-row strong,
+.client-row small {
+  display: block;
+}
+
+.client-row small {
+  margin-top: 3px;
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+}
+
+.client-action {
+  flex: none;
+  color: var(--el-color-primary);
+  font-size: 13px;
 }
 </style>

@@ -438,46 +438,72 @@ watch(activeName, (newVal) => {
 
 <template>
   <div class="page-workspace">
- <el-dialog v-model="Nodedialog" :title="NodeForm.Title" width="80%">
-  <el-input
-    v-model="NodeForm.Link"
-    placeholder="请输入节点链接，支持多行使用回车或逗号分开"
-    type="textarea"
-    style="margin-bottom: 10px"
-    :autosize="{ minRows: 2, maxRows: 10 }"
-    v-if="dialogMode === 'add'"
-  />
+    <el-dialog
+      v-model="Nodedialog"
+      class="form-dialog node-dialog"
+      width="680px"
+      :close-on-click-modal="false"
+      destroy-on-close
+    >
+      <template #header>
+        <div class="dialog-heading">
+          <h2>{{ NodeForm.Title }}</h2>
+          <p>{{ dialogMode === 'add' ? '粘贴一个或多个节点链接，并为它们设置分组。' : '修改节点名称、链接与所属分组。' }}</p>
+        </div>
+      </template>
 
-<el-input
-  v-model="NodeForm.Name"
-  placeholder="节点名称（编辑时）"
-  style="margin-bottom: 10px"
-  v-if="dialogMode === 'edit'"
-/>
-  <el-input
-    v-model="NodeForm.Link"
-    placeholder="请输入节点链接，支持多行使用回车或逗号分开"
-    type="textarea"
-    style="margin-bottom: 10px"
-    :autosize="{ minRows: 2, maxRows: 10 }"
-    v-if="dialogMode === 'edit'"
-  />
+      <div class="dialog-form">
+        <label v-if="dialogMode === 'edit'" class="field">
+          <span class="field-label">节点名称</span>
+          <el-input v-model="NodeForm.Name" placeholder="输入便于识别的节点名称" />
+        </label>
 
-  <!-- 分组部分 -->
-  <el-radio v-model="RadioGroup" label="1" v-if="allGroupNames.length > 0">选择已有分组</el-radio>
-  <el-radio v-model="RadioGroup" label="2">创建新分组</el-radio>
+        <label class="field">
+          <span class="field-label">节点链接</span>
+          <el-input
+            v-model="NodeForm.Link"
+            placeholder="支持换行或逗号分隔多个链接"
+            type="textarea"
+            :autosize="{ minRows: dialogMode === 'add' ? 5 : 3, maxRows: 10 }"
+          />
+          <span v-if="dialogMode === 'add'" class="field-help">每个链接会被分别创建为一个节点。</span>
+        </label>
 
-  <div v-if="RadioGroup === '1' && allGroupNames.length > 0">
-    <el-select v-model="SelectionNodeGroups" multiple placeholder="选择已有分组" class="default">
-      <el-option v-for="item in allGroupNames" :key="item" :label="item" :value="item" />
-    </el-select>
-  </div>
+        <div class="field">
+          <span class="field-label">所属分组</span>
+          <el-radio-group v-model="RadioGroup" class="flat-segmented">
+            <el-radio-button v-if="allGroupNames.length > 0" label="1">选择已有分组</el-radio-button>
+            <el-radio-button label="2">创建新分组</el-radio-button>
+          </el-radio-group>
+        </div>
 
-  <el-input v-if="RadioGroup === '2'" v-model="NodeGroupInput" placeholder="输入要创建的分组名" class="default" />
+        <label v-if="RadioGroup === '1' && allGroupNames.length > 0" class="field">
+          <span class="field-label">选择分组</span>
+          <el-select
+            v-model="SelectionNodeGroups"
+            multiple
+            placeholder="可选择多个分组"
+            class="field-control"
+          >
+            <el-option v-for="item in allGroupNames" :key="item" :label="item" :value="item" />
+          </el-select>
+        </label>
 
-  <el-button type="primary" @click="SubmitNodeForm">{{ dialogMode === 'add' ? '添加' : '更新' }}</el-button>
-  <el-button @click="Nodedialog = false">取消</el-button>
-</el-dialog>
+        <label v-if="RadioGroup === '2'" class="field">
+          <span class="field-label">新分组名称</span>
+          <el-input v-model="NodeGroupInput" placeholder="例如：香港节点" />
+        </label>
+      </div>
+
+      <template #footer>
+        <div class="dialog-footer">
+          <el-button @click="Nodedialog = false">取消</el-button>
+          <el-button type="primary" @click="SubmitNodeForm">
+            {{ dialogMode === 'add' ? '添加节点' : '保存修改' }}
+          </el-button>
+        </div>
+      </template>
+    </el-dialog>
 
 
   <div class="page-heading">
@@ -570,13 +596,9 @@ watch(activeName, (newVal) => {
   </div>
 </template>
 <style scoped>
- /* 创建默认样式 */
- .default {
-  font-size: 14px;
-  color: #333;
-  line-height: 1.6;
- margin-bottom: 10px;
- }
+.field-control {
+  width: 100%;
+}
 
 .node-filters {
   margin: -8px 0 12px;
