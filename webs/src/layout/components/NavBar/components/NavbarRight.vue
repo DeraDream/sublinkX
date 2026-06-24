@@ -21,6 +21,21 @@
       <lang-select class="setting-item" />
     </template>
 
+    <el-tooltip
+      :content="isDark ? '切换为浅色模式' : '切换为暗黑模式'"
+      effect="dark"
+      placement="bottom"
+    >
+      <button
+        class="setting-item theme-toggle"
+        type="button"
+        :aria-label="isDark ? '切换为浅色模式' : '切换为暗黑模式'"
+        @click="toggleTheme"
+      >
+        <svg-icon :icon-class="isDark ? 'sunny' : 'moon'" />
+      </button>
+    </el-tooltip>
+
     <!-- 用户头像 -->
     <el-dropdown class="setting-item" trigger="click">
       <div class="flex-center h100% p10px">
@@ -44,19 +59,29 @@
 <script setup lang="ts">
 import {
   useAppStore,
+  useSettingsStore,
   useUserStore,
 } from "@/store";
 import { DeviceEnum } from "@/enums/DeviceEnum";
+import { ThemeEnum } from "@/enums/ThemeEnum";
 
 const appStore = useAppStore();
+const settingsStore = useSettingsStore();
 const userStore = useUserStore();
 
 const route = useRoute();
 const router = useRouter();
 
 const isMobile = computed(() => appStore.device === DeviceEnum.MOBILE);
+const isDark = computed(() => settingsStore.theme === ThemeEnum.DARK);
 
 const { isFullscreen, toggle } = useFullscreen();
+
+function toggleTheme() {
+  settingsStore.changeTheme(
+    isDark.value ? ThemeEnum.LIGHT : ThemeEnum.DARK
+  );
+}
 
 /**
  * 注销
@@ -89,6 +114,13 @@ function logout() {
   &:hover {
     background: var(--el-fill-color-light);
   }
+}
+
+.theme-toggle {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font: inherit;
 }
 
 .dark .setting-item:hover {

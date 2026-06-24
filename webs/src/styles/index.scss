@@ -116,6 +116,38 @@ body {
   background: var(--el-bg-color-page);
 }
 
+:root {
+  color-scheme: light;
+  --editor-active-line: #eff6ff;
+  --editor-selection: #bfdbfe;
+  --editor-keyword: #1d4ed8;
+  --editor-string: #047857;
+  --editor-number: #b45309;
+  --editor-comment: #94a3b8;
+}
+
+html.dark {
+  color-scheme: dark;
+  --el-bg-color-page: #090b10;
+  --el-bg-color: #10131b;
+  --el-bg-color-overlay: #151923;
+  --el-fill-color-blank: #10131b;
+  --el-fill-color-light: #181d28;
+  --el-fill-color-lighter: #1d2330;
+  --el-border-color: #343b49;
+  --el-border-color-light: #2d3441;
+  --el-border-color-lighter: #252c38;
+  --el-text-color-primary: #f1f5f9;
+  --el-text-color-regular: #cbd5e1;
+  --el-text-color-secondary: #94a3b8;
+  --editor-active-line: #1b2638;
+  --editor-selection: #294a73;
+  --editor-keyword: #7dd3fc;
+  --editor-string: #86efac;
+  --editor-number: #fdba74;
+  --editor-comment: #64748b;
+}
+
 .el-card {
   border: 1px solid var(--el-border-color-lighter);
   border-radius: 4px;
@@ -146,8 +178,20 @@ body {
 }
 
 html.dark .el-table {
-  --el-table-header-bg-color: #23262b;
-  --el-table-row-hover-bg-color: #282c32;
+  --el-table-header-bg-color: #151923;
+  --el-table-row-hover-bg-color: #1a202b;
+  --el-table-bg-color: #10131b;
+  --el-table-tr-bg-color: #10131b;
+  --el-table-text-color: #cbd5e1;
+  --el-table-header-text-color: #e2e8f0;
+}
+
+html.dark .el-button.is-link:not(.is-disabled) {
+  --el-button-text-color: #7dd3fc;
+}
+
+html.dark .el-button--danger.is-link:not(.is-disabled) {
+  --el-button-text-color: #fca5a5;
 }
 
 .table-container > .el-card__header {

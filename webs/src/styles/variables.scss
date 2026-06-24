@@ -10,11 +10,11 @@
 
 /** 暗黑主题 */
 html.dark {
-  --menu-background: #1d1f23;
+  --menu-background: #10131b;
   --menu-text: #cbd5e1;
-  --menu-active-text: #93c5fd;
-  --menu-hover: #282c32;
-  --sidebar-logo-background: #1d1f23;
+  --menu-active-text: #7dd3fc;
+  --menu-hover: #1a202b;
+  --sidebar-logo-background: #10131b;
 }
 
 $menu-background: var(--menu-background); // 菜单背景色

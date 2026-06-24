@@ -292,14 +292,14 @@ const currentTableData = computed(() => {
 
 .editor-dialog-heading h2 {
   margin: 0;
-  color: #111827;
+  color: var(--el-text-color-primary);
   font-size: 18px;
   letter-spacing: 0;
 }
 
 .editor-dialog-heading p {
   margin: 5px 0 0;
-  color: #64748b;
+  color: var(--el-text-color-secondary);
   font-size: 13px;
 }
 
@@ -321,9 +321,9 @@ const currentTableData = computed(() => {
   min-height: 0;
   flex-direction: column;
   overflow: hidden;
-  border: 1px solid #dfe4ea;
+  border: 1px solid var(--el-border-color-lighter);
   border-radius: 6px;
-  background: #fff;
+  background: var(--el-bg-color);
 }
 
 .panel-heading {
@@ -332,15 +332,15 @@ const currentTableData = computed(() => {
   justify-content: space-between;
   min-height: 44px;
   padding: 0 16px;
-  border-bottom: 1px solid #e5e7eb;
-  background: #f8fafc;
-  color: #1f2937;
+  border-bottom: 1px solid var(--el-border-color-lighter);
+  background: var(--el-fill-color-light);
+  color: var(--el-text-color-primary);
   font-size: 14px;
   font-weight: 600;
 }
 
 .panel-hint {
-  color: #94a3b8;
+  color: var(--el-text-color-placeholder);
   font-size: 12px;
   font-weight: 400;
 }
@@ -357,8 +357,8 @@ const currentTableData = computed(() => {
   box-sizing: border-box;
   margin: 0;
   padding: 14px 18px;
-  color: #1f2937;
-  background: #fff;
+  color: var(--el-text-color-primary);
+  background: var(--el-bg-color);
   font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
   font-size: 13px;
   line-height: 1.55;

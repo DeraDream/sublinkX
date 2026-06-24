@@ -3,8 +3,10 @@ import { onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { basicSetup } from "codemirror";
 import { indentWithTab } from "@codemirror/commands";
 import { yaml } from "@codemirror/lang-yaml";
+import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { EditorState } from "@codemirror/state";
 import { EditorView, keymap } from "@codemirror/view";
+import { tags } from "@lezer/highlight";
 
 const props = defineProps<{
   modelValue: string;
@@ -25,6 +27,26 @@ onMounted(() => {
       extensions: [
         basicSetup,
         yaml(),
+        syntaxHighlighting(
+          HighlightStyle.define([
+            {
+              tag: [tags.propertyName, tags.variableName, tags.typeName],
+              color: "var(--editor-keyword)",
+            },
+            {
+              tag: [tags.string, tags.special(tags.string)],
+              color: "var(--editor-string)",
+            },
+            {
+              tag: [tags.number, tags.bool, tags.null],
+              color: "var(--editor-number)",
+            },
+            {
+              tag: tags.comment,
+              color: "var(--editor-comment)",
+            },
+          ])
+        ),
         EditorState.tabSize.of(2),
         keymap.of([indentWithTab]),
         EditorView.lineWrapping,
@@ -36,8 +58,8 @@ onMounted(() => {
         EditorView.theme({
           "&": {
             height: "100%",
-            color: "#1f2937",
-            backgroundColor: "#ffffff",
+            color: "var(--el-text-color-primary)",
+            backgroundColor: "var(--el-bg-color)",
             fontSize: "13px",
           },
           ".cm-scroller": {
@@ -52,18 +74,18 @@ onMounted(() => {
             padding: "0 16px",
           },
           ".cm-gutters": {
-            color: "#94a3b8",
-            backgroundColor: "#f8fafc",
-            borderRight: "1px solid #e5e7eb",
+            color: "var(--el-text-color-placeholder)",
+            backgroundColor: "var(--el-fill-color-light)",
+            borderRight: "1px solid var(--el-border-color-lighter)",
           },
           ".cm-activeLine, .cm-activeLineGutter": {
-            backgroundColor: "#eff6ff",
+            backgroundColor: "var(--editor-active-line)",
           },
           "&.cm-focused": {
             outline: "none",
           },
           ".cm-selectionBackground, &.cm-focused .cm-selectionBackground": {
-            backgroundColor: "#bfdbfe",
+            backgroundColor: "var(--editor-selection)",
           },
         }),
       ],

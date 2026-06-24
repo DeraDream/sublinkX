@@ -58,6 +58,6 @@ const permissionStore = usePermissionStore();
 }
 
 html.dark :deep(.el-menu-item.is-active) {
-  background: #26354f;
+  background: #1b2b42;
 }
 </style>
