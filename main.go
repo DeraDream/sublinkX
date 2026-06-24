@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"sublink/agent"
 	"sublink/middlewares"
 	"sublink/models"
 	"sublink/routers"
@@ -71,6 +72,12 @@ func Templateinit() {
 }
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "agent" {
+		if err := agent.Main(os.Args[2:]); err != nil {
+			log.Fatal(err)
+		}
+		return
+	}
 	// 初始化配置
 	models.ConfigInit()
 	config := models.ReadConfig() // 读取配置文件
@@ -155,6 +162,7 @@ func Run(port int) {
 	routers.Total(r)
 	routers.Templates(r)
 	routers.Telegram(r)
+	routers.SpeedTest(r)
 	routers.Version(r, version)
 	// 启动服务
 	r.Run(fmt.Sprintf("0.0.0.0:%d", port))

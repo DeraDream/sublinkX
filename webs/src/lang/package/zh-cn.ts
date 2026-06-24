@@ -4,13 +4,14 @@ export default {
     dashboard: "首页",
     document: "项目文档",
     userset: "修改密码",
-    system:"系统管理",
-    nodelist:"节点列表",
-    sublist:"订阅列表",
-    subcription:"订阅管理",
-    templatelist:"模板列表",
-    settingsmenu:"系统设置",
-    telegrambot:"Telegram 机器人",
+    system: "系统管理",
+    nodelist: "节点列表",
+    sublist: "订阅列表",
+    subcription: "订阅管理",
+    templatelist: "模板列表",
+    settingsmenu: "系统设置",
+    telegrambot: "Telegram 机器人",
+    speedtestagents: "家宽测速端",
   },
   // 登录页面国际化
   login: {
@@ -32,19 +33,19 @@ export default {
       },
     },
   },
-    // 重置密码页面国际化
-    userset:{
-      title: "修改密码",
-      newUsername: "新账号",
-      newPassword: "新密码",
-      message: {
-        title:"提示",
-        xx1:"账号或密码不能为空",
-        xx2: "密码长度不能小于6位",
-        xx3:"你确定要重置密码吗",
-        xx4:"密码重置成功，新密码是：",
-      },
+  // 重置密码页面国际化
+  userset: {
+    title: "修改密码",
+    newUsername: "新账号",
+    newPassword: "新密码",
+    message: {
+      title: "提示",
+      xx1: "账号或密码不能为空",
+      xx2: "密码长度不能小于6位",
+      xx3: "你确定要重置密码吗",
+      xx4: "密码重置成功，新密码是：",
     },
+  },
   // 导航栏国际化
   navbar: {
     dashboard: "首页",

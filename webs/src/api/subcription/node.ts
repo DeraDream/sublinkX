@@ -26,16 +26,6 @@ export function UpdateNode(data: any){
     },
   });
 }
-export function TestNodeLatency(data: any){
-  return request({
-    url: "/api/v1/nodes/latency",
-    method: "post",
-    data,
-    headers: {
-      "Content-Type": "multipart/form-data",
-    },
-  });
-}
 export function DelNode(data: any){
   return request({
     url: "/api/v1/nodes/delete",

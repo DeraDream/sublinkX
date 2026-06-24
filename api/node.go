@@ -4,26 +4,15 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"net"
 	"net/url"
 	"strconv"
 	"strings"
 	"sublink/models"
 	"sublink/node"
-	"time"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
-
-type NodeLatencyResult struct {
-	ID       int    `json:"id"`
-	Name     string `json:"name"`
-	Protocol string `json:"protocol"`
-	Latency  int64  `json:"latency"`
-	Success  bool   `json:"success"`
-	Msg      string `json:"msg"`
-}
 
 func DocodeNodeName(nd *models.Node) (models.Node, error) { // 解码节点名称
 	if nd.Name == "" {
@@ -167,102 +156,6 @@ func NodeGet(c *gin.Context) {
 		"code": "00000",
 		"data": ns,
 		"msg":  "node get",
-	})
-}
-
-func parseLatencyTarget(link string) (string, string, error) {
-	u, err := url.Parse(strings.TrimSpace(link))
-	if err != nil {
-		return "", "", err
-	}
-	switch u.Scheme {
-	case "ss":
-		ss, err := node.DecodeSSURL(link)
-		if err != nil {
-			return "", "", err
-		}
-		return ss.Type, net.JoinHostPort(ss.Server, strconv.Itoa(ss.Port)), nil
-	case "vless":
-		vless, err := node.DecodeVLESSURL(link)
-		if err != nil {
-			return "", "", err
-		}
-		return "vless", net.JoinHostPort(vless.Server, strconv.Itoa(vless.Port)), nil
-	default:
-		return u.Scheme, "", fmt.Errorf("暂不支持 %s 协议测速", u.Scheme)
-	}
-}
-
-func tcpLatency(address string, timeout time.Duration) (time.Duration, error) {
-	start := time.Now()
-	conn, err := net.DialTimeout("tcp", address, timeout)
-	if err != nil {
-		return 0, err
-	}
-	_ = conn.Close()
-	return time.Since(start), nil
-}
-
-func NodeLatency(c *gin.Context) {
-	ids := c.PostForm("ids")
-	if strings.TrimSpace(ids) == "" {
-		c.JSON(400, gin.H{
-			"msg": "ids 不能为空",
-		})
-		return
-	}
-
-	var results []NodeLatencyResult
-	for _, idText := range strings.Split(ids, ",") {
-		idText = strings.TrimSpace(idText)
-		if idText == "" {
-			continue
-		}
-		id, err := strconv.Atoi(idText)
-		if err != nil {
-			results = append(results, NodeLatencyResult{
-				Msg: "id 格式不正确: " + idText,
-			})
-			continue
-		}
-
-		var nd models.Node
-		if err := models.DB.Where("id = ?", id).First(&nd).Error; err != nil {
-			results = append(results, NodeLatencyResult{
-				ID:  id,
-				Msg: "节点不存在",
-			})
-			continue
-		}
-
-		protocol, address, err := parseLatencyTarget(nd.Link)
-		result := NodeLatencyResult{
-			ID:       nd.ID,
-			Name:     nd.Name,
-			Protocol: protocol,
-		}
-		if err != nil {
-			result.Msg = err.Error()
-			results = append(results, result)
-			continue
-		}
-
-		latency, err := tcpLatency(address, 5*time.Second)
-		if err != nil {
-			result.Msg = err.Error()
-			results = append(results, result)
-			continue
-		}
-		result.Success = true
-		result.Latency = latency.Milliseconds()
-		result.Msg = "ok"
-		results = append(results, result)
-	}
-
-	c.JSON(200, gin.H{
-		"code": "00000",
-		"data": results,
-		"msg":  "延迟测试完成",
 	})
 }
 
