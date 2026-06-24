@@ -66,7 +66,7 @@ curl -fsSL -H "Cache-Control: no-cache" -H "Pragma: no-cache" https://raw.github
 
 ```sublink``` 呼出菜单
 
-安装脚本直接从 main 分支下载源码并在服务器本地编译，不依赖 GitHub Releases。
+安装脚本会自动下载 GitHub Releases 中适合当前架构的预编译版本。
 
 ### docker方式：
 

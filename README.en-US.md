@@ -62,7 +62,7 @@ curl -fsSL -H "Cache-Control: no-cache" -H "Pragma: no-cache" https://raw.github
 
 ```sublink``` Calls out the menu.
 
-The installer downloads and builds the main branch directly on the server. GitHub Releases are not required.
+The installer downloads the prebuilt binary for the current architecture from GitHub Releases.
 
 ### docker method:
 

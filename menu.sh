@@ -1,21 +1,61 @@
 #!/bin/bash
 REPO="DeraDream/sublinkX"
-BRANCH="main"
 INSTALL_DIR="/usr/local/bin/sublink"
 
 function Up {
-    echo "将从 $BRANCH 分支重新构建并更新，原有数据不会删除。"
-    curl --fail --silent --show-error --location \
-        -H "Cache-Control: no-cache" \
-        -H "Pragma: no-cache" \
-        "https://raw.githubusercontent.com/$REPO/$BRANCH/install.sh" | bash
+    latest_release=$(curl --fail --silent --show-error \
+        "https://api.github.com/repos/$REPO/releases/latest" |
+        grep '"tag_name":' |
+        sed -E 's/.*"([^"]+)".*/\1/')
+
+    if [ -z "$latest_release" ]; then
+        echo "未找到可更新的发行版。"
+        return 1
+    fi
+
+    case "$(uname -m)" in
+        x86_64)
+            file_name="sublink_amd64"
+            ;;
+        aarch64|arm64)
+            file_name="sublink_arm64"
+            ;;
+        *)
+            echo "不支持的机器类型: $(uname -m)"
+            return 1
+            ;;
+    esac
+
+    if [ "$version" = "$latest_release" ]; then
+        echo "当前已经是最新版本。"
+        return
+    fi
+
+    temp_file=$(mktemp)
+    if ! curl --fail --silent --show-error --location --retry 3 \
+        "https://github.com/$REPO/releases/download/$latest_release/$file_name" \
+        -o "$temp_file"; then
+        rm -f "$temp_file"
+        echo "下载失败，服务未更新。"
+        return 1
+    fi
+
+    chmod 755 "$temp_file"
+    systemctl stop sublink
+    mv "$temp_file" "$INSTALL_DIR/sublink"
+    systemctl start sublink
+    echo "更新完成，当前版本: $latest_release"
 }
 function Select {
     # 获取服务状态
     cd /usr/local/bin/sublink # 进入sublink目录
     status=$(systemctl is-active sublink)
     version=$(./sublink --version)
-    echo "更新来源:$REPO/$BRANCH"
+    latest_release=$(curl --fail --silent \
+        "https://api.github.com/repos/$REPO/releases/latest" |
+        grep '"tag_name":' |
+        sed -E 's/.*"([^"]+)".*/\1/')
+    echo "最新版本:$latest_release"
     echo "当前版本:$version"
     # 判断服务状态并打印
     if [ "$status" = "active" ]; then
