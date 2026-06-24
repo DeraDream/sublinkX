@@ -8,15 +8,15 @@ const { pkg } = __APP_INFO__;
 const defaultSettings: AppSettings = {
   title: pkg.name,
   version: pkg.version,
-  showSettings: true,
-  tagsView: true,
+  showSettings: false,
+  tagsView: false,
   fixedHeader: true,
   sidebarLogo: true,
   layout: LayoutEnum.LEFT,
   theme: ThemeEnum.LIGHT,
   size: SizeEnum.DEFAULT,
   language: LanguageEnum.ZH_CN,
-  themeColor: "#409EFF",
+  themeColor: "#2563EB",
   watermarkEnabled: false,
   watermarkContent: pkg.name,
 };

@@ -1,37 +1,63 @@
 <template>
-  <div :class="{ 'has-logo': sidebarLogo }">
-    <!--混合布局-->
-    <div class="flex w-full" v-if="layout == 'mix'">
-      <SidebarLogo v-if="sidebarLogo" :collapse="!appStore.sidebar.opened" />
-      <SidebarMixTopMenu class="flex-1" />
-      <NavbarRight />
-    </div>
-    <!--左侧布局 || 顶部布局 -->
-    <template v-else>
-      <SidebarLogo v-if="sidebarLogo" :collapse="!appStore.sidebar.opened" />
-      <el-scrollbar>
-        <SidebarMenu :menu-list="permissionStore.routes" base-path="" />
-      </el-scrollbar>
-      <NavbarRight v-if="layout === 'top'" />
-    </template>
+  <div class="sidebar">
+    <SidebarLogo :collapse="!appStore.sidebar.opened" />
+    <el-scrollbar>
+      <SidebarMenu :menu-list="permissionStore.routes" base-path="" />
+    </el-scrollbar>
   </div>
 </template>
 
 <script setup lang="ts">
-import { useSettingsStore, usePermissionStore, useAppStore } from "@/store";
+import { usePermissionStore, useAppStore } from "@/store";
 
 const appStore = useAppStore();
-const settingsStore = useSettingsStore();
 const permissionStore = usePermissionStore();
-
-const sidebarLogo = computed(() => settingsStore.sidebarLogo);
-const layout = computed(() => settingsStore.layout);
 </script>
 
 <style lang="scss" scoped>
-.has-logo {
-  .el-scrollbar {
-    height: calc(100vh - $navbar-height);
-  }
+.sidebar {
+  height: 100%;
+}
+
+.el-scrollbar {
+  height: calc(100vh - $navbar-height);
+}
+
+:deep(.el-menu) {
+  padding: 12px 10px;
+  background: transparent;
+}
+
+:deep(.el-menu-item),
+:deep(.el-sub-menu__title) {
+  height: 44px;
+  margin-bottom: 4px;
+  color: $menu-text;
+  border-radius: 4px;
+}
+
+:deep(.el-menu-item:hover),
+:deep(.el-sub-menu__title:hover) {
+  color: var(--el-text-color-primary);
+  background: $menu-hover;
+}
+
+:deep(.el-menu-item.is-active) {
+  color: $menu-active-text;
+  background: #e8f0ff;
+}
+
+:deep(.el-menu-item.is-active::before) {
+  position: absolute;
+  top: 10px;
+  bottom: 10px;
+  left: 0;
+  width: 3px;
+  content: "";
+  background: var(--el-color-primary);
+}
+
+html.dark :deep(.el-menu-item.is-active) {
+  background: #26354f;
 }
 </style>

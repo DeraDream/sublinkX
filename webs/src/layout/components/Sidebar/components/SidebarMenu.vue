@@ -3,12 +3,9 @@
   <el-menu
     :default-active="currentRoute.path"
     :collapse="!appStore.sidebar.opened"
-    :background-color="variables['menu-background']"
-    :text-color="variables['menu-text']"
-    :active-text-color="variables['menu-active-text']"
     :unique-opened="false"
     :collapse-transition="false"
-    :mode="layout === 'top' ? 'horizontal' : 'vertical'"
+    mode="vertical"
   >
     <SidebarMenuItem
       v-for="route in menuList"
@@ -21,15 +18,12 @@
 </template>
 
 <script lang="ts" setup>
-import { useSettingsStore, useAppStore } from "@/store";
+import { useAppStore } from "@/store";
 import { isExternal } from "@/utils/index";
 import path from "path-browserify";
-import variables from "@/styles/variables.module.scss";
 
-const settingsStore = useSettingsStore();
 const appStore = useAppStore();
 const currentRoute = useRoute();
-const layout = computed(() => settingsStore.layout);
 const props = defineProps({
   menuList: {
     required: true,

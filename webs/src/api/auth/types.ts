@@ -11,15 +11,6 @@ export interface LoginData {
    */
   password: string;
 
-  /**
-   * 验证码缓存key
-   */
-  captchaKey?: string;
-
-  /**
-   * 验证码
-   */
-  captchaCode?: string;
 }
 
 /**
@@ -42,25 +33,4 @@ export interface LoginResult {
    * token 类型
    */
   tokenType?: string;
-}
-
-/**
- * 验证码响应
- */
-export interface CaptchaResult {
-  /**
-   * 验证码缓存key
-   */
-  captchaKey: string;
-  /**
-   * 验证码图片Base64字符串
-   */
-  captchaBase64: string;
-}
-
-export interface VersionResult {
-  /**
-   * 版本号
-   */
-  version: string;
 }

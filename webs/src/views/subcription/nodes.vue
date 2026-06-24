@@ -1,7 +1,6 @@
 <script setup lang='ts'>
 import { ref,onMounted,nextTick  } from 'vue'
 import {getNodes,AddNodes,DelNode,UpdateNode,GetGroup,SetGroup,TestNodeLatency} from "@/api/subcription/node"
-import type { ElTable } from 'element-plus'
 
 interface GroupNode {
   ID: number;
@@ -31,7 +30,7 @@ const dialogMode = ref<'add' | 'edit'>('add');
 
 // --- 表格选择与操作相关数据 ---
 const multipleSelection = ref<Node[]>([]); // Stores selected table items
-const multipleTable = ref<InstanceType<typeof ElTable> | null>(null)
+const multipleTable = ref<any>(null)
 
 
 const tableRefs = ref<{ [key: string]: any }>({}); // Stores references to each el-table
@@ -112,7 +111,7 @@ const handleAddNode = () => {
   NodeGroupInput.value = '';
 };
 
-const handleEditNode = (row: Node) => {  
+const handleEditNode = (row: any) => {
   // NodeNewNameInput.value = row.Name; // 编辑时使用原名称
   // NodeNewLinkInput.value = row.Link; // 编辑时使用原链接
   dialogMode.value = 'edit';
@@ -122,7 +121,7 @@ const handleEditNode = (row: Node) => {
     Title: '编辑节点',
     Name: row.Name,
     Link: row.Link,
-    GroupName: (row.GroupNodes || []).map(g => g.Name),
+    GroupName: (row.GroupNodes || []).map((g: GroupNode) => g.Name),
   };
   SelectionNodeGroups.value = NodeForm.value.GroupName || [];
   SelectionNode.value = row.Name;
@@ -283,10 +282,10 @@ const copyUrl = (url: string) => {
   }
 };
 // 复制表格节点信息
-const copyInfo = (row: Node) => {
+const copyInfo = (row: any) => {
   copyUrl(row.Link);
 };
-const handleDel = async (row: Node) => {
+const handleDel = async (row: any) => {
   try {
     await ElMessageBox.confirm(
       `你是否要删除 ${row.Name} ?`,
@@ -438,7 +437,7 @@ watch(activeName, (newVal) => {
 </script>
 
 <template>
-  <div>
+  <div class="page-workspace">
  <el-dialog v-model="Nodedialog" :title="NodeForm.Title" width="80%">
   <el-input
     v-model="NodeForm.Link"
@@ -482,7 +481,7 @@ watch(activeName, (newVal) => {
 
 
   <!-- 显示表格数据 -->
-  <el-card>
+  <section class="work-surface">
     <el-tabs v-model="activeName" >
       <el-tab-pane :label="`全部(${allNodes.length})`" name="全部" />
       <el-tab-pane :label="item" :name="item" v-for="item in allGroupNames" :key="item" />
@@ -566,11 +565,11 @@ watch(activeName, (newVal) => {
       <el-button type="danger" @click="selectDel">删除选中</el-button>
       <el-button type="success" :loading="latencyLoading" @click="testLatency">测试延迟</el-button>
       <div style="margin-top: 20px" />
-  </el-card>
+  </section>
   <!-- 显示表格数据结束 -->
   </div>
 </template>
-<style>
+<style scoped>
  /* 创建默认样式 */
  .default {
   font-size: 14px;

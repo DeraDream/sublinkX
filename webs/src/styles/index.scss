@@ -1,7 +1,29 @@
 @use "./reset";
 
 .app-container {
-  padding: 10px;
+  padding: 24px;
+}
+
+.page-workspace {
+  padding: 24px;
+}
+
+.work-surface {
+  padding: 20px;
+  background: var(--el-bg-color);
+  border: 1px solid var(--el-border-color-lighter);
+}
+
+@media (max-width: 768px) {
+  .app-container,
+  .page-workspace {
+    padding: 14px;
+  }
+
+  .work-surface {
+    padding: 14px;
+    overflow-x: auto;
+  }
 }
 
 .search-container {
@@ -11,6 +33,45 @@
   border: 1px solid var(--el-border-color-light);
   border-radius: 4px;
   box-shadow: var(--el-box-shadow-light);
+}
+
+body {
+  color: var(--el-text-color-primary);
+  background: var(--el-bg-color-page);
+}
+
+.el-card {
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 4px;
+  box-shadow: none !important;
+}
+
+.el-button,
+.el-input__wrapper,
+.el-select__wrapper,
+.el-dialog {
+  border-radius: 4px;
+}
+
+.el-table {
+  --el-table-border-color: var(--el-border-color-lighter);
+  --el-table-header-bg-color: #f8fafc;
+  --el-table-row-hover-bg-color: #f8fafc;
+}
+
+.el-table th.el-table__cell {
+  height: 44px;
+  font-weight: 600;
+  color: #475569;
+}
+
+.el-table td.el-table__cell {
+  height: 48px;
+}
+
+html.dark .el-table {
+  --el-table-header-bg-color: #23262b;
+  --el-table-row-hover-bg-color: #282c32;
 }
 
 .table-container > .el-card__header {

@@ -34,31 +34,19 @@ const logo = ref(new URL(`../../../../assets/logo.png`, import.meta.url).href);
   width: 100%;
   height: $navbar-height;
   background-color: $sidebar-logo-background;
+  border-bottom: 1px solid var(--el-border-color-lighter);
 
   .logo-image {
-    width: 20px;
-    height: 20px;
+    width: 28px;
+    height: 28px;
   }
 
   .logo-title {
-    flex-shrink: 0; /* 防止容器在空间不足时缩小 */
+    flex-shrink: 0;
     margin-left: 10px;
     font-size: 14px;
-    font-weight: bold;
-    color: white;
-  }
-}
-
-.layout-top,
-.layout-mix {
-  .logo-container {
-    width: $sidebar-width;
-  }
-
-  &.hideSidebar {
-    .logo-container {
-      width: $sidebar-width-collapsed;
-    }
+    font-weight: 650;
+    color: var(--el-text-color-primary);
   }
 }
 </style>

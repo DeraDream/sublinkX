@@ -56,21 +56,20 @@ func GetMenus(c *gin.Context) {
 				},
 			},
 		},
-		// 订阅管理
 		{
-			Path:      "/subcription",
+			Path:      "/subs",
 			Component: "Layout",
-			Redirect:  "/subcription/subs",
-			Name:      "subcription",
+			Redirect:  "/subs/index",
+			Name:      "subscriptions",
 			Meta: Meta{
-				Title:  "subcription",
-				Icon:   "client",
+				Title:  "sublist",
+				Icon:   "link",
 				Hidden: false,
 				Roles:  []string{"ADMIN"},
 			},
 			Children: []Child{
 				{
-					Path:      "subs",
+					Path:      "index",
 					Component: "subcription/subs",
 					Name:      "Subs",
 					Meta: Meta{
@@ -81,8 +80,22 @@ func GetMenus(c *gin.Context) {
 						KeepAlive: true,
 					},
 				},
+			},
+		},
+		{
+			Path:      "/nodes",
+			Component: "Layout",
+			Redirect:  "/nodes/index",
+			Name:      "nodes",
+			Meta: Meta{
+				Title:  "nodelist",
+				Icon:   "publish",
+				Hidden: false,
+				Roles:  []string{"ADMIN"},
+			},
+			Children: []Child{
 				{
-					Path:      "nodes",
+					Path:      "index",
 					Component: "subcription/nodes",
 					Name:      "Nodes",
 					Meta: Meta{
@@ -93,22 +106,22 @@ func GetMenus(c *gin.Context) {
 						KeepAlive: true,
 					},
 				},
-				// //测试开始
-				// {
-				// 	Path:      "nodesdemo",
-				// 	Component: "subcription/nodesdemo",
-				// 	Name:      "Nodesdemo",
-				// 	Meta: Meta{
-				// 		Title:     "nodelist",
-				// 		Icon:      "publish",
-				// 		Hidden:    false,
-				// 		Roles:     []string{"ADMIN"},
-				// 		KeepAlive: true,
-				// 	},
-				// },
-				// //测试结束
+			},
+		},
+		{
+			Path:      "/templates",
+			Component: "Layout",
+			Redirect:  "/templates/index",
+			Name:      "templates",
+			Meta: Meta{
+				Title:  "templatelist",
+				Icon:   "document",
+				Hidden: false,
+				Roles:  []string{"ADMIN"},
+			},
+			Children: []Child{
 				{
-					Path:      "template",
+					Path:      "index",
 					Component: "subcription/template",
 					Name:      "Template",
 					Meta: Meta{

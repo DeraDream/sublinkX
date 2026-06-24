@@ -148,7 +148,7 @@ const currentTableData = computed(() => {
 </script>
 
 <template>
-  <div>
+  <div class="page-workspace">
     <el-dialog
     v-model="dialogVisible"
     :title="TempTitle"
@@ -170,7 +170,7 @@ const currentTableData = computed(() => {
       </div>
     </template>
   </el-dialog>
-    <el-card>
+    <section class="work-surface">
     <el-button type="primary" @click="handleAddTemp">添加模版</el-button>
     <div style="margin-bottom: 10px"></div>
       <el-table ref="table" :data="currentTableData" style="width: 100%" @selection-change="handleSelectionChange">
@@ -204,14 +204,11 @@ const currentTableData = computed(() => {
   :total="tableData.length">
 </el-pagination>
 
-    </el-card>
+    </section>
   </div>
 </template>
 
 <style scoped>
-.el-card{
-  margin: 10px;
-}
 .el-input{
   margin-bottom: 10px;
 }

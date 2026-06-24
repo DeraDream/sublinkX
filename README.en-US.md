@@ -43,16 +43,17 @@ surge support protocol:ss trojan vmess hy2 tuic
 ![1712594176714](webs/src/assets/1.png)
 ![1712594176714](webs/src/assets/2.png)
 
-## [2.2 Update]
+## [2.3 Update]
 
 #### Backend Update
 
-1. Add TCP latency testing for SS and VLESS nodes.
-2. Switch installation and update sources to DeraDream/sublinkX.
+1. Remove the image captcha from login.
+2. Promote subscriptions, nodes, and templates to top-level navigation.
 
 #### Front-end Update
 
-1. Add latency display and batch testing to the node list.
+1. Remove the top tags view.
+2. Refresh the interface with a flat visual style.
 
 ## [Installation instructions]
 ### linux method:

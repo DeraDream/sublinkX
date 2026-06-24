@@ -303,7 +303,7 @@ const toggleSelect = (name: string) => {
 </script>
 
 <template>
-  <div>
+  <div class="page-workspace">
     <el-dialog v-model="Qrdialog" width="300px" style="text-align: center" :title="QrTitle">
       <qrcode-vue :value="qrcode"  :size="200" level="H" />
       <el-input
@@ -410,7 +410,7 @@ const toggleSelect = (name: string) => {
       </div>
     </template>
   </el-dialog>
-    <el-card>
+    <section class="work-surface">
     <el-button type="primary" @click="handleAddSub">添加订阅</el-button>
     <div style="margin-bottom: 10px"></div>
 
@@ -466,14 +466,11 @@ const toggleSelect = (name: string) => {
   :total="tableData.length">
 </el-pagination>
 
-    </el-card>
+    </section>
   </div>
 </template>
 
 <style scoped>
-.el-card{
-  margin: 10px;
-}
 .el-input{
   margin-bottom: 10px;
 }

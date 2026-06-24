@@ -31,39 +31,25 @@
         <span>{{ userStore.user.username }}</span>
       </div>
       <template #dropdown>
-        <el-dropdown-menu>
-            <router-link to="/system/user/set">
-            <el-dropdown-item>{{ $t("navbar.userset") }}</el-dropdown-item>
-            </router-link>
-          <el-dropdown-item divided @click="logout">
+          <el-dropdown-menu>
+          <el-dropdown-item @click="logout">
             {{ $t("navbar.logout") }}
           </el-dropdown-item>
         </el-dropdown-menu>
       </template>
     </el-dropdown>
 
-    <!-- 设置 -->
-    <template v-if="defaultSettings.showSettings">
-      <div class="setting-item" @click="settingStore.settingsVisible = true">
-        <svg-icon icon-class="setting" />
-      </div>
-    </template>
   </div>
 </template>
 <script setup lang="ts">
 import {
   useAppStore,
-  useTagsViewStore,
   useUserStore,
-  useSettingsStore,
 } from "@/store";
-import defaultSettings from "@/settings";
 import { DeviceEnum } from "@/enums/DeviceEnum";
 
 const appStore = useAppStore();
-const tagsViewStore = useTagsViewStore();
 const userStore = useUserStore();
-const settingStore = useSettingsStore();
 
 const route = useRoute();
 const router = useRouter();
@@ -85,9 +71,6 @@ function logout() {
     userStore
       .logout()
       .then(() => {
-        tagsViewStore.delAllViews();
-      })
-      .then(() => {
         router.push(`/login?redirect=${route.fullPath}`);
       });
   });
@@ -95,24 +78,16 @@ function logout() {
 </script>
 <style lang="scss" scoped>
 .setting-item {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   min-width: 40px;
   height: $navbar-height;
-  line-height: $navbar-height;
   color: var(--el-text-color);
-  text-align: center;
   cursor: pointer;
 
   &:hover {
-    background: rgb(0 0 0 / 10%);
-  }
-}
-
-.layout-top,
-.layout-mix {
-  .setting-item,
-  .el-icon {
-    color: var(--el-color-white);
+    background: var(--el-fill-color-light);
   }
 }
 

@@ -4,7 +4,6 @@ import (
 	"log"
 	"sublink/middlewares"
 	"sublink/models"
-	"sublink/utils"
 	"time"
 
 	"github.com/dgrijalva/jwt-go"
@@ -27,41 +26,10 @@ func GetToken(username string) (string, error) {
 	return token.SignedString(middlewares.Secret)
 }
 
-// 获取captcha图形验证码
-func GetCaptcha(c *gin.Context) {
-	id, bs4, _, err := utils.GetCaptcha()
-	if err != nil {
-		log.Println("获取验证码失败")
-		c.JSON(400, gin.H{
-			"msg": "获取验证码失败",
-		})
-		return
-	}
-	c.JSON(200, gin.H{
-		"code": "00000",
-		"data": gin.H{
-			"captchaKey":    id,
-			"captchaBase64": bs4,
-		},
-		"msg": "获取验证码成功",
-	})
-
-}
-
 // 用户登录
 func UserLogin(c *gin.Context) {
 	username := c.PostForm("username")
 	password := c.PostForm("password")
-	captchaCode := c.PostForm("captchaCode")
-	captchaKey := c.PostForm("captchaKey")
-	// 验证验证码
-	if !utils.VerifyCaptcha(captchaKey, captchaCode) {
-		log.Println("验证码错误")
-		c.JSON(400, gin.H{
-			"msg": "验证码错误",
-		})
-		return
-	}
 	user := &models.User{Username: username, Password: password}
 	err := user.Verify()
 	if err != nil {

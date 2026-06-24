@@ -1,43 +1,27 @@
 <template>
-  <div class="dashboard-container">
-    <!-- github角标 -->
-    <github-corner class="github-corner" />
+  <div class="dashboard">
+    <header class="dashboard-header">
+      <div>
+        <p class="eyebrow">SUBLINKX</p>
+        <h1>{{ greeting }}，{{ userStore.user.nickname }}</h1>
+      </div>
+      <span class="status">
+        <i />
+        服务运行中
+      </span>
+    </header>
 
-    <el-card shadow="never">
-      <el-row justify="space-between">
-        <el-col :span="18" :xs="24">
-          <div class="flex h-full items-center">
-            <img
-              class="w-20 h-20 mr-5 rounded-full"
-              :src="userStore.user.avatar + '?imageView2/1/w/80/h/80'"
-            />
-            <div>
-              <p>{{ greetings }}</p>
-              <p class="text-sm text-gray">
-                今日天气晴朗，气温在15℃至25℃之间，东南风。
-              </p>
-            </div>
-          </div>
-        </el-col>
-
-        <el-col :span="6" :xs="24">
-          <div class="flex h-full items-center justify-around">
-            <el-statistic
-              v-for="item in statisticData"
-              :key="item.key"
-              :value="item.value"
-            >
-              <template #title>
-                <div class="flex items-center">
-                  <svg-icon :icon-class="item.iconClass" size="20px" />
-                  <span class="text-[16px] ml-1">{{ item.title }}</span>
-                </div>
-              </template>
-            </el-statistic>
-          </div>
-        </el-col>
-      </el-row>
-    </el-card>
+    <section class="metrics">
+      <article v-for="item in statisticData" :key="item.key" class="metric">
+        <div class="metric-icon" :class="item.key">
+          <svg-icon :icon-class="item.iconClass" size="22px" />
+        </div>
+        <div>
+          <span>{{ item.title }}</span>
+          <strong>{{ item.value }}</strong>
+        </div>
+      </article>
+    </section>
   </div>
 </template>
 
@@ -48,92 +32,146 @@ defineOptions({
 });
 
 import { useUserStore } from "@/store/modules/user";
-import { getSubTotal,getNodeTotal } from "@/api/total";
+import { getSubTotal, getNodeTotal } from "@/api/total";
+
 const userStore = useUserStore();
-const date: Date = new Date();
-const subTotal = ref(0);
-const nodeTotal = ref(0);
-// 右上角数量
 const statisticData = ref([
   {
     value: 0,
     iconClass: "message",
     title: "订阅",
-    key: "message",
+    key: "subscriptions",
   },
   {
     value: 0,
     iconClass: "link",
     title: "节点",
-    key: "upcoming",
+    key: "nodes",
   },
 ]);
-const getsubtotal = async () => {
-  const { data } = await getSubTotal();
-  subTotal.value = data;
-  statisticData.value[0].value = data;
-};
-const getnodetotal = async () => {
-  const { data } = await getNodeTotal();
-  nodeTotal.value = data;
-  statisticData.value[1].value = data;
-};
-onMounted(() => {
-  getsubtotal();
-  getnodetotal();
-});
-const greetings = computed(() => {
-  const hours = date.getHours();
-  if (hours >= 6 && hours < 8) {
-    return "晨起披衣出草堂，轩窗已自喜微凉🌅！";
-  } else if (hours >= 8 && hours < 12) {
-    return "上午好，" + userStore.user.nickname + "！";
-  } else if (hours >= 12 && hours < 18) {
-    return "下午好，" + userStore.user.nickname + "！";
-  } else if (hours >= 18 && hours < 24) {
-    return "晚上好，" + userStore.user.nickname + "！";
-  } else {
-    return "偷偷向银河要了一把碎星，只等你闭上眼睛撒入你的梦中，晚安🌛！";
-  }
+
+const greeting = computed(() => {
+  const hour = new Date().getHours();
+  if (hour < 12) return "上午好";
+  if (hour < 18) return "下午好";
+  return "晚上好";
 });
 
-
-
-
+onMounted(async () => {
+  const [subscriptions, nodes] = await Promise.all([
+    getSubTotal(),
+    getNodeTotal(),
+  ]);
+  statisticData.value[0].value = subscriptions.data;
+  statisticData.value[1].value = nodes.data;
+});
 </script>
 
 <style lang="scss" scoped>
-.dashboard-container {
-  position: relative;
-  padding: 24px;
+.dashboard {
+  padding: 32px;
+}
 
-  .user-avatar {
-    width: 40px;
-    height: 40px;
-    border-radius: 50%;
+.dashboard-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  padding-bottom: 24px;
+  border-bottom: 1px solid var(--el-border-color-lighter);
+}
+
+.eyebrow {
+  margin: 0 0 8px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--el-color-primary);
+  letter-spacing: 0.12em;
+}
+
+h1 {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 650;
+  letter-spacing: 0;
+}
+
+.status {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  font-size: 13px;
+  color: var(--el-text-color-secondary);
+}
+
+.status i {
+  width: 8px;
+  height: 8px;
+  background: #16a34a;
+  border-radius: 50%;
+}
+
+.metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 260px));
+  gap: 16px;
+  margin-top: 24px;
+}
+
+.metric {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  min-height: 112px;
+  padding: 20px;
+  background: var(--el-bg-color);
+  border: 1px solid var(--el-border-color-lighter);
+}
+
+.metric-icon {
+  display: grid;
+  width: 44px;
+  height: 44px;
+  color: #1d4ed8;
+  background: #e8f0ff;
+  place-items: center;
+}
+
+.metric-icon.nodes {
+  color: #047857;
+  background: #e5f7ef;
+}
+
+.metric span,
+.metric strong {
+  display: block;
+}
+
+.metric span {
+  margin-bottom: 4px;
+  font-size: 13px;
+  color: var(--el-text-color-secondary);
+}
+
+.metric strong {
+  font-size: 28px;
+  font-weight: 650;
+}
+
+@media (max-width: 640px) {
+  .dashboard {
+    padding: 20px 14px;
   }
 
-  .github-corner {
-    position: absolute;
-    top: 0;
-    right: 0;
-    z-index: 1;
-    border: 0;
+  .dashboard-header {
+    align-items: flex-start;
   }
 
-  .data-box {
-    display: flex;
-    justify-content: space-between;
-    padding: 20px;
-    font-weight: bold;
-    color: var(--el-text-color-regular);
-    background: var(--el-bg-color-overlay);
-    border-color: var(--el-border-color);
-    box-shadow: var(--el-box-shadow-dark);
+  .status {
+    display: none;
   }
 
-  .svg-icon {
-    fill: currentcolor !important;
+  .metrics {
+    grid-template-columns: 1fr;
   }
 }
 </style>
