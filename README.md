@@ -44,17 +44,16 @@ surge支持协议:ss trojan vmess hy2 tuic
 ![1712594176714](webs/src/assets/1.png)
 ![1712594176714](webs/src/assets/2.png)
 
-## [2.1更新说明]
+## [2.2更新说明]
 
 #### 后端更新
 
-1. 修复底层代码
-2. 修复各种奇葩bug
-3. 建议卸载数据库(记得备份数据) 新数据库结构有些不一样可能会导致一些bug
+1. 新增 SS、VLESS 节点 TCP 延迟测试接口
+2. 安装和更新来源切换到 DeraDream/sublinkX
 
 #### 前端更新
 
-1. 完善node页面
+1. 节点列表新增延迟展示和批量测试按钮
 
 
 
@@ -62,7 +61,7 @@ surge支持协议:ss trojan vmess hy2 tuic
 ## [安装说明]
 ### linux方式：
 ```
-curl -s -H "Cache-Control: no-cache" -H "Pragma: no-cache" https://raw.githubusercontent.com/gooaclok819/sublinkX/main/install.sh | sudo bash
+curl -fsSL -H "Cache-Control: no-cache" -H "Pragma: no-cache" https://raw.githubusercontent.com/DeraDream/sublinkX/main/install.sh | sudo bash
 ```
 
 ```sublink``` 呼出菜单
@@ -81,7 +80,7 @@ docker run --name sublinkx -p 8000:8000 \
 -v $PWD/db:/app/db \
 -v $PWD/template:/app/template \
 -v $PWD/logs:/app/logs \
--d jaaksi/sublinkx
+-d ghcr.io/deradream/sublinkx:latest
 ```
 
 To support the development of my project, I plan to apply for a free VPS offered by ZMTO. My project currently involves Docker image support for multiple architectures (arm64 and amd64), as well as automation for building and pushing. Therefore, I am requesting a 4-core, 8GB RAM Ubuntu VPS with root access.
@@ -93,5 +92,4 @@ Thank you for your attention and support!
 Feel free to adjust any details as needed!
 
 ## Stargazers over time
-[![Stargazers over time](https://starchart.cc/gooaclok819/sublinkX.svg?variant=adaptive)](https://starchart.cc/gooaclok819/sublinkX)
-
+[![Stargazers over time](https://starchart.cc/DeraDream/sublinkX.svg?variant=adaptive)](https://starchart.cc/DeraDream/sublinkX)

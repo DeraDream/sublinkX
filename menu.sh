@@ -1,7 +1,14 @@
 #!/bin/bash
+REPO="DeraDream/sublinkX"
+INSTALL_DIR="/usr/local/bin/sublink"
+
 function Up {
     # 获取最新的发行版标签
-    latest_release=$(curl --silent "https://api.github.com/repos/gooaclok819/sublinkX/releases/latest" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
+    latest_release=$(curl --fail --silent "https://api.github.com/repos/$REPO/releases/latest" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
+    if [ -z "$latest_release" ]; then
+        echo "未找到可更新的发行版。"
+        return 1
+    fi
     echo "最新版本: $latest_release"
     # 检测机器类型
     machine_type=$(uname -m)
@@ -16,7 +23,10 @@ function Up {
     fi
 
     # 下载文件
-    curl -LO "https://github.com/gooaclok819/sublinkX/releases/download/$latest_release/$file_name"
+    curl --fail -LO "https://github.com/$REPO/releases/download/$latest_release/$file_name" || {
+        echo "下载失败，服务未更新。"
+        return 1
+    }
 
     # 设置文件为可执行
     chmod +x $file_name
@@ -28,7 +38,7 @@ function Up {
 }
 function Select {
     # 获取最新的发行版标签
-    latest_release=$(curl --silent "https://api.github.com/repos/gooaclok819/sublinkX/releases/latest" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
+    latest_release=$(curl --fail --silent "https://api.github.com/repos/$REPO/releases/latest" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
     # 获取服务状态
     cd /usr/local/bin/sublink # 进入sublink目录
     status=$(systemctl is-active sublink)

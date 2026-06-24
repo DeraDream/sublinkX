@@ -1,4 +1,8 @@
 #!/bin/bash
+set -e
+
+REPO="DeraDream/sublinkX"
+
 # 检查用户是否为root
 if [ "$(id -u)" != "0" ]; then
     echo -e "${RED}该脚本必须以root身份运行。${NC}"
@@ -13,7 +17,11 @@ if [ ! -d "$INSTALL_DIR" ]; then
 fi
 
 # 获取最新的发行版标签
-latest_release=$(curl --silent "https://api.github.com/repos/gooaclok819/sublinkX/releases/latest" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
+latest_release=$(curl --fail --silent "https://api.github.com/repos/$REPO/releases/latest" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
+if [ -z "$latest_release" ]; then
+    echo "未找到可安装的发行版，请先在 GitHub Releases 发布版本。"
+    exit 1
+fi
 echo "最新版本: $latest_release"
 
 # 检测机器类型
@@ -30,7 +38,7 @@ fi
 
 # 下载文件
 cd ~
-curl -LO "https://github.com/gooaclok819/sublinkX/releases/download/$latest_release/$file_name"
+curl --fail -LO "https://github.com/$REPO/releases/download/$latest_release/$file_name"
 
 # 设置文件为可执行
 chmod +x $file_name
@@ -60,5 +68,5 @@ echo "安装完成已经启动输入sublink可以呼出菜单"
 
 
 # 下载menu.sh并设置权限
-curl -o /usr/bin/sublink -H "Cache-Control: no-cache" -H "Pragma: no-cache" https://raw.githubusercontent.com/gooaclok819/sublinkX/main/menu.sh
+curl --fail -o /usr/bin/sublink -H "Cache-Control: no-cache" -H "Pragma: no-cache" "https://raw.githubusercontent.com/$REPO/main/menu.sh"
 chmod 755 "/usr/bin/sublink"

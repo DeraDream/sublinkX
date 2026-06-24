@@ -43,24 +43,21 @@ surge support protocol:ss trojan vmess hy2 tuic
 ![1712594176714](webs/src/assets/1.png)
 ![1712594176714](webs/src/assets/2.png)
 
-## [Updated Description]
+## [2.2 Update]
 
-####Backend Update
+#### Backend Update
 
-1. Fix and refactor a large number of Node templates and the underlying code for new groupings
+1. Add TCP latency testing for SS and VLESS nodes.
+2. Switch installation and update sources to DeraDream/sublinkX.
 
-2. Add grouping functionality to nodes
+#### Front-end Update
 
-3. Fix bug that subscription resolution is empty or etc
-
-####Front-end update
-
-1. Refactor front-end node page to add grouping function (temporarily only some simple functions)
+1. Add latency display and batch testing to the node list.
 
 ## [Installation instructions]
 ### linux method:
 ```
-curl -s -H “Cache-Control: no-cache” -H “Pragma: no-cache” https://raw.githubusercontent.com/gooaclok819/sublinkX/main/install.sh | sudo bash
+curl -fsSL -H "Cache-Control: no-cache" -H "Pragma: no-cache" https://raw.githubusercontent.com/DeraDream/sublinkX/main/install.sh | sudo bash
 ```
 
 ```sublink``` Calls out the menu.
@@ -79,7 +76,7 @@ docker run --name sublinkx -p 8000:8000 \
 -v $PWD/db:/app/db \
 -v $PWD/template:/app/template \
 -v $PWD/logs:/app/logs \
--d jaaksi/sublinkx
+-d ghcr.io/deradream/sublinkx:latest
 ```
 
 To support the development of my project, I plan to apply for a free VPS offered by ZMTO. My project currently involves Docker image support for multiple My project currently involves Docker image support for multiple architectures (arm64 and amd64), as well as automation for building and pushing. Therefore, I am requesting a 4-core, 8GB RAM Ubuntu VPS with root access.
@@ -91,5 +88,4 @@ Thank you for your attention and support!
 Feel free to adjust any details as needed!
 
 ## Stargazers over time
-[![Stargazers over time](https://starchart.cc/gooaclok819/sublinkX.svg?variant=adaptive)](https://starchart.cc/gooaclok819/sublinkX)
-
+[![Stargazers over time](https://starchart.cc/DeraDream/sublinkX.svg?variant=adaptive)](https://starchart.cc/DeraDream/sublinkX)
