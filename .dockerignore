@@ -2,7 +2,6 @@
 *.DS_Store
 db
 logs
-webs
 README.md
 README.en-US.md
 *.sh

@@ -1,6 +1,7 @@
 # Frontend build stage
 FROM node:20-alpine AS frontend
 WORKDIR /app
+ENV HUSKY=0
 RUN corepack enable && corepack prepare pnpm@8.15.6 --activate
 COPY webs/package.json ./
 RUN pnpm install --no-frozen-lockfile
