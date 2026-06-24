@@ -1,175 +1,222 @@
-<script setup lang='ts'>
-import { ref,onMounted,nextTick  } from 'vue'
-import {getTemp,AddTemp,UpdateTemp,DelTemp} from "@/api/subcription/temp"
+<script setup lang="ts">
+import { computed, nextTick, onMounted, ref } from "vue";
+import YamlEditor from "@/components/YamlEditor/index.vue";
+import { AddTemp, DelTemp, getTemp, UpdateTemp } from "@/api/subcription/temp";
+
 interface Temp {
   file: string;
   text: string;
-  CreateDate: string;
+  create_date: string;
 }
-const tableData = ref<Temp[]>([])
-const Tempoldname = ref('')
-const Tempname = ref('')
-const TempText = ref('')
-const dialogVisible = ref(false)
-const table = ref()
-const TempTitle = ref('')
-const radio1 = ref('1')
+
+const tableData = ref<Temp[]>([]);
+const Tempoldname = ref("");
+const Tempname = ref("");
+const TempText = ref("");
+const dialogVisible = ref(false);
+const table = ref();
+const TempTitle = ref("");
 
 async function gettemps() {
   const {data} = await getTemp();
-    tableData.value = data
-}
-onMounted(async() => {
-  gettemps()
-})
-const handleAddTemp = ()=>{
-  TempTitle.value= '添加模版'
-  Tempname.value = ''
-  TempText.value = ''
-  radio1.value = '1'
-  dialogVisible.value = true
-}
-const addtemp = async ()=>{
-   if (TempTitle.value== '添加模版'){
-        await AddTemp({
-        filename: Tempname.value.trim(),
-        text: TempText.value.trim(),
-      })
-      ElMessage.success("添加成功");
-   }else{
-    await UpdateTemp({
-        filename: Tempname.value.trim(),
-        oldname: Tempoldname.value.trim(),
-        text: TempText.value.trim(),
-      })
-    ElMessage.success("更新成功");
-   }
-    gettemps()
-    Tempname.value = ''
-    TempText.value = ''
-    dialogVisible.value = false;
+  tableData.value = data;
 }
 
-const multipleSelection = ref<Temp[]>([])
-const handleSelectionChange = (val: Temp[]) => {
-  multipleSelection.value = val
-  
-}
-const selectAll = () => {
-    nextTick(() => {
-        tableData.value.forEach(row => {
-            table.value.toggleRowSelection(row, true)
-        })
-    })
-}
-const handleEdit = (row:any) => {
-  for (let i = 0; i < tableData.value.length; i++) {
-    if (tableData.value[i].file === row.file) {
-      TempTitle.value= '编辑模版'
-      Tempname.value = tableData.value[i].file
-      Tempoldname.value = Tempname.value
-      TempText.value = tableData.value[i].text
-      dialogVisible.value = true
-      // value1.value = tableData.value[i].Nodes.map((item) => item.Name)
-    }
+onMounted(gettemps);
+
+const handleAddTemp = () => {
+  TempTitle.value = "添加模板";
+  Tempname.value = "";
+  TempText.value = "";
+  dialogVisible.value = true;
+};
+
+const addtemp = async () => {
+  const filename = Tempname.value.trim();
+  if (!filename) {
+    ElMessage.warning("请输入模板文件名");
+    return;
   }
-}
-const toggleSelection = () => {
-  table.value.clearSelection()
-}
 
-const handleDel = (row:any) => {
+  if (TempTitle.value === "添加模板") {
+    await AddTemp({
+      filename,
+      text: TempText.value,
+    });
+    ElMessage.success("添加成功");
+  } else {
+    await UpdateTemp({
+      filename,
+      oldname: Tempoldname.value.trim(),
+      text: TempText.value,
+    });
+    ElMessage.success("更新成功");
+  }
+
+  await gettemps();
+  Tempname.value = "";
+  TempText.value = "";
+  dialogVisible.value = false;
+};
+
+const multipleSelection = ref<Temp[]>([]);
+const handleSelectionChange = (val: Temp[]) => {
+  multipleSelection.value = val;
+};
+
+const selectAll = () => {
+  nextTick(() => {
+    tableData.value.forEach((row) => {
+      table.value.toggleRowSelection(row, true);
+    });
+  });
+};
+
+const handleExport = (row: any) => {
+  const blob = new Blob([row.text], {
+    type: "application/yaml;charset=utf-8",
+  });
+  const url = URL.createObjectURL(blob);
+  const downloadLink = document.createElement("a");
+  downloadLink.href = url;
+  downloadLink.download = row.file;
+  document.body.appendChild(downloadLink);
+  downloadLink.click();
+  downloadLink.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+};
+
+const handleEdit = (row: any) => {
+  TempTitle.value = "编辑模板";
+  Tempname.value = row.file;
+  Tempoldname.value = row.file;
+  TempText.value = row.text;
+  dialogVisible.value = true;
+};
+
+const toggleSelection = () => {
+  table.value.clearSelection();
+};
+
+const handleDel = (row: any) => {
   ElMessageBox.confirm(
     `你是否要删除 ${row.file} ?`,
-    '提示',
+    "提示",
     {
-      confirmButtonText: 'OK',
-      cancelButtonText: 'Cancel',
-      type: 'warning',
+      confirmButtonText: "确定",
+      cancelButtonText: "取消",
+      type: "warning",
     }
   ).then(async () => {
-      await DelTemp({
-        filename: row.file,
-        type: row.type
-      })
-      ElMessage({
-        type: 'success',
-        message: '删除成功',
-      })
-      gettemps()      
-    })
-}
+    await DelTemp({
+      filename: row.file,
+    });
+    ElMessage({
+      type: "success",
+      message: "删除成功",
+    });
+    gettemps();
+  });
+};
 
 const selectDel = () => {
   if (multipleSelection.value.length === 0) {
-      return
+    return;
   }
   ElMessageBox.confirm(
-    `你是否要删除选中这些 ?`,
-    '提示',
+    "你是否要删除选中的模板？",
+    "提示",
     {
-      confirmButtonText: 'OK',
-      cancelButtonText: 'Cancel',
-      type: 'warning',
+      confirmButtonText: "确定",
+      cancelButtonText: "取消",
+      type: "warning",
     }
-  ).then( () => {
-    for (let i = 0; i < multipleSelection.value.length; i++) {
-       DelTemp({
-        filename: multipleSelection.value[i].file,
-      })
-        tableData.value = tableData.value.filter((item) => item.file !== multipleSelection.value[i].file)
-      }
-      ElMessage({
-        type: 'success',
-        message: '删除成功',
-      })
-    })
+  ).then(async () => {
+    await Promise.all(
+      multipleSelection.value.map((item) =>
+        DelTemp({
+          filename: item.file,
+        })
+      )
+    );
+    await gettemps();
+    ElMessage({
+      type: "success",
+      message: "删除成功",
+    });
+  });
+};
 
-}
-// 分页显示
 const currentPage = ref(1);
 const pageSize = ref(10);
 const handleSizeChange = (val: number) => {
   pageSize.value = val;
-  // console.log(`每页 ${val} 条`);
-}
+};
 
 const handleCurrentChange = (val: number) => {
   currentPage.value = val;
-  // console.log(`当前页: ${val}`);
-}
-// 表格数据静态化
+};
+
 const currentTableData = computed(() => {
   const start = (currentPage.value - 1) * pageSize.value;
-  const end = start + pageSize.value;
-  return tableData.value.slice(start, end);
+  return tableData.value.slice(start, start + pageSize.value);
 });
-
 </script>
 
 <template>
   <div class="page-workspace">
     <el-dialog
-    v-model="dialogVisible"
-    :title="TempTitle"
-    width="80%"
-  >
-  <el-input 
-  v-model="TempText" 
-  placeholder="模版内容" 
-  :rows="10" 
-  type="textarea" 
-  style="margin-bottom: 10px"
-  />
-  <el-input v-model="Tempname" placeholder="模版文件名"/>
+      v-model="dialogVisible"
+      class="template-editor-dialog"
+      width="calc(100vw - 64px)"
+      top="32px"
+      :close-on-click-modal="false"
+      destroy-on-close
+    >
+      <template #header>
+        <div class="editor-dialog-heading">
+          <div>
+            <h2>{{ TempTitle }}</h2>
+            <p>编辑 YAML 配置，右侧内容会实时同步</p>
+          </div>
+          <el-input
+            v-model="Tempname"
+            class="filename-input"
+            placeholder="模板文件名，例如 config.yaml"
+          >
+            <template #prepend>文件名</template>
+          </el-input>
+        </div>
+      </template>
 
-    <template #footer>
-      <div class="dialog-footer">
-        <el-button @click="dialogVisible = false">关闭</el-button>
-        <el-button type="primary" @click="addtemp">确定</el-button>
+      <div class="editor-layout">
+        <section class="editor-panel">
+          <div class="panel-heading">
+            <span>YAML 编辑</span>
+            <span class="panel-hint">Tab 缩进 2 个空格</span>
+          </div>
+          <div class="editor-content">
+            <YamlEditor v-model="TempText" />
+          </div>
+        </section>
+
+        <section class="editor-panel">
+          <div class="panel-heading">
+            <span>实时预览</span>
+            <span class="panel-hint">同步显示当前内容</span>
+          </div>
+          <pre class="yaml-preview"><code>{{ TempText || "# 暂无内容" }}</code></pre>
+        </section>
       </div>
-    </template>
-  </el-dialog>
+
+      <template #footer>
+        <div class="dialog-footer">
+          <el-button @click="dialogVisible = false">取消</el-button>
+          <el-button type="primary" @click="addtemp">保存模板</el-button>
+        </div>
+      </template>
+    </el-dialog>
+
     <div class="page-heading">
       <div>
         <h1>模板列表</h1>
@@ -195,8 +242,9 @@ const currentTableData = computed(() => {
           </template>
         </el-table-column>
         <el-table-column prop="create_date" label="创建时间" min-width="200" sortable />
-        <el-table-column fixed="right" label="操作" width="140" align="right">
+        <el-table-column fixed="right" label="操作" width="190" align="right">
           <template #default="scope">
+            <el-button link type="primary" @click="handleExport(scope.row)">导出</el-button>
             <el-button link type="primary" @click="handleEdit(scope.row)">编辑</el-button>
             <el-button link type="danger" @click="handleDel(scope.row)">删除</el-button>
           </template>
@@ -205,8 +253,8 @@ const currentTableData = computed(() => {
 
       <div class="table-footer">
         <div class="batch-actions">
-          <el-button @click="selectAll()">全选</el-button>
-          <el-button @click="toggleSelection()">取消选择</el-button>
+          <el-button @click="selectAll">全选</el-button>
+          <el-button @click="toggleSelection">取消选择</el-button>
           <el-button type="danger" plain @click="selectDel">批量删除</el-button>
         </div>
         <el-pagination
@@ -225,16 +273,117 @@ const currentTableData = computed(() => {
 </template>
 
 <style scoped>
-.el-input{
-  margin-bottom: 10px;
-}
-
 .record-count {
-  font-size: 13px;
   color: var(--el-text-color-secondary);
+  font-size: 13px;
 }
 
 .primary-cell {
   font-weight: 550;
 }
-</style>@/api/subcription/temp
+
+.editor-dialog-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 32px;
+  padding-right: 32px;
+}
+
+.editor-dialog-heading h2 {
+  margin: 0;
+  color: #111827;
+  font-size: 18px;
+  letter-spacing: 0;
+}
+
+.editor-dialog-heading p {
+  margin: 5px 0 0;
+  color: #64748b;
+  font-size: 13px;
+}
+
+.filename-input {
+  width: min(440px, 45vw);
+}
+
+.editor-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 16px;
+  height: calc(100vh - 220px);
+  min-height: 480px;
+}
+
+.editor-panel {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid #dfe4ea;
+  border-radius: 6px;
+  background: #fff;
+}
+
+.panel-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 44px;
+  padding: 0 16px;
+  border-bottom: 1px solid #e5e7eb;
+  background: #f8fafc;
+  color: #1f2937;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.panel-hint {
+  color: #94a3b8;
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.editor-content {
+  min-height: 0;
+  flex: 1;
+}
+
+.yaml-preview {
+  min-height: 0;
+  flex: 1;
+  overflow: auto;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 14px 18px;
+  color: #1f2937;
+  background: #fff;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  font-size: 13px;
+  line-height: 1.55;
+  tab-size: 2;
+  white-space: pre;
+}
+
+@media (max-width: 900px) {
+  .editor-dialog-heading {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .filename-input {
+    width: 100%;
+  }
+
+  .editor-layout {
+    grid-template-columns: 1fr;
+    height: auto;
+  }
+
+  .editor-panel {
+    height: 420px;
+  }
+}
+</style>
