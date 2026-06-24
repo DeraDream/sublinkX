@@ -57,12 +57,12 @@ surge support protocol:ss trojan vmess hy2 tuic
 ## [Installation instructions]
 ### linux method:
 ```
-curl -fsSL -H "Cache-Control: no-cache" -H "Pragma: no-cache" https://raw.githubusercontent.com/DeraDream/sublinkX/main/install.sh | sudo bash
+curl -fsSL -H "Cache-Control: no-cache" -H "Pragma: no-cache" https://raw.githubusercontent.com/DeraDream/sublinkX/main/install.sh | bash
 ```
 
 ```sublink``` Calls out the menu.
 
-Then just type in the install script
+The installer downloads and builds the main branch directly on the server. GitHub Releases are not required.
 
 ### docker method:
 

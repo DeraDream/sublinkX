@@ -61,12 +61,12 @@ surge支持协议:ss trojan vmess hy2 tuic
 ## [安装说明]
 ### linux方式：
 ```
-curl -fsSL -H "Cache-Control: no-cache" -H "Pragma: no-cache" https://raw.githubusercontent.com/DeraDream/sublinkX/main/install.sh | sudo bash
+curl -fsSL -H "Cache-Control: no-cache" -H "Pragma: no-cache" https://raw.githubusercontent.com/DeraDream/sublinkX/main/install.sh | bash
 ```
 
 ```sublink``` 呼出菜单
 
-然后输入安装脚本即可
+安装脚本直接从 main 分支下载源码并在服务器本地编译，不依赖 GitHub Releases。
 
 ### docker方式：
 

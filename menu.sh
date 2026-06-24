@@ -1,49 +1,21 @@
 #!/bin/bash
 REPO="DeraDream/sublinkX"
+BRANCH="main"
 INSTALL_DIR="/usr/local/bin/sublink"
 
 function Up {
-    # 获取最新的发行版标签
-    latest_release=$(curl --fail --silent "https://api.github.com/repos/$REPO/releases/latest" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
-    if [ -z "$latest_release" ]; then
-        echo "未找到可更新的发行版。"
-        return 1
-    fi
-    echo "最新版本: $latest_release"
-    # 检测机器类型
-    machine_type=$(uname -m)
-
-    if [ "$machine_type" = "x86_64" ]; then
-        file_name="sublink_amd64"
-    elif [ "$machine_type" = "aarch64" ]; then
-        file_name="sublink_arm64"
-    else
-        echo "不支持的机器类型: $machine_type"
-        exit 1
-    fi
-
-    # 下载文件
-    curl --fail -LO "https://github.com/$REPO/releases/download/$latest_release/$file_name" || {
-        echo "下载失败，服务未更新。"
-        return 1
-    }
-
-    # 设置文件为可执行
-    chmod +x $file_name
-
-    # 移动文件到指定目录
-    mv $file_name "$INSTALL_DIR/sublink"
-    echo "更新完成"
-
+    echo "将从 $BRANCH 分支重新构建并更新，原有数据不会删除。"
+    curl --fail --silent --show-error --location \
+        -H "Cache-Control: no-cache" \
+        -H "Pragma: no-cache" \
+        "https://raw.githubusercontent.com/$REPO/$BRANCH/install.sh" | bash
 }
 function Select {
-    # 获取最新的发行版标签
-    latest_release=$(curl --fail --silent "https://api.github.com/repos/$REPO/releases/latest" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
     # 获取服务状态
     cd /usr/local/bin/sublink # 进入sublink目录
     status=$(systemctl is-active sublink)
     version=$(./sublink --version)
-    echo "最新版本:$latest_release"
+    echo "更新来源:$REPO/$BRANCH"
     echo "当前版本:$version"
     # 判断服务状态并打印
     if [ "$status" = "active" ]; then
@@ -135,16 +107,7 @@ function Select {
 
             ;;
         7)
-            # 停止服务之前检查服务是否存在
-            if systemctl is-active --quiet sublink; then
-                systemctl stop sublink
-            fi
-            # 检查是否为最新版本
-            if [[ $version = $latest_release ]]; then
-                echo "当前已经是最新版本"
-            else
-                Up
-            fi
+            Up
             ;;
         8)
             read -p "请输入新的账号: " User

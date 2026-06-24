@@ -5,7 +5,7 @@ RUN corepack enable && corepack prepare pnpm@8.15.6 --activate
 COPY webs/package.json ./
 RUN pnpm install --no-frozen-lockfile
 COPY webs/ .
-RUN pnpm build
+RUN pnpm exec vite build --mode production
 
 # Go build stage
 FROM golang:1.22.2-alpine AS builder
