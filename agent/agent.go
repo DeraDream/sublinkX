@@ -18,7 +18,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
-	"strconv"
 	"strings"
 	"sublink/node"
 	"sync"
@@ -29,7 +28,7 @@ import (
 )
 
 const (
-	Version        = "0.4.0"
+	Version        = "0.5.0"
 	singBoxVersion = "1.13.13"
 )
 
@@ -362,6 +361,7 @@ func runSingBoxTest(parent context.Context, binary, nodeLink string, download bo
 	transport := &http.Transport{
 		Proxy:               http.ProxyURL(proxyURL),
 		DisableCompression:  true,
+		DisableKeepAlives:   true,
 		ForceAttemptHTTP2:   false,
 		MaxIdleConns:        16,
 		IdleConnTimeout:     30 * time.Second,
@@ -369,16 +369,12 @@ func runSingBoxTest(parent context.Context, binary, nodeLink string, download bo
 	}
 	defer transport.CloseIdleConnections()
 	client := &http.Client{Transport: transport}
-	result := speedResult{
-		LatencyMs: measureNodeLatency(ctx, nodeLink),
-	}
-	if result.LatencyMs < 0 {
-		return result, errors.New("节点延迟测试失败")
+	latency, err := measureProxyLatency(ctx, client)
+	result := speedResult{LatencyMs: latency}
+	if err != nil {
+		return result, err
 	}
 	if !download {
-		if err := verifyProxy(ctx, client); err != nil {
-			return result, err
-		}
 		return result, nil
 	}
 	result.EgressIP = measureEgressIP(ctx, client)
@@ -500,91 +496,61 @@ func defaultString(value, fallback string) string {
 	return value
 }
 
-func nodeAddress(link string) (string, error) {
-	scheme := strings.ToLower(strings.SplitN(link, "://", 2)[0])
-	switch scheme {
-	case "ss":
-		ss, err := node.DecodeSSURL(link)
-		if err != nil {
-			return "", err
-		}
-		if ss.Server == "" || ss.Port <= 0 {
-			return "", errors.New("SS 节点地址或端口无效")
-		}
-		return net.JoinHostPort(ss.Server, strconv.Itoa(ss.Port)), nil
-	case "vless":
-		vless, err := node.DecodeVLESSURL(link)
-		if err != nil {
-			return "", err
-		}
-		if vless.Server == "" || vless.Port <= 0 {
-			return "", errors.New("VLESS 节点地址或端口无效")
-		}
-		return net.JoinHostPort(vless.Server, strconv.Itoa(vless.Port)), nil
-	default:
-		return "", fmt.Errorf("暂不支持 %s 节点测速", scheme)
-	}
-}
-
-func measureNodeLatency(ctx context.Context, link string) int64 {
-	address, err := nodeAddress(link)
-	if err != nil {
-		fmt.Println("节点地址解析失败:", err)
-		return -1
+func measureProxyLatency(ctx context.Context, client *http.Client) (int64, error) {
+	probes := []string{
+		"http://cp.cloudflare.com/generate_204",
+		"http://www.gstatic.com/generate_204",
 	}
 	best := int64(-1)
-	dialer := net.Dialer{Timeout: 3 * time.Second}
-	for attempt := 0; attempt < 3; attempt++ {
-		probeCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
-		start := time.Now()
-		conn, dialErr := dialer.DialContext(probeCtx, "tcp", address)
-		elapsed := time.Since(start).Milliseconds()
-		cancel()
-		if dialErr == nil {
-			conn.Close()
-			if elapsed < 1 {
-				elapsed = 1
-			}
-			if best < 0 || elapsed < best {
-				best = elapsed
-			}
-		}
-		if attempt < 2 {
-			if !sleepContext(ctx, 100*time.Millisecond) {
-				break
-			}
-		}
-	}
-	return best
-}
-
-func verifyProxy(ctx context.Context, client *http.Client) error {
-	probes := []string{
-		"https://www.gstatic.com/generate_204",
-		"https://cp.cloudflare.com/generate_204",
-	}
 	var lastErr error
 	for _, probeURL := range probes {
-		probeCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
-		req, _ := http.NewRequestWithContext(probeCtx, http.MethodGet, probeURL, nil)
-		resp, err := client.Do(req)
-		if err == nil {
+		successes := 0
+		firstSuccess := int64(-1)
+		for attempt := 0; attempt < 4; attempt++ {
+			probeCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+			target := fmt.Sprintf("%s?cache=%d", probeURL, time.Now().UnixNano())
+			req, _ := http.NewRequestWithContext(probeCtx, http.MethodGet, target, nil)
+			req.Header.Set("Cache-Control", "no-cache")
+			req.Close = true
+			start := time.Now()
+			resp, err := client.Do(req)
+			elapsed := time.Since(start).Milliseconds()
+			if err != nil {
+				lastErr = err
+				cancel()
+				continue
+			}
 			_, _ = io.Copy(io.Discard, resp.Body)
 			resp.Body.Close()
 			cancel()
-			if resp.StatusCode/100 == 2 || resp.StatusCode/100 == 3 {
-				return nil
+			if resp.StatusCode/100 != 2 && resp.StatusCode/100 != 3 {
+				lastErr = fmt.Errorf("HTTP %d", resp.StatusCode)
+				continue
 			}
-			lastErr = fmt.Errorf("HTTP %d", resp.StatusCode)
-			continue
+			if elapsed < 1 {
+				elapsed = 1
+			}
+			successes++
+			if firstSuccess < 0 {
+				firstSuccess = elapsed
+			} else if best < 0 || elapsed < best {
+				best = elapsed
+			}
+			if attempt < 3 && !sleepContext(ctx, 120*time.Millisecond) {
+				return -1, ctx.Err()
+			}
 		}
-		lastErr = err
-		cancel()
+		if best >= 0 {
+			return best, nil
+		}
+		if successes == 1 {
+			return firstSuccess, nil
+		}
 	}
 	if lastErr == nil {
 		lastErr = errors.New("代理链路无响应")
 	}
-	return fmt.Errorf("节点代理链路校验失败: %w", lastErr)
+	return -1, fmt.Errorf("节点代理延迟测试失败: %w", lastErr)
 }
 
 func measureEgressIP(ctx context.Context, client *http.Client) string {
