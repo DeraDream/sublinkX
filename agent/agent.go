@@ -323,6 +323,82 @@ func executeTask(ctx context.Context, id uint, testType, nodeLink string) taskRe
 	return report
 }
 
+// MeasureControllerLatency measures two independent values from the controller:
+// the TCP connection time to the node entrance and the full proxied HTTP latency.
+func MeasureControllerLatency(ctx context.Context, nodeLink string) (int64, int64, error) {
+	entryLatency, err := measureNodeEntryLatency(ctx, nodeLink)
+	if err != nil {
+		return -1, -1, fmt.Errorf("节点入口延迟测试失败: %w", err)
+	}
+	singBox, err := ensureSingBox(ctx)
+	if err != nil {
+		return entryLatency, -1, err
+	}
+	result, err := runSingBoxTest(ctx, singBox, nodeLink, false)
+	if err != nil {
+		return entryLatency, result.LatencyMs, err
+	}
+	return entryLatency, result.LatencyMs, nil
+}
+
+func measureNodeEntryLatency(ctx context.Context, nodeLink string) (int64, error) {
+	address, err := nodeServerAddress(nodeLink)
+	if err != nil {
+		return -1, err
+	}
+	best := int64(-1)
+	dialer := net.Dialer{Timeout: 3 * time.Second}
+	for attempt := 0; attempt < 3; attempt++ {
+		probeCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+		start := time.Now()
+		conn, dialErr := dialer.DialContext(probeCtx, "tcp", address)
+		elapsed := time.Since(start).Milliseconds()
+		cancel()
+		if dialErr == nil {
+			_ = conn.Close()
+			if elapsed < 1 {
+				elapsed = 1
+			}
+			if best < 0 || elapsed < best {
+				best = elapsed
+			}
+		}
+		if attempt < 2 && !sleepContext(ctx, 100*time.Millisecond) {
+			return -1, ctx.Err()
+		}
+	}
+	if best < 0 {
+		return -1, errors.New("无法连接节点入口")
+	}
+	return best, nil
+}
+
+func nodeServerAddress(link string) (string, error) {
+	scheme := strings.ToLower(strings.SplitN(link, "://", 2)[0])
+	switch scheme {
+	case "ss":
+		ss, err := node.DecodeSSURL(link)
+		if err != nil {
+			return "", err
+		}
+		if ss.Server == "" || ss.Port <= 0 {
+			return "", errors.New("SS 节点地址或端口无效")
+		}
+		return net.JoinHostPort(ss.Server, fmt.Sprintf("%d", ss.Port)), nil
+	case "vless":
+		vless, err := node.DecodeVLESSURL(link)
+		if err != nil {
+			return "", err
+		}
+		if vless.Server == "" || vless.Port <= 0 {
+			return "", errors.New("VLESS 节点地址或端口无效")
+		}
+		return net.JoinHostPort(vless.Server, fmt.Sprintf("%d", vless.Port)), nil
+	default:
+		return "", fmt.Errorf("暂不支持 %s 节点主控测速", scheme)
+	}
+}
+
 func runSingBoxTest(parent context.Context, binary, nodeLink string, download bool) (speedResult, error) {
 	ctx, cancel := context.WithTimeout(parent, 75*time.Second)
 	defer cancel()

@@ -3,6 +3,7 @@ package models
 import (
 	"errors"
 	"log"
+	"time"
 
 	"gorm.io/gorm"
 )
@@ -16,10 +17,16 @@ type GroupNode struct {
 
 type Node struct {
 	gorm.Model
-	ID         int
-	Name       string
-	Link       string
-	GroupNodes []GroupNode `gorm:"many2many:group_node_nodes"` // 反向关联字段
+	ID                    int
+	Name                  string
+	Link                  string
+	ControlEntryLatencyMs int64
+	ControlProxyLatencyMs int64
+	ControlExitLatencyMs  int64
+	ControlLatencyStatus  string
+	ControlLatencyError   string
+	ControlLatencyAt      *time.Time
+	GroupNodes            []GroupNode `gorm:"many2many:group_node_nodes"` // 反向关联字段
 }
 
 // hook Node 写入创建删除修改 等写入权限

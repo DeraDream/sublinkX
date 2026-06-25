@@ -33,6 +33,16 @@ export function DelNode(data: any){
     params: data,
   });
 }
+export function testControlLatency(data: any){
+  return request({
+    url: "/api/v1/nodes/control-latency",
+    method: "post",
+    data,
+    headers: {
+      "Content-Type": "multipart/form-data",
+    },
+  });
+}
 // 获取全部分组
 export function GetGroup(){
   return request({
