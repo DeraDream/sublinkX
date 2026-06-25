@@ -16,6 +16,7 @@ interface HomeAgent {
   last_seen?: string;
   agent_version?: string;
   platform?: string;
+  upgrade_command: string;
 }
 
 const agents = ref<HomeAgent[]>([]);
@@ -52,6 +53,11 @@ async function handleCreate() {
 async function copyCommand() {
   await navigator.clipboard.writeText(installCommand.value);
   ElMessage.success("安装命令已复制");
+}
+
+async function copyUpgradeCommand(agent: any) {
+  await navigator.clipboard.writeText(agent.upgrade_command);
+  ElMessage.success("更新命令已复制，请在家宽设备终端执行");
 }
 
 async function changeMode(agent: any) {
@@ -175,9 +181,12 @@ onBeforeUnmount(() => {
             {{ row.state === "active" ? "激活" : "挂起" }}
           </template>
         </el-table-column>
-        <el-table-column prop="platform" label="设备" min-width="150">
+        <el-table-column prop="platform" label="设备" min-width="170">
           <template #default="{ row }">
             {{ row.platform || "等待注册" }}
+            <span v-if="row.agent_version" class="agent-version">
+              · agent {{ row.agent_version }}
+            </span>
           </template>
         </el-table-column>
         <el-table-column label="最后在线" min-width="180">
@@ -188,8 +197,11 @@ onBeforeUnmount(() => {
         <el-table-column label="待执行" width="90">
           <template #default="{ row }">{{ row.pending_tasks }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="190" align="right">
+        <el-table-column label="操作" width="250" align="right">
           <template #default="{ row }">
+            <el-button link @click="copyUpgradeCommand(row)">
+              更新命令
+            </el-button>
             <el-button link type="primary" @click="changeMode(row)">
               {{ row.persistent_active ? "挂起" : "激活" }}
             </el-button>
@@ -257,6 +269,11 @@ onBeforeUnmount(() => {
 
 .muted-cell {
   color: var(--el-text-color-secondary);
+}
+
+.agent-version {
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
 }
 
 .empty-agents {

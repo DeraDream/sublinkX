@@ -73,7 +73,7 @@ const speedLoading = ref(false);
 const speedAgents = ref<any[]>([]);
 const selectedAgentId = ref<number>();
 const speedResultMap = ref<Record<number, { latency?: any; speed?: any }>>({});
-let speedRefreshTimer: number | undefined;
+let speedRunCancelled = false;
 
 // const SelectionNodes = ref([]); // 选中的节点
 const RadioGroup = ref("1"); // 分组单选框
@@ -431,6 +431,31 @@ async function loadSpeedResults() {
   speedResultMap.value = latest;
 }
 
+function delay(ms: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+async function waitSpeedTask(
+  taskId: number,
+  nodeId: number,
+  type: "latency" | "speed"
+) {
+  const deadline = Date.now() + (type === "latency" ? 90000 : 120000);
+  while (!speedRunCancelled && Date.now() < deadline) {
+    const { data } = await listSpeedTasks({ id: taskId });
+    const task = data?.[0];
+    if (task) {
+      if (!speedResultMap.value[nodeId]) speedResultMap.value[nodeId] = {};
+      speedResultMap.value[nodeId][type] = task;
+      if (task.status === "success" || task.status === "failed") {
+        return task;
+      }
+    }
+    await delay(1000);
+  }
+  throw new Error("等待家宽测速端返回结果超时");
+}
+
 const runSpeedTest = async (type: "latency" | "speed") => {
   const targets =
     multipleSelection.value.length > 0
@@ -445,20 +470,38 @@ const runSpeedTest = async (type: "latency" | "speed") => {
     return;
   }
   speedLoading.value = true;
+  speedRunCancelled = false;
+  let successCount = 0;
+  let failedCount = 0;
   try {
-    for (const item of targets) {
-      await createSpeedTask({
-        node_id: item.ID,
-        agent_id: selectedAgentId.value,
-        type,
-      });
+    for (let index = 0; index < targets.length; index++) {
+      const item = targets[index];
+      ElMessage.info(`正在测试 ${index + 1}/${targets.length}：${item.Name}`);
+      try {
+        const { data: task } = await createSpeedTask({
+          node_id: item.ID,
+          agent_id: selectedAgentId.value,
+          type,
+        });
+        if (!speedResultMap.value[item.ID]) speedResultMap.value[item.ID] = {};
+        speedResultMap.value[item.ID][type] = task;
+        const result = await waitSpeedTask(task.id, item.ID, type);
+        if (result.status === "success") {
+          successCount++;
+        } else {
+          failedCount++;
+        }
+      } catch (error: any) {
+        failedCount++;
+        if (!speedResultMap.value[item.ID]) speedResultMap.value[item.ID] = {};
+        speedResultMap.value[item.ID][type] = {
+          status: "failed",
+          error_message:
+            error?.response?.data?.msg || error?.message || "测速失败",
+        };
+      }
     }
-    ElMessage.success(
-      `已创建 ${targets.length} 个${type === "latency" ? "延迟" : "下载速度"}测试任务`
-    );
-    await loadSpeedResults();
-    if (speedRefreshTimer) window.clearInterval(speedRefreshTimer);
-    speedRefreshTimer = window.setInterval(loadSpeedResults, 5000);
+    ElMessage.success(`测速完成：成功 ${successCount}，失败 ${failedCount}`);
   } catch (error) {
     console.error("测速失败:", error);
     ElMessage.error("测速失败");
@@ -481,7 +524,7 @@ watch(activeName, (newVal) => {
 });
 
 onBeforeUnmount(() => {
-  if (speedRefreshTimer) window.clearInterval(speedRefreshTimer);
+  speedRunCancelled = true;
 });
 </script>
 
@@ -655,8 +698,16 @@ onBeforeUnmount(() => {
             <span
               v-else-if="speedResultMap[row.ID]?.latency?.status === 'failed'"
               class="latency is-failed"
-              >失败</span
             >
+              <el-tooltip
+                :content="
+                  speedResultMap[row.ID].latency.error_message || '测速失败'
+                "
+                placement="top"
+              >
+                <span>失败</span>
+              </el-tooltip>
+            </span>
             <span v-else class="muted-cell">未测试</span>
           </template>
         </el-table-column>
@@ -682,8 +733,16 @@ onBeforeUnmount(() => {
             <span
               v-else-if="speedResultMap[row.ID]?.speed?.status === 'failed'"
               class="latency is-failed"
-              >失败</span
             >
+              <el-tooltip
+                :content="
+                  speedResultMap[row.ID].speed.error_message || '测速失败'
+                "
+                placement="top"
+              >
+                <span>失败</span>
+              </el-tooltip>
+            </span>
             <span v-else class="muted-cell">--</span>
           </template>
         </el-table-column>

@@ -1,8 +1,10 @@
 package agent
 
 import (
+	"archive/tar"
 	"archive/zip"
 	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"errors"
@@ -16,7 +18,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
-	"sort"
 	"strings"
 	"sublink/node"
 	"syscall"
@@ -25,7 +26,10 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-const Version = "0.1.0"
+const (
+	Version        = "0.2.0"
+	singBoxVersion = "1.13.13"
+)
 
 type Config struct {
 	Server string `yaml:"server"`
@@ -205,9 +209,15 @@ func Run(ctx context.Context, cfg Config) error {
 		if poll.Data.Task != nil {
 			task := poll.Data.Task
 			report := executeTask(ctx, task.ID, task.Type, task.NodeLink)
-			if err := reportTask(ctx, client, cfg, report); err != nil {
+			if err := reportTaskWithRetry(ctx, client, cfg, report); err != nil {
 				fmt.Println("上报任务失败:", err)
 			}
+			// Give the web UI a short window to receive the result and enqueue
+			// the next node, then poll immediately instead of entering idle sleep.
+			if !sleepContext(ctx, 2*time.Second) {
+				return ctx.Err()
+			}
+			continue
 		}
 		delay := poll.Data.PollAfter
 		if delay < 3 {
@@ -217,6 +227,21 @@ func Run(ctx context.Context, cfg Config) error {
 			return ctx.Err()
 		}
 	}
+}
+
+func reportTaskWithRetry(ctx context.Context, client *http.Client, cfg Config, report taskReport) error {
+	var lastErr error
+	for attempt := 0; attempt < 3; attempt++ {
+		if err := reportTask(ctx, client, cfg, report); err == nil {
+			return nil
+		} else {
+			lastErr = err
+		}
+		if !sleepContext(ctx, time.Duration(attempt+1)*time.Second) {
+			return ctx.Err()
+		}
+	}
+	return lastErr
 }
 
 func agentRequest(ctx context.Context, client *http.Client, cfg Config, path string, body io.Reader) (*http.Response, error) {
@@ -277,12 +302,12 @@ func sleepContext(ctx context.Context, delay time.Duration) bool {
 
 func executeTask(ctx context.Context, id uint, testType, nodeLink string) taskReport {
 	report := taskReport{TaskID: id}
-	xray, err := ensureXray(ctx)
+	singBox, err := ensureSingBox(ctx)
 	if err != nil {
 		report.Error = err.Error()
 		return report
 	}
-	result, err := runXrayTest(ctx, xray, nodeLink, testType == "speed")
+	result, err := runSingBoxTest(ctx, singBox, nodeLink, testType == "speed")
 	report.LatencyMs = result.LatencyMs
 	report.DownloadMbps = result.DownloadMbps
 	report.TestBytes = result.TestBytes
@@ -295,14 +320,14 @@ func executeTask(ctx context.Context, id uint, testType, nodeLink string) taskRe
 	return report
 }
 
-func runXrayTest(parent context.Context, binary, nodeLink string, download bool) (speedResult, error) {
-	ctx, cancel := context.WithTimeout(parent, 2*time.Minute)
+func runSingBoxTest(parent context.Context, binary, nodeLink string, download bool) (speedResult, error) {
+	ctx, cancel := context.WithTimeout(parent, 75*time.Second)
 	defer cancel()
 	port, err := freePort()
 	if err != nil {
 		return speedResult{}, err
 	}
-	cfg, err := buildXrayConfig(nodeLink, port)
+	cfg, err := buildSingBoxConfig(nodeLink, port)
 	if err != nil {
 		return speedResult{}, err
 	}
@@ -342,12 +367,12 @@ func runXrayTest(parent context.Context, binary, nodeLink string, download bool)
 	client := &http.Client{Transport: transport}
 	result := speedResult{
 		LatencyMs: measureLatency(ctx, client),
-		EgressIP:  measureEgressIP(ctx, client),
 	}
 	if result.LatencyMs < 0 {
 		return result, errors.New("节点延迟测试失败")
 	}
 	if download {
+		result.EgressIP = measureEgressIP(ctx, client)
 		bytesRead, duration, err := measureDownload(ctx, client)
 		if err != nil {
 			return result, err
@@ -358,7 +383,7 @@ func runXrayTest(parent context.Context, binary, nodeLink string, download bool)
 	return result, nil
 }
 
-func buildXrayConfig(link string, port int) (map[string]any, error) {
+func buildSingBoxConfig(link string, port int) (map[string]any, error) {
 	scheme := strings.ToLower(strings.SplitN(link, "://", 2)[0])
 	var outbound map[string]any
 	switch scheme {
@@ -368,43 +393,56 @@ func buildXrayConfig(link string, port int) (map[string]any, error) {
 			return nil, fmt.Errorf("解析 SS 节点失败: %w", err)
 		}
 		outbound = map[string]any{
-			"protocol": "shadowsocks",
-			"tag":      "node",
-			"settings": map[string]any{"servers": []any{map[string]any{
-				"address": ss.Server, "port": ss.Port,
-				"method": ss.Param.Cipher, "password": ss.Param.Password,
-			}}},
+			"type":        "shadowsocks",
+			"tag":         "node",
+			"server":      ss.Server,
+			"server_port": ss.Port,
+			"method":      ss.Param.Cipher,
+			"password":    ss.Param.Password,
 		}
 	case "vless":
 		vless, err := node.DecodeVLESSURL(link)
 		if err != nil {
 			return nil, fmt.Errorf("解析 VLESS 节点失败: %w", err)
 		}
-		user := map[string]any{"id": vless.Uuid, "encryption": "none"}
+		outbound = map[string]any{
+			"type":        "vless",
+			"tag":         "node",
+			"server":      vless.Server,
+			"server_port": vless.Port,
+			"uuid":        vless.Uuid,
+		}
 		if vless.Query.Flow != "" {
-			user["flow"] = vless.Query.Flow
+			outbound["flow"] = vless.Query.Flow
 		}
 		network := defaultString(vless.Query.Type, "tcp")
-		stream := map[string]any{"network": network}
 		switch vless.Query.Security {
 		case "tls":
 			tls := map[string]any{
-				"serverName":  vless.Query.Sni,
-				"fingerprint": defaultString(vless.Query.Fp, "chrome"),
+				"enabled":     true,
+				"server_name": vless.Query.Sni,
+				"utls": map[string]any{
+					"enabled":     true,
+					"fingerprint": defaultString(vless.Query.Fp, "chrome"),
+				},
 			}
 			if len(vless.Query.Alpn) > 0 {
 				tls["alpn"] = vless.Query.Alpn
 			}
-			stream["security"] = "tls"
-			stream["tlsSettings"] = tls
+			outbound["tls"] = tls
 		case "reality":
-			stream["security"] = "reality"
-			stream["realitySettings"] = map[string]any{
-				"serverName":  vless.Query.Sni,
-				"fingerprint": defaultString(vless.Query.Fp, "chrome"),
-				"publicKey":   vless.Query.Pbk,
-				"shortId":     vless.Query.Sid,
-				"spiderX":     vless.Query.Path,
+			outbound["tls"] = map[string]any{
+				"enabled":     true,
+				"server_name": vless.Query.Sni,
+				"utls": map[string]any{
+					"enabled":     true,
+					"fingerprint": defaultString(vless.Query.Fp, "chrome"),
+				},
+				"reality": map[string]any{
+					"enabled":    true,
+					"public_key": vless.Query.Pbk,
+					"short_id":   vless.Query.Sid,
+				},
 			}
 		case "", "none":
 		default:
@@ -412,45 +450,37 @@ func buildXrayConfig(link string, port int) (map[string]any, error) {
 		}
 		switch network {
 		case "ws":
-			stream["wsSettings"] = map[string]any{
+			outbound["transport"] = map[string]any{
+				"type":    "ws",
 				"path":    vless.Query.Path,
 				"headers": map[string]any{"Host": vless.Query.Host},
 			}
 		case "grpc":
-			stream["grpcSettings"] = map[string]any{
-				"serviceName": vless.Query.ServiceName,
-				"multiMode":   vless.Query.Mode == "multi",
+			outbound["transport"] = map[string]any{
+				"type":         "grpc",
+				"service_name": vless.Query.ServiceName,
 			}
 		case "tcp", "raw":
-			stream["network"] = "raw"
 			if vless.Query.HeaderType != "" && vless.Query.HeaderType != "none" {
-				stream["rawSettings"] = map[string]any{
-					"header": map[string]any{"type": vless.Query.HeaderType},
-				}
+				return nil, fmt.Errorf("暂不支持 VLESS TCP header=%s", vless.Query.HeaderType)
 			}
 		default:
 			return nil, fmt.Errorf("暂不支持 VLESS transport=%s", network)
-		}
-		outbound = map[string]any{
-			"protocol": "vless",
-			"tag":      "node",
-			"settings": map[string]any{"vnext": []any{map[string]any{
-				"address": vless.Server, "port": vless.Port, "users": []any{user},
-			}}},
-			"streamSettings": stream,
 		}
 	default:
 		return nil, fmt.Errorf("暂不支持 %s 节点测速", scheme)
 	}
 	return map[string]any{
-		"log": map[string]any{"loglevel": "warning"},
+		"log": map[string]any{"level": "warn"},
 		"inbounds": []any{map[string]any{
-			"listen": "127.0.0.1", "port": port,
-			"protocol": "http", "settings": map[string]any{},
+			"type":        "mixed",
+			"tag":         "local",
+			"listen":      "127.0.0.1",
+			"listen_port": port,
 		}},
-		"outbounds": []any{
-			outbound,
-			map[string]any{"protocol": "freedom", "tag": "direct"},
+		"outbounds": []any{outbound},
+		"route": map[string]any{
+			"final": "node",
 		},
 	}, nil
 }
@@ -463,32 +493,30 @@ func defaultString(value, fallback string) string {
 }
 
 func measureLatency(ctx context.Context, client *http.Client) int64 {
-	var samples []int64
-	for i := 0; i < 3; i++ {
-		probeCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-		req, _ := http.NewRequestWithContext(probeCtx, http.MethodGet, "https://cp.cloudflare.com/generate_204", nil)
+	probes := []string{
+		"https://www.gstatic.com/generate_204",
+		"https://cp.cloudflare.com/generate_204",
+	}
+	var lastErr error
+	for _, probeURL := range probes {
+		probeCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		req, _ := http.NewRequestWithContext(probeCtx, http.MethodGet, probeURL, nil)
 		start := time.Now()
 		resp, err := client.Do(req)
 		if err == nil {
 			_, _ = io.Copy(io.Discard, resp.Body)
 			resp.Body.Close()
-			samples = append(samples, time.Since(start).Milliseconds())
+			elapsed := time.Since(start).Milliseconds()
+			cancel()
+			return elapsed
 		}
+		lastErr = err
 		cancel()
 	}
-	if len(samples) == 0 {
-		return -1
+	if lastErr != nil {
+		fmt.Println("延迟探测失败:", lastErr)
 	}
-	sort.Slice(samples, func(i, j int) bool { return samples[i] < samples[j] })
-	keep := 2
-	if len(samples) < keep {
-		keep = len(samples)
-	}
-	var sum int64
-	for i := 0; i < keep; i++ {
-		sum += samples[i]
-	}
-	return sum / int64(keep)
+	return -1
 }
 
 func measureEgressIP(ctx context.Context, client *http.Client) string {
@@ -505,28 +533,42 @@ func measureEgressIP(ctx context.Context, client *http.Client) string {
 }
 
 func measureDownload(ctx context.Context, client *http.Client) (int64, time.Duration, error) {
-	downloadCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
-	defer cancel()
-	req, _ := http.NewRequestWithContext(downloadCtx, http.MethodGet, "https://speed.cloudflare.com/__down?bytes=100000000", nil)
-	req.Header.Set("Accept-Encoding", "identity")
-	start := time.Now()
-	resp, err := client.Do(req)
-	if err != nil {
-		return 0, 0, fmt.Errorf("下载测速失败: %w", err)
+	urls := []string{
+		"https://speed.cloudflare.com/__down?bytes=100000000",
+		"https://proof.ovh.net/files/100Mb.dat",
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode/100 != 2 {
-		return 0, 0, fmt.Errorf("下载测速 HTTP %d", resp.StatusCode)
+	var lastErr error
+	for _, downloadURL := range urls {
+		downloadCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
+		req, _ := http.NewRequestWithContext(downloadCtx, http.MethodGet, downloadURL, nil)
+		req.Header.Set("Accept-Encoding", "identity")
+		start := time.Now()
+		resp, err := client.Do(req)
+		if err != nil {
+			lastErr = err
+			cancel()
+			continue
+		}
+		n, copyErr := io.Copy(io.Discard, resp.Body)
+		resp.Body.Close()
+		duration := time.Since(start)
+		timedOut := downloadCtx.Err() == context.DeadlineExceeded
+		cancel()
+		if resp.StatusCode/100 != 2 {
+			lastErr = fmt.Errorf("HTTP %d", resp.StatusCode)
+			continue
+		}
+		if n == 0 {
+			lastErr = errors.New("未收到数据")
+			continue
+		}
+		if copyErr != nil && !timedOut {
+			lastErr = copyErr
+			continue
+		}
+		return n, duration, nil
 	}
-	n, copyErr := io.Copy(io.Discard, resp.Body)
-	duration := time.Since(start)
-	if n == 0 {
-		return 0, duration, errors.New("下载测速未收到数据")
-	}
-	if copyErr != nil && downloadCtx.Err() != context.DeadlineExceeded {
-		return n, duration, copyErr
-	}
-	return n, duration, nil
+	return 0, 0, fmt.Errorf("下载测速失败: %w", lastErr)
 }
 
 func freePort() (int, error) {
@@ -568,13 +610,13 @@ func stopProcess(cmd *exec.Cmd) {
 	_ = cmd.Wait()
 }
 
-func ensureXray(ctx context.Context) (string, error) {
-	if custom := os.Getenv("XRAY_BIN"); custom != "" {
+func ensureSingBox(ctx context.Context) (string, error) {
+	if custom := os.Getenv("SING_BOX_BIN"); custom != "" {
 		if _, err := os.Stat(custom); err == nil {
 			return custom, nil
 		}
 	}
-	if path, err := exec.LookPath("xray"); err == nil {
+	if path, err := exec.LookPath("sing-box"); err == nil {
 		return path, nil
 	}
 	cacheDir, err := os.UserCacheDir()
@@ -585,7 +627,7 @@ func ensureXray(ctx context.Context) (string, error) {
 	if err := os.MkdirAll(targetDir, 0755); err != nil {
 		return "", err
 	}
-	name := "xray"
+	name := "sing-box"
 	if runtime.GOOS == "windows" {
 		name += ".exe"
 	}
@@ -593,22 +635,26 @@ func ensureXray(ctx context.Context) (string, error) {
 	if _, err := os.Stat(target); err == nil {
 		return target, nil
 	}
-	return downloadXray(ctx, target)
+	return downloadSingBox(ctx, target)
 }
 
-func downloadXray(ctx context.Context, target string) (string, error) {
+func downloadSingBox(ctx context.Context, target string) (string, error) {
 	assetName := ""
 	switch runtime.GOOS + "/" + runtime.GOARCH {
 	case "linux/amd64":
-		assetName = "Xray-linux-64.zip"
+		assetName = fmt.Sprintf("sing-box-%s-linux-amd64.tar.gz", singBoxVersion)
 	case "linux/arm64":
-		assetName = "Xray-linux-arm64-v8a.zip"
+		assetName = fmt.Sprintf("sing-box-%s-linux-arm64.tar.gz", singBoxVersion)
 	case "windows/amd64":
-		assetName = "Xray-windows-64.zip"
+		assetName = fmt.Sprintf("sing-box-%s-windows-amd64.zip", singBoxVersion)
 	default:
 		return "", fmt.Errorf("暂不支持 %s/%s 自动安装节点协议引擎", runtime.GOOS, runtime.GOARCH)
 	}
-	downloadURL := "https://github.com/XTLS/Xray-core/releases/latest/download/" + assetName
+	downloadURL := fmt.Sprintf(
+		"https://github.com/SagerNet/sing-box/releases/download/v%s/%s",
+		singBoxVersion,
+		assetName,
+	)
 	dlReq, _ := http.NewRequestWithContext(ctx, http.MethodGet, downloadURL, nil)
 	dlResp, err := http.DefaultClient.Do(dlReq)
 	if err != nil {
@@ -618,7 +664,11 @@ func downloadXray(ctx context.Context, target string) (string, error) {
 	if dlResp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("下载节点协议引擎失败: HTTP %d", dlResp.StatusCode)
 	}
-	archive, err := os.CreateTemp("", "xray-*.zip")
+	suffix := ".tar.gz"
+	if runtime.GOOS == "windows" {
+		suffix = ".zip"
+	}
+	archive, err := os.CreateTemp("", "sing-box-*"+suffix)
 	if err != nil {
 		return "", err
 	}
@@ -631,35 +681,64 @@ func downloadXray(ctx context.Context, target string) (string, error) {
 	if err := archive.Close(); err != nil {
 		return "", err
 	}
-	reader, err := zip.OpenReader(archivePath)
+	expected := "sing-box"
+	if runtime.GOOS == "windows" {
+		expected = "sing-box.exe"
+		reader, err := zip.OpenReader(archivePath)
+		if err != nil {
+			return "", err
+		}
+		defer reader.Close()
+		for _, entry := range reader.File {
+			if strings.EqualFold(filepath.Base(entry.Name), expected) {
+				input, openErr := entry.Open()
+				if openErr != nil {
+					return "", openErr
+				}
+				defer input.Close()
+				return writeExecutable(target, input)
+			}
+		}
+		return "", errors.New("下载包中没有找到 sing-box 可执行文件")
+	}
+
+	file, err := os.Open(archivePath)
 	if err != nil {
 		return "", err
 	}
-	defer reader.Close()
-	expected := "xray"
-	if runtime.GOOS == "windows" {
-		expected = "xray.exe"
+	defer file.Close()
+	gz, err := gzip.NewReader(file)
+	if err != nil {
+		return "", err
 	}
-	for _, entry := range reader.File {
-		if !strings.EqualFold(filepath.Base(entry.Name), expected) {
-			continue
+	defer gz.Close()
+	tarReader := tar.NewReader(gz)
+	for {
+		header, nextErr := tarReader.Next()
+		if nextErr == io.EOF {
+			break
 		}
-		input, err := entry.Open()
-		if err != nil {
-			return "", err
+		if nextErr != nil {
+			return "", nextErr
 		}
-		output, err := os.OpenFile(target, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0755)
-		if err != nil {
-			input.Close()
-			return "", err
+		if header.Typeflag == tar.TypeReg && filepath.Base(header.Name) == expected {
+			return writeExecutable(target, tarReader)
 		}
-		_, copyErr := io.Copy(output, input)
-		input.Close()
+	}
+	return "", errors.New("下载包中没有找到 sing-box 可执行文件")
+}
+
+func writeExecutable(target string, input io.Reader) (string, error) {
+	output, err := os.OpenFile(target, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0755)
+	if err != nil {
+		return "", err
+	}
+	if _, err := io.Copy(output, input); err != nil {
 		output.Close()
-		if copyErr != nil {
-			return "", copyErr
-		}
-		return target, nil
+		return "", err
 	}
-	return "", errors.New("下载包中没有找到 xray 可执行文件")
+	if err := output.Close(); err != nil {
+		return "", err
+	}
+	return target, nil
 }

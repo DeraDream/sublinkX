@@ -55,6 +55,10 @@ func installCommand(baseURL, token string) string {
 	)
 }
 
+func upgradeCommand() string {
+	return `curl -fsSL https://github.com/DeraDream/sublinkX/releases/latest/download/sublink_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/') -o /tmp/sublink-agent && chmod +x /tmp/sublink-agent && sudo systemctl stop sublink-agent && sudo mv /tmp/sublink-agent /usr/local/bin/sublink-agent && sudo systemctl start sublink-agent`
+}
+
 func CreateHomeAgent(c *gin.Context) {
 	name := strings.TrimSpace(c.PostForm("name"))
 	if name == "" {
@@ -90,9 +94,10 @@ func ListHomeAgents(c *gin.Context) {
 	}
 	type agentView struct {
 		models.HomeAgent
-		Online  bool   `json:"online"`
-		State   string `json:"state"`
-		Pending int64  `json:"pending_tasks"`
+		Online         bool   `json:"online"`
+		State          string `json:"state"`
+		Pending        int64  `json:"pending_tasks"`
+		UpgradeCommand string `json:"upgrade_command"`
 	}
 	out := make([]agentView, 0, len(agents))
 	now := time.Now()
@@ -106,7 +111,10 @@ func ListHomeAgents(c *gin.Context) {
 		if agent.PersistentActive || pending > 0 {
 			state = "active"
 		}
-		out = append(out, agentView{HomeAgent: agent, Online: online, State: state, Pending: pending})
+		out = append(out, agentView{
+			HomeAgent: agent, Online: online, State: state, Pending: pending,
+			UpgradeCommand: upgradeCommand(),
+		})
 	}
 	c.JSON(http.StatusOK, gin.H{"code": "00000", "data": out, "msg": "获取成功"})
 }
@@ -163,6 +171,10 @@ func CreateSpeedTestTask(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"msg": "家宽测速端不存在"})
 		return
 	}
+	if agent.LastSeen == nil || time.Since(*agent.LastSeen) >= 2*time.Minute {
+		c.JSON(http.StatusConflict, gin.H{"msg": "家宽测速端当前离线"})
+		return
+	}
 	scheme := strings.ToLower(strings.SplitN(nd.Link, "://", 2)[0])
 	if scheme != "ss" && scheme != "vless" {
 		c.JSON(http.StatusBadRequest, gin.H{"msg": "家宽测速目前仅支持 SS 和 VLESS 节点"})
@@ -186,6 +198,9 @@ func CreateSpeedTestTask(c *gin.Context) {
 func ListSpeedTestTasks(c *gin.Context) {
 	var tasks []models.SpeedTestTask
 	query := models.DB.Order("id desc").Limit(200)
+	if taskID, _ := strconv.Atoi(c.Query("id")); taskID > 0 {
+		query = query.Where("id = ?", taskID)
+	}
 	if nodeID, _ := strconv.Atoi(c.Query("node_id")); nodeID > 0 {
 		query = query.Where("node_id = ?", nodeID)
 	}
@@ -248,10 +263,10 @@ func HomeAgentPoll(c *gin.Context) {
 		return
 	}
 	mode := "suspended"
-	pollAfter := 60
+	pollAfter := 15
 	if agent.PersistentActive || task.ID > 0 {
 		mode = "active"
-		pollAfter = 5
+		pollAfter = 3
 	}
 	var taskData any
 	if task.ID > 0 {
