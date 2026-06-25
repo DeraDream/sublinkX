@@ -49,14 +49,14 @@ func publicBaseURL(c *gin.Context) string {
 
 func installCommand(baseURL, token string) string {
 	return fmt.Sprintf(
-		`curl -fsSL https://github.com/DeraDream/sublinkX/releases/latest/download/sublink_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/') -o /tmp/sublink-agent && chmod +x /tmp/sublink-agent && sudo mv /tmp/sublink-agent /usr/local/bin/sublink-agent && sudo /usr/local/bin/sublink-agent agent install --server %s --token %s`,
+		`sudo env http_proxy="${http_proxy:-}" https_proxy="${https_proxy:-}" HTTP_PROXY="${HTTP_PROXY:-}" HTTPS_PROXY="${HTTPS_PROXY:-}" ALL_PROXY="${ALL_PROXY:-}" curl -fL --retry 3 --connect-timeout 15 "https://github.com/DeraDream/sublinkX/releases/latest/download/sublink_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')" -o /var/tmp/sublink-agent.new && sudo chmod 755 /var/tmp/sublink-agent.new && sudo /var/tmp/sublink-agent.new agent install --server %s --token %s && sudo rm -f /var/tmp/sublink-agent.new`,
 		baseURL,
 		token,
 	)
 }
 
 func upgradeCommand() string {
-	return `curl -fsSL https://github.com/DeraDream/sublinkX/releases/latest/download/sublink_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/') -o /tmp/sublink-agent && chmod +x /tmp/sublink-agent && sudo systemctl stop sublink-agent && sudo mv /tmp/sublink-agent /usr/local/bin/sublink-agent && sudo systemctl start sublink-agent`
+	return `sudo env http_proxy="${http_proxy:-}" https_proxy="${https_proxy:-}" HTTP_PROXY="${HTTP_PROXY:-}" HTTPS_PROXY="${HTTPS_PROXY:-}" ALL_PROXY="${ALL_PROXY:-}" curl -fL --retry 3 --connect-timeout 15 "https://github.com/DeraDream/sublinkX/releases/latest/download/sublink_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')" -o /var/tmp/sublink-agent.new && sudo chmod 755 /var/tmp/sublink-agent.new && sudo /var/tmp/sublink-agent.new -version && sudo systemctl stop sublink-agent && sudo mv /var/tmp/sublink-agent.new /usr/local/bin/sublink-agent && sudo /usr/local/bin/sublink-agent agent install --config /etc/sublink-agent/config.yaml && sudo systemctl status sublink-agent --no-pager`
 }
 
 func CreateHomeAgent(c *gin.Context) {

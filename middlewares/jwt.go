@@ -4,7 +4,6 @@ import (
 	"errors"
 	"net/http"
 	"strings"
-	"sublink/models"
 
 	"github.com/dgrijalva/jwt-go"
 	"github.com/gin-gonic/gin"
@@ -12,8 +11,11 @@ import (
 
 // 随机密钥
 
-// var Secret = []byte("sublink") // 秘钥
-var Secret = []byte(models.ReadConfig().JwtSecret) // 从配置文件读取JWT密钥
+var Secret []byte
+
+func SetSecret(secret string) {
+	Secret = []byte(secret)
+}
 
 // JwtClaims jwt声明
 type JwtClaims struct {

@@ -27,7 +27,7 @@ import (
 )
 
 const (
-	Version        = "0.2.0"
+	Version        = "0.3.0"
 	singBoxVersion = "1.13.13"
 )
 
@@ -168,6 +168,8 @@ Wants=network-online.target
 
 [Service]
 Type=simple
+StateDirectory=sublink-agent
+WorkingDirectory=/var/lib/sublink-agent
 ExecStart=/usr/local/bin/sublink-agent agent run --config /etc/sublink-agent/config.yaml
 Restart=always
 RestartSec=10

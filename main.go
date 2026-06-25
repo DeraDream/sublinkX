@@ -29,7 +29,7 @@ var embeddedFiles embed.FS
 var Template embed.FS
 
 // 版本号
-var version string
+const version = "3.0"
 
 func Templateinit() {
 	// 设置template路径
@@ -72,6 +72,10 @@ func Templateinit() {
 }
 
 func main() {
+	if len(os.Args) > 1 && (os.Args[1] == "-version" || os.Args[1] == "--version") {
+		fmt.Println(version)
+		return
+	}
 	if len(os.Args) > 1 && os.Args[1] == "agent" {
 		if err := agent.Main(os.Args[2:]); err != nil {
 			log.Fatal(err)
@@ -81,16 +85,8 @@ func main() {
 	// 初始化配置
 	models.ConfigInit()
 	config := models.ReadConfig() // 读取配置文件
-	var port = config.Port        // 读取端口号
-	// 获取版本号
-	var Isversion bool
-	version = "2.9"
-	flag.BoolVar(&Isversion, "version", false, "显示版本号")
-	flag.Parse()
-	if Isversion {
-		fmt.Println(version)
-		return
-	}
+	middlewares.SetSecret(config.JwtSecret)
+	var port = config.Port // 读取端口号
 	// 初始化数据库
 	models.InitSqlite()
 	// 获取命令行参数

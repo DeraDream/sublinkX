@@ -2,10 +2,12 @@ package api
 
 import (
 	"errors"
+	"fmt"
 	"log"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/gin-gonic/gin"
 )
@@ -19,36 +21,31 @@ type Temp struct {
 // 定义允许操作的基础目录
 
 var baseTemplateDir string
+var baseTemplateDirOnce sync.Once
+var baseTemplateDirErr error
 
-func init() {
-	// === 修改点开始 ===
-	// 获取当前工作目录 (Current Working Directory)
-	// 当您在项目根目录运行 `go run main.go` 时，这将是项目根目录
-	cwd, err := os.Getwd()
-	if err != nil {
-		log.Fatalf("无法获取当前工作目录: %v", err)
-	}
-
-	// 将 "template" 路径解析为相对于当前工作目录的绝对路径
-	absPath, err := filepath.Abs(filepath.Join(cwd, "template"))
-	if err != nil {
-		log.Fatalf("无法解析 template 目录的绝对路径: %v", err)
-	}
-	baseTemplateDir = absPath
-	log.Printf("基础模板目录已初始化为: %s (基于当前工作目录)", baseTemplateDir)
-	// === 修改点结束 ===
-
-	// 确保基础模板目录存在，如果不存在则创建
-	if _, err := os.Stat(baseTemplateDir); os.IsNotExist(err) {
-		if err := os.MkdirAll(baseTemplateDir, 0755); err != nil {
-			log.Fatalf("无法创建基础模板目录 %s: %v", baseTemplateDir, err)
+func ensureBaseTemplateDir() error {
+	baseTemplateDirOnce.Do(func() {
+		cwd, err := os.Getwd()
+		if err != nil {
+			baseTemplateDirErr = fmt.Errorf("无法获取当前工作目录: %w", err)
+			return
 		}
-		log.Printf("已创建基础模板目录: %s", baseTemplateDir)
-	}
+		baseTemplateDir, err = filepath.Abs(filepath.Join(cwd, "template"))
+		if err != nil {
+			baseTemplateDirErr = fmt.Errorf("无法解析 template 目录: %w", err)
+			return
+		}
+		baseTemplateDirErr = os.MkdirAll(baseTemplateDir, 0755)
+	})
+	return baseTemplateDirErr
 }
 
 // safeFilename 生成安全的文件路径，防止目录遍历
 func safeFilePath(filename string) (string, error) {
+	if err := ensureBaseTemplateDir(); err != nil {
+		return "", err
+	}
 	// 1. 清理用户提供的文件名，移除冗余的 "." 和 ".." 等。
 	cleanFilename := filepath.Clean(filename)
 
@@ -94,6 +91,10 @@ func safeFilePath(filename string) (string, error) {
 }
 
 func GetTempS(c *gin.Context) {
+	if err := ensureBaseTemplateDir(); err != nil {
+		c.JSON(500, gin.H{"msg": err.Error()})
+		return
+	}
 	// 由于 init() 函数已经确保了 baseTemplateDir 的存在，这里无需再次检查和创建。
 	files, err := os.ReadDir(baseTemplateDir)
 	if err != nil {
@@ -156,6 +157,10 @@ func GetTempS(c *gin.Context) {
 	})
 }
 func UpdateTemp(c *gin.Context) {
+	if err := ensureBaseTemplateDir(); err != nil {
+		c.JSON(500, gin.H{"msg": err.Error()})
+		return
+	}
 	filename := c.PostForm("filename")
 	oldname := c.PostForm("oldname")
 	text := c.PostForm("text")
@@ -243,6 +248,10 @@ func UpdateTemp(c *gin.Context) {
 	})
 }
 func AddTemp(c *gin.Context) {
+	if err := ensureBaseTemplateDir(); err != nil {
+		c.JSON(500, gin.H{"msg": err.Error()})
+		return
+	}
 	filename := c.PostForm("filename")
 	text := c.PostForm("text")
 
@@ -305,6 +314,10 @@ func AddTemp(c *gin.Context) {
 }
 
 func DelTemp(c *gin.Context) {
+	if err := ensureBaseTemplateDir(); err != nil {
+		c.JSON(500, gin.H{"msg": err.Error()})
+		return
+	}
 	filename := c.PostForm("filename")
 
 	if filename == "" {
