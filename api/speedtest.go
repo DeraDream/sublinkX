@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sublink/agent"
 	"sublink/models"
 	"time"
 
@@ -23,6 +24,8 @@ type agentTaskResult struct {
 	EgressIP     string  `json:"egress_ip"`
 	Error        string  `json:"error"`
 }
+
+const currentHomeAgentVersion = agent.Version
 
 func randomAgentToken() (string, error) {
 	buf := make([]byte, 32)
@@ -57,6 +60,30 @@ func installCommand(baseURL, token string) string {
 
 func upgradeCommand() string {
 	return `sudo env http_proxy="${http_proxy:-}" https_proxy="${https_proxy:-}" HTTP_PROXY="${HTTP_PROXY:-}" HTTPS_PROXY="${HTTPS_PROXY:-}" ALL_PROXY="${ALL_PROXY:-}" curl -fL --retry 3 --connect-timeout 15 "https://github.com/DeraDream/sublinkX/releases/latest/download/sublink_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')" -o /var/tmp/sublink-agent.new && sudo chmod 755 /var/tmp/sublink-agent.new && sudo /var/tmp/sublink-agent.new -version && sudo systemctl stop sublink-agent && sudo mv /var/tmp/sublink-agent.new /usr/local/bin/sublink-agent && sudo /usr/local/bin/sublink-agent agent install --config /etc/sublink-agent/config.yaml && sudo systemctl status sublink-agent --no-pager`
+}
+
+func agentNeedsUpgrade(installed string) bool {
+	installed = strings.TrimSpace(strings.TrimPrefix(installed, "v"))
+	if installed == "" {
+		return false
+	}
+	current := strings.Split(currentHomeAgentVersion, ".")
+	seen := strings.Split(installed, ".")
+	for index := 0; index < len(current); index++ {
+		currentPart, currentErr := strconv.Atoi(current[index])
+		seenPart := 0
+		var seenErr error
+		if index < len(seen) {
+			seenPart, seenErr = strconv.Atoi(seen[index])
+		}
+		if currentErr != nil || seenErr != nil {
+			return installed != currentHomeAgentVersion
+		}
+		if seenPart != currentPart {
+			return seenPart < currentPart
+		}
+	}
+	return false
 }
 
 func CreateHomeAgent(c *gin.Context) {
@@ -94,10 +121,11 @@ func ListHomeAgents(c *gin.Context) {
 	}
 	type agentView struct {
 		models.HomeAgent
-		Online         bool   `json:"online"`
-		State          string `json:"state"`
-		Pending        int64  `json:"pending_tasks"`
-		UpgradeCommand string `json:"upgrade_command"`
+		Online          bool   `json:"online"`
+		State           string `json:"state"`
+		Pending         int64  `json:"pending_tasks"`
+		UpdateAvailable bool   `json:"update_available"`
+		UpgradeCommand  string `json:"upgrade_command,omitempty"`
 	}
 	out := make([]agentView, 0, len(agents))
 	now := time.Now()
@@ -111,9 +139,14 @@ func ListHomeAgents(c *gin.Context) {
 		if agent.PersistentActive || pending > 0 {
 			state = "active"
 		}
+		updateAvailable := agentNeedsUpgrade(agent.AgentVersion)
+		command := ""
+		if updateAvailable {
+			command = upgradeCommand()
+		}
 		out = append(out, agentView{
 			HomeAgent: agent, Online: online, State: state, Pending: pending,
-			UpgradeCommand: upgradeCommand(),
+			UpdateAvailable: updateAvailable, UpgradeCommand: command,
 		})
 	}
 	c.JSON(http.StatusOK, gin.H{"code": "00000", "data": out, "msg": "获取成功"})

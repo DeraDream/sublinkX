@@ -18,8 +18,10 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"sublink/node"
+	"sync"
 	"syscall"
 	"time"
 
@@ -27,7 +29,7 @@ import (
 )
 
 const (
-	Version        = "0.3.0"
+	Version        = "0.4.0"
 	singBoxVersion = "1.13.13"
 )
 
@@ -368,20 +370,24 @@ func runSingBoxTest(parent context.Context, binary, nodeLink string, download bo
 	defer transport.CloseIdleConnections()
 	client := &http.Client{Transport: transport}
 	result := speedResult{
-		LatencyMs: measureLatency(ctx, client),
+		LatencyMs: measureNodeLatency(ctx, nodeLink),
 	}
 	if result.LatencyMs < 0 {
 		return result, errors.New("节点延迟测试失败")
 	}
-	if download {
-		result.EgressIP = measureEgressIP(ctx, client)
-		bytesRead, duration, err := measureDownload(ctx, client)
-		if err != nil {
+	if !download {
+		if err := verifyProxy(ctx, client); err != nil {
 			return result, err
 		}
-		result.TestBytes = bytesRead
-		result.DownloadMbps = float64(bytesRead) * 8 / duration.Seconds() / 1e6
+		return result, nil
 	}
+	result.EgressIP = measureEgressIP(ctx, client)
+	bytesRead, duration, err := measureDownload(ctx, client)
+	if err != nil {
+		return result, err
+	}
+	result.TestBytes = bytesRead
+	result.DownloadMbps = float64(bytesRead) * 8 / duration.Seconds() / 1e6
 	return result, nil
 }
 
@@ -494,31 +500,91 @@ func defaultString(value, fallback string) string {
 	return value
 }
 
-func measureLatency(ctx context.Context, client *http.Client) int64 {
+func nodeAddress(link string) (string, error) {
+	scheme := strings.ToLower(strings.SplitN(link, "://", 2)[0])
+	switch scheme {
+	case "ss":
+		ss, err := node.DecodeSSURL(link)
+		if err != nil {
+			return "", err
+		}
+		if ss.Server == "" || ss.Port <= 0 {
+			return "", errors.New("SS 节点地址或端口无效")
+		}
+		return net.JoinHostPort(ss.Server, strconv.Itoa(ss.Port)), nil
+	case "vless":
+		vless, err := node.DecodeVLESSURL(link)
+		if err != nil {
+			return "", err
+		}
+		if vless.Server == "" || vless.Port <= 0 {
+			return "", errors.New("VLESS 节点地址或端口无效")
+		}
+		return net.JoinHostPort(vless.Server, strconv.Itoa(vless.Port)), nil
+	default:
+		return "", fmt.Errorf("暂不支持 %s 节点测速", scheme)
+	}
+}
+
+func measureNodeLatency(ctx context.Context, link string) int64 {
+	address, err := nodeAddress(link)
+	if err != nil {
+		fmt.Println("节点地址解析失败:", err)
+		return -1
+	}
+	best := int64(-1)
+	dialer := net.Dialer{Timeout: 3 * time.Second}
+	for attempt := 0; attempt < 3; attempt++ {
+		probeCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+		start := time.Now()
+		conn, dialErr := dialer.DialContext(probeCtx, "tcp", address)
+		elapsed := time.Since(start).Milliseconds()
+		cancel()
+		if dialErr == nil {
+			conn.Close()
+			if elapsed < 1 {
+				elapsed = 1
+			}
+			if best < 0 || elapsed < best {
+				best = elapsed
+			}
+		}
+		if attempt < 2 {
+			if !sleepContext(ctx, 100*time.Millisecond) {
+				break
+			}
+		}
+	}
+	return best
+}
+
+func verifyProxy(ctx context.Context, client *http.Client) error {
 	probes := []string{
 		"https://www.gstatic.com/generate_204",
 		"https://cp.cloudflare.com/generate_204",
 	}
 	var lastErr error
 	for _, probeURL := range probes {
-		probeCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		probeCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
 		req, _ := http.NewRequestWithContext(probeCtx, http.MethodGet, probeURL, nil)
-		start := time.Now()
 		resp, err := client.Do(req)
 		if err == nil {
 			_, _ = io.Copy(io.Discard, resp.Body)
 			resp.Body.Close()
-			elapsed := time.Since(start).Milliseconds()
 			cancel()
-			return elapsed
+			if resp.StatusCode/100 == 2 || resp.StatusCode/100 == 3 {
+				return nil
+			}
+			lastErr = fmt.Errorf("HTTP %d", resp.StatusCode)
+			continue
 		}
 		lastErr = err
 		cancel()
 	}
-	if lastErr != nil {
-		fmt.Println("延迟探测失败:", lastErr)
+	if lastErr == nil {
+		lastErr = errors.New("代理链路无响应")
 	}
-	return -1
+	return fmt.Errorf("节点代理链路校验失败: %w", lastErr)
 }
 
 func measureEgressIP(ctx context.Context, client *http.Client) string {
@@ -535,11 +601,66 @@ func measureEgressIP(ctx context.Context, client *http.Client) string {
 }
 
 func measureDownload(ctx context.Context, client *http.Client) (int64, time.Duration, error) {
+	const streams = 4
+	testCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	type sample struct {
+		bytes int64
+		err   error
+	}
+	results := make(chan sample, streams)
+	var workers sync.WaitGroup
+	start := time.Now()
+	for stream := 0; stream < streams; stream++ {
+		workers.Add(1)
+		go func(stream int) {
+			defer workers.Done()
+			downloadURL := fmt.Sprintf(
+				"https://speed.cloudflare.com/__down?bytes=50000000&stream=%d&cache=%d",
+				stream,
+				time.Now().UnixNano(),
+			)
+			req, _ := http.NewRequestWithContext(testCtx, http.MethodGet, downloadURL, nil)
+			req.Header.Set("Accept-Encoding", "identity")
+			req.Close = true
+			resp, err := client.Do(req)
+			if err != nil {
+				results <- sample{err: err}
+				return
+			}
+			defer resp.Body.Close()
+			if resp.StatusCode/100 != 2 {
+				results <- sample{err: fmt.Errorf("HTTP %d", resp.StatusCode)}
+				return
+			}
+			n, copyErr := io.Copy(io.Discard, resp.Body)
+			if copyErr != nil && testCtx.Err() == nil {
+				results <- sample{bytes: n, err: copyErr}
+				return
+			}
+			results <- sample{bytes: n}
+		}(stream)
+	}
+	go func() {
+		workers.Wait()
+		close(results)
+	}()
+	var total int64
+	var lastErr error
+	for result := range results {
+		total += result.bytes
+		if result.err != nil {
+			lastErr = result.err
+		}
+	}
+	duration := time.Since(start)
+	if total > 0 {
+		return total, duration, nil
+	}
+
 	urls := []string{
-		"https://speed.cloudflare.com/__down?bytes=100000000",
 		"https://proof.ovh.net/files/100Mb.dat",
 	}
-	var lastErr error
 	for _, downloadURL := range urls {
 		downloadCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
 		req, _ := http.NewRequestWithContext(downloadCtx, http.MethodGet, downloadURL, nil)

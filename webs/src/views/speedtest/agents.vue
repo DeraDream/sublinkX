@@ -16,7 +16,8 @@ interface HomeAgent {
   last_seen?: string;
   agent_version?: string;
   platform?: string;
-  upgrade_command: string;
+  update_available: boolean;
+  upgrade_command?: string;
 }
 
 const agents = ref<HomeAgent[]>([]);
@@ -56,6 +57,7 @@ async function copyCommand() {
 }
 
 async function copyUpgradeCommand(agent: any) {
+  if (!agent.upgrade_command) return;
   await navigator.clipboard.writeText(agent.upgrade_command);
   ElMessage.success("更新命令已复制，请在家宽设备终端执行");
 }
@@ -199,7 +201,11 @@ onBeforeUnmount(() => {
         </el-table-column>
         <el-table-column label="操作" width="250" align="right">
           <template #default="{ row }">
-            <el-button link @click="copyUpgradeCommand(row)">
+            <el-button
+              v-if="row.update_available && row.upgrade_command"
+              link
+              @click="copyUpgradeCommand(row)"
+            >
               更新命令
             </el-button>
             <el-button link type="primary" @click="changeMode(row)">
