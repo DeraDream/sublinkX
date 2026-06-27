@@ -27,10 +27,16 @@ type Manager struct {
 }
 
 type Bot struct {
-	config models.TelegramConfig
-	client *http.Client
-	mu     sync.Mutex
-	states map[int64]string
+	config      models.TelegramConfig
+	client      *http.Client
+	mu          sync.Mutex
+	states      map[int64]string
+	pendingSubs map[int64]*pendingSubscription
+}
+
+type pendingSubscription struct {
+	Name    string
+	NodeIDs map[int]bool
 }
 
 type updateResponse struct {
@@ -145,9 +151,10 @@ func NewBot(config models.TelegramConfig) *Bot {
 		config.APIBaseURL = "https://api.telegram.org"
 	}
 	return &Bot{
-		config: config,
-		client: &http.Client{Timeout: 40 * time.Second},
-		states: make(map[int64]string),
+		config:      config,
+		client:      &http.Client{Timeout: 40 * time.Second},
+		states:      make(map[int64]string),
+		pendingSubs: make(map[int64]*pendingSubscription),
 	}
 }
 
@@ -230,6 +237,7 @@ func (b *Bot) handleMessage(chatID int64, text string) {
 	command := normalizeCommand(text)
 	if text == "/cancel" {
 		b.setState(chatID, "")
+		b.clearPendingSubscription(chatID)
 		_ = b.SendHTML(chatID, "已取消当前操作。", mainReplyKeyboard())
 		return
 	}
@@ -243,12 +251,17 @@ func (b *Bot) handleMessage(chatID int64, text string) {
 		b.setSubscriptionLimit(chatID, strings.TrimPrefix(state, "set_sub_limit:"), text)
 		return
 	}
+	if state == "add_sub_name" && !strings.HasPrefix(text, "/") && !isMenuCommand(command) {
+		b.startSubscriptionNodePicker(chatID, text)
+		return
+	}
 	if state == "add_node" && !strings.HasPrefix(text, "/") && !isMenuCommand(command) {
 		b.addNode(chatID, text)
 		return
 	}
 	if isMenuCommand(command) {
 		b.setState(chatID, "")
+		b.clearPendingSubscription(chatID)
 	}
 
 	switch command {
@@ -260,6 +273,8 @@ func (b *Bot) handleMessage(chatID int64, text string) {
 		b.sendNodeList(chatID)
 	case "/subs", "🧾 订阅列表":
 		b.sendSubscriptionList(chatID)
+	case "/addsub", "➕ 添加订阅":
+		b.promptAddSubscription(chatID)
 	case "/addnode", "➕ 添加节点":
 		b.promptAddNode(chatID)
 	case "🗑 删除节点":
@@ -275,6 +290,15 @@ func (b *Bot) handleCallback(chatID int64, data string) {
 		b.sendNodeList(chatID)
 	case data == "subs":
 		b.sendSubscriptionList(chatID)
+	case data == "add_sub":
+		b.promptAddSubscription(chatID)
+	case strings.HasPrefix(data, "toggle_sub_node:"):
+		b.togglePendingSubscriptionNode(chatID, strings.TrimPrefix(data, "toggle_sub_node:"))
+	case data == "finish_add_sub":
+		b.finishAddSubscription(chatID)
+	case data == "cancel_add_sub":
+		b.clearPendingSubscription(chatID)
+		_ = b.SendHTML(chatID, "已取消添加订阅。", mainReplyKeyboard())
 	case strings.HasPrefix(data, "sub_logs:"):
 		b.sendSubscriptionLogs(chatID, strings.TrimPrefix(data, "sub_logs:"))
 	case strings.HasPrefix(data, "sub_reset_token:"):
@@ -398,15 +422,17 @@ func (b *Bot) sendSubscriptionList(chatID int64) {
 			status = reason
 		}
 		fmt.Fprintf(&text, "▣ <b>%d. %s</b>\n节点数：<code>%d</code>\n状态：<code>%s</code>\n访问：<code>%d/%s</code>\n", index+1, escapeHTML(item.Name), len(item.Nodes), escapeHTML(status), item.AccessCount, accessLimitText(item.AccessLimit))
-		fmt.Fprintf(&text, "V2Ray：\n%s\n", htmlCodeBlock(subscriptionPathWithToken(token, "v2ray")))
-		fmt.Fprintf(&text, "Clash：\n%s\n", htmlCodeBlock(subscriptionPathWithToken(token, "clash")))
-		fmt.Fprintf(&text, "Surge：\n%s\n\n", htmlCodeBlock(subscriptionPathWithToken(token, "surge")))
+		fmt.Fprintf(&text, "V2Ray：\n%s\n", htmlCodeBlock(b.subscriptionURLWithToken(token, "v2ray")))
+		fmt.Fprintf(&text, "Clash：\n%s\n", htmlCodeBlock(b.subscriptionURLWithToken(token, "clash")))
+		fmt.Fprintf(&text, "Surge：\n%s\n\n", htmlCodeBlock(b.subscriptionURLWithToken(token, "surge")))
 		if text.Len() > 3500 {
 			text.WriteString("订阅较多，当前消息仅展示前半部分。")
 			break
 		}
 	}
-	rows := [][]inlineButton{}
+	rows := [][]inlineButton{
+		{{Text: "➕ 新建订阅", CallbackData: "add_sub"}},
+	}
 	for index, item := range subs {
 		if index >= 10 {
 			break
@@ -460,7 +486,7 @@ func (b *Bot) resetSubscriptionToken(chatID int64, idText string) {
 		_ = b.SendHTML(chatID, "重置 token 失败："+escapeHTML(err.Error()), mainReplyKeyboard())
 		return
 	}
-	_ = b.SendHTML(chatID, "✅ <b>订阅 token 已重置</b>\n\nClash：\n"+htmlCodeBlock(subscriptionPathWithToken(token, "clash")), inlineKeyboard{InlineKeyboard: [][]inlineButton{{{Text: "返回订阅列表", CallbackData: "subs"}}}})
+	_ = b.SendHTML(chatID, "✅ <b>订阅 token 已重置</b>\n\nClash：\n"+htmlCodeBlock(b.subscriptionURLWithToken(token, "clash")), inlineKeyboard{InlineKeyboard: [][]inlineButton{{{Text: "返回订阅列表", CallbackData: "subs"}}}})
 }
 
 func (b *Bot) setSubscriptionRevoked(chatID int64, idText string, revoked bool) {
@@ -508,6 +534,136 @@ func (b *Bot) setSubscriptionLimit(chatID int64, idText string, value string) {
 	}
 	b.setState(chatID, "")
 	_ = b.SendHTML(chatID, "✅ 访问次数限制已更新。", inlineKeyboard{InlineKeyboard: [][]inlineButton{{{Text: "返回订阅列表", CallbackData: "subs"}}}})
+}
+
+func (b *Bot) promptAddSubscription(chatID int64) {
+	b.clearPendingSubscription(chatID)
+	b.setState(chatID, "add_sub_name")
+	_ = b.SendHTML(chatID, "➕ <b>新建订阅</b>\n\n请发送订阅名称，例如 <code>myclash</code>。\n发送 <code>/cancel</code> 可取消当前操作。", mainReplyKeyboard())
+}
+
+func (b *Bot) startSubscriptionNodePicker(chatID int64, name string) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		_ = b.SendHTML(chatID, "订阅名称不能为空，请重新发送。", mainReplyKeyboard())
+		return
+	}
+	b.mu.Lock()
+	b.pendingSubs[chatID] = &pendingSubscription{Name: name, NodeIDs: map[int]bool{}}
+	b.states[chatID] = "add_sub_nodes"
+	b.mu.Unlock()
+	b.sendPendingSubscriptionNodePicker(chatID)
+}
+
+func (b *Bot) togglePendingSubscriptionNode(chatID int64, idText string) {
+	id, err := strconv.Atoi(idText)
+	if err != nil || id <= 0 {
+		_ = b.SendHTML(chatID, "节点 ID 格式不正确。", mainReplyKeyboard())
+		return
+	}
+	b.mu.Lock()
+	pending := b.pendingSubs[chatID]
+	if pending != nil {
+		if pending.NodeIDs[id] {
+			delete(pending.NodeIDs, id)
+		} else {
+			pending.NodeIDs[id] = true
+		}
+	}
+	b.mu.Unlock()
+	if pending == nil {
+		_ = b.SendHTML(chatID, "当前没有正在创建的订阅。", mainReplyKeyboard())
+		return
+	}
+	b.sendPendingSubscriptionNodePicker(chatID)
+}
+
+func (b *Bot) sendPendingSubscriptionNodePicker(chatID int64) {
+	b.mu.Lock()
+	pending := b.pendingSubs[chatID]
+	b.mu.Unlock()
+	if pending == nil {
+		_ = b.SendHTML(chatID, "当前没有正在创建的订阅。", mainReplyKeyboard())
+		return
+	}
+	nodes, err := models.GetNodeList()
+	if err != nil {
+		_ = b.SendHTML(chatID, "读取节点失败："+escapeHTML(err.Error()), mainReplyKeyboard())
+		return
+	}
+	rows := make([][]inlineButton, 0, len(nodes)+2)
+	for index, item := range nodes {
+		if index >= 40 {
+			break
+		}
+		prefix := "☐"
+		if pending.NodeIDs[item.ID] {
+			prefix = "☑"
+		}
+		if item.Disabled {
+			prefix += " 禁用"
+		}
+		rows = append(rows, []inlineButton{{
+			Text:         fmt.Sprintf("%s #%d %s", prefix, item.ID, item.Name),
+			CallbackData: fmt.Sprintf("toggle_sub_node:%d", item.ID),
+		}})
+	}
+	rows = append(rows,
+		[]inlineButton{{Text: "✅ 完成创建", CallbackData: "finish_add_sub"}, {Text: "取消", CallbackData: "cancel_add_sub"}},
+	)
+	text := fmt.Sprintf("➕ <b>新建订阅</b>\n名称：<code>%s</code>\n已选择：<code>%d</code> 个节点\n\n点击节点可切换选择。", escapeHTML(pending.Name), len(pending.NodeIDs))
+	_ = b.SendHTML(chatID, text, inlineKeyboard{InlineKeyboard: rows})
+}
+
+func (b *Bot) finishAddSubscription(chatID int64) {
+	b.mu.Lock()
+	pending := b.pendingSubs[chatID]
+	b.mu.Unlock()
+	if pending == nil {
+		_ = b.SendHTML(chatID, "当前没有正在创建的订阅。", mainReplyKeyboard())
+		return
+	}
+	if len(pending.NodeIDs) == 0 {
+		_ = b.SendHTML(chatID, "至少选择一个节点。", mainReplyKeyboard())
+		return
+	}
+	nodes := make([]models.Node, 0, len(pending.NodeIDs))
+	nodeNames := make([]string, 0, len(pending.NodeIDs))
+	for id := range pending.NodeIDs {
+		var item models.Node
+		if err := models.DB.First(&item, id).Error; err != nil {
+			_ = b.SendHTML(chatID, "读取节点失败："+escapeHTML(err.Error()), mainReplyKeyboard())
+			return
+		}
+		nodes = append(nodes, item)
+		nodeNames = append(nodeNames, item.Name)
+	}
+	sub := models.Subcription{
+		Name:      pending.Name,
+		Config:    `{"clash":"./template/clash.yaml","surge":"./template/surge.conf","udp":false,"cert":false}`,
+		NodeOrder: strings.Join(nodeNames, ","),
+		Nodes:     nodes,
+	}
+	if err := sub.Add(); err != nil {
+		_ = b.SendHTML(chatID, "创建订阅失败："+escapeHTML(err.Error()), mainReplyKeyboard())
+		return
+	}
+	b.clearPendingSubscription(chatID)
+	token := sub.Token
+	if token == "" {
+		token = models.LegacySubscriptionToken(sub.Name)
+	}
+	text := "✅ <b>订阅已创建</b>\n\n" +
+		"名称：<code>" + escapeHTML(sub.Name) + "</code>\n" +
+		"Clash：\n" + htmlCodeBlock(b.subscriptionURLWithToken(token, "clash"))
+	_ = b.SendHTML(chatID, text, inlineKeyboard{InlineKeyboard: [][]inlineButton{{{Text: "返回订阅列表", CallbackData: "subs"}}}})
+}
+
+func (b *Bot) clearPendingSubscription(chatID int64) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	delete(b.pendingSubs, chatID)
+	delete(b.states, chatID)
 }
 
 func (b *Bot) promptAddNode(chatID int64) {
@@ -729,7 +885,8 @@ func mainReplyKeyboard() replyKeyboard {
 	return replyKeyboard{
 		Keyboard: [][]replyButton{
 			{{Text: "📋 节点列表"}, {Text: "🧾 订阅列表"}},
-			{{Text: "➕ 添加节点"}, {Text: "🗑 删除节点"}},
+			{{Text: "➕ 添加节点"}, {Text: "➕ 添加订阅"}},
+			{{Text: "🗑 删除节点"}},
 		},
 		ResizeKeyboard:        true,
 		IsPersistent:          true,
@@ -762,6 +919,8 @@ func normalizeCommand(text string) string {
 		return "🧾 订阅列表"
 	case "添加节点":
 		return "➕ 添加节点"
+	case "添加订阅":
+		return "➕ 添加订阅"
 	case "删除节点":
 		return "🗑 删除节点"
 	default:
@@ -771,7 +930,7 @@ func normalizeCommand(text string) string {
 
 func isMenuCommand(command string) bool {
 	switch command {
-	case "📋 节点列表", "🧾 订阅列表", "➕ 添加节点", "🗑 删除节点", "/nodes", "/subs", "/addnode", "/menu", "/start":
+	case "📋 节点列表", "🧾 订阅列表", "➕ 添加节点", "➕ 添加订阅", "🗑 删除节点", "/nodes", "/subs", "/addnode", "/addsub", "/menu", "/start":
 		return true
 	default:
 		return false
@@ -787,7 +946,23 @@ func subscriptionPath(name string, client string) string {
 }
 
 func subscriptionPathWithToken(token string, client string) string {
-	return fmt.Sprintf("/c/?token=%s&client=%s", token, url.QueryEscape(client))
+	path := "/c/?token=" + url.QueryEscape(token)
+	if strings.TrimSpace(client) != "" {
+		path += "&client=" + url.QueryEscape(strings.TrimSpace(client))
+	}
+	return path
+}
+
+func (b *Bot) subscriptionURLWithToken(token string, client string) string {
+	return b.publicBaseURL() + subscriptionPathWithToken(token, client)
+}
+
+func (b *Bot) publicBaseURL() string {
+	base := strings.TrimRight(strings.TrimSpace(b.config.PublicBaseURL), "/")
+	if base == "" {
+		base = "https://sublink.yforward7.com"
+	}
+	return base
 }
 
 func accessLimitText(limit int) string {

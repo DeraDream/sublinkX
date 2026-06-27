@@ -7,6 +7,7 @@ export interface TelegramConfig {
   admin_chat_ids: string;
   language: string;
   api_base_url: string;
+  public_base_url: string;
 }
 
 export function getTelegramConfig() {

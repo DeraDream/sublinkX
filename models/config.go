@@ -25,11 +25,12 @@ type Config struct {
 }
 
 type TelegramConfig struct {
-	Enabled      bool   `yaml:"enabled"`
-	Token        string `yaml:"token"`
-	AdminChatIDs string `yaml:"admin_chat_ids"`
-	Language     string `yaml:"language"`
-	APIBaseURL   string `yaml:"api_base_url"`
+	Enabled       bool   `yaml:"enabled"`
+	Token         string `yaml:"token"`
+	AdminChatIDs  string `yaml:"admin_chat_ids"`
+	Language      string `yaml:"language"`
+	APIBaseURL    string `yaml:"api_base_url"`
+	PublicBaseURL string `yaml:"public_base_url"`
 }
 
 var comment string = `# jwt_secret: JWT密钥
@@ -55,8 +56,9 @@ func ConfigInit() {
 			ExpireDays: 14,
 			Port:       8000, // 默认端口
 			Telegram: TelegramConfig{
-				Language:   "zh-CN",
-				APIBaseURL: "https://api.telegram.org",
+				Language:      "zh-CN",
+				APIBaseURL:    "https://api.telegram.org",
+				PublicBaseURL: "https://sublink.yforward7.com",
 			},
 		}
 
@@ -120,6 +122,12 @@ func SetTelegramConfig(telegramConfig TelegramConfig) error {
 	}
 	if telegramConfig.APIBaseURL == "" {
 		telegramConfig.APIBaseURL = "https://api.telegram.org"
+	}
+	if telegramConfig.PublicBaseURL == "" {
+		telegramConfig.PublicBaseURL = oldCfg.Telegram.PublicBaseURL
+	}
+	if telegramConfig.PublicBaseURL == "" {
+		telegramConfig.PublicBaseURL = "https://sublink.yforward7.com"
 	}
 	oldCfg.Telegram = telegramConfig
 	return writeConfigLocked(oldCfg)

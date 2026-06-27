@@ -307,9 +307,11 @@ const ClientDiaLog = ref(false)
 const ClientList = ['v2ray','clash','surge'] // 客户端列表
 const ClientUrls = ref<Record<string, string>>({})
 const ClientUrl = ref('')
+const ClientSubName = ref('')
 const handleClient = (row: any) => {
   let serverAddress = location.protocol + '//' + location.hostname + (location.port ? ':' + location.port : '');
   ClientDiaLog.value = true
+  ClientSubName.value = row.Name
   ClientUrl.value = `${serverAddress}/c/?token=${row.Token}`
   ClientList.forEach((item:string) => {
     ClientUrls.value[item]=`${serverAddress}/c/?token=${row.Token}&client=${item}`
@@ -357,29 +359,42 @@ const toggleSelect = (name: string) => {
       </template>
     </el-dialog>
 
-    <el-dialog v-model="ClientDiaLog" class="form-dialog" width="560px" title="选择客户端">
-      <p class="dialog-intro">选择客户端类型后生成对应的订阅二维码。</p>
-      <div class="client-list">
-        <button class="client-row" type="button" @click="handleQrcode(ClientUrl,'自动识别客户端')">
-          <span>
-            <strong>自动识别</strong>
-            <small>推荐，客户端自动判断订阅格式</small>
-          </span>
-          <span class="client-action">生成二维码</span>
-        </button>
-        <button
-          v-for="(item,index) in ClientUrls"
-          :key="index"
-          class="client-row"
-          type="button"
-          @click="handleQrcode(`${item}&client=${index}`, String(index))"
-        >
-          <span>
-            <strong>{{ index }}</strong>
-            <small>使用 {{ index }} 专用订阅地址</small>
-          </span>
-          <span class="client-action">生成二维码</span>
-        </button>
+    <el-dialog v-model="ClientDiaLog" class="form-dialog client-dialog" width="760px" title="订阅链接">
+      <div class="client-dialog-head">
+        <div>
+          <p class="dialog-intro">直接复制完整订阅地址，二维码作为备用入口。</p>
+          <strong>{{ ClientSubName }}</strong>
+        </div>
+        <el-button type="primary" plain @click="copyUrl(ClientUrl)">复制自动识别</el-button>
+      </div>
+      <div class="client-card-list">
+        <article class="client-card">
+          <div class="client-card-title">
+            <span>自动识别</span>
+            <el-tag size="small" effect="plain">推荐</el-tag>
+          </div>
+          <p>客户端根据请求头自动判断订阅格式。</p>
+          <el-input :model-value="ClientUrl" readonly class="client-url-input" />
+          <div class="client-actions">
+            <el-button @click="copyUrl(ClientUrl)">复制链接</el-button>
+            <el-button @click="handleQrcode(ClientUrl,'自动识别客户端')">二维码</el-button>
+            <el-button link type="primary" @click="OpenUrl(ClientUrl)">打开</el-button>
+          </div>
+        </article>
+
+        <article v-for="(item,index) in ClientUrls" :key="index" class="client-card">
+          <div class="client-card-title">
+            <span>{{ index }}</span>
+            <el-tag size="small" effect="plain">{{ index }}</el-tag>
+          </div>
+          <p>使用 {{ index }} 专用订阅地址。</p>
+          <el-input :model-value="item" readonly class="client-url-input" />
+          <div class="client-actions">
+            <el-button @click="copyUrl(item)">复制链接</el-button>
+            <el-button @click="handleQrcode(item, String(index))">二维码</el-button>
+            <el-button link type="primary" @click="OpenUrl(item)">打开</el-button>
+          </div>
+        </article>
       </div>
     </el-dialog>
     
@@ -704,42 +719,65 @@ const toggleSelect = (name: string) => {
   font-size: 13px;
 }
 
-.client-list {
-  border-top: 1px solid var(--el-border-color-lighter);
-}
-
-.client-row {
+.client-dialog-head {
   display: flex;
-  width: 100%;
   align-items: center;
   justify-content: space-between;
-  padding: 14px 0;
-  color: var(--el-text-color-primary);
-  background: transparent;
+  gap: 16px;
+  padding-bottom: 16px;
   border-bottom: 1px solid var(--el-border-color-lighter);
-  cursor: pointer;
-  font: inherit;
-  text-align: left;
 }
 
-.client-row:hover {
-  color: var(--el-color-primary);
+.client-dialog-head .dialog-intro {
+  margin-bottom: 4px;
 }
 
-.client-row strong,
-.client-row small {
-  display: block;
+.client-card-list {
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
 }
 
-.client-row small {
-  margin-top: 3px;
+.client-card {
+  padding: 14px;
+  background: var(--el-fill-color-extra-light);
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 10px;
+}
+
+.client-card-title,
+.client-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.client-card-title span {
+  font-weight: 650;
+  color: var(--el-text-color-primary);
+}
+
+.client-card p {
+  margin: 7px 0 10px;
   color: var(--el-text-color-secondary);
   font-size: 12px;
 }
 
-.client-action {
-  flex: none;
-  color: var(--el-color-primary);
-  font-size: 13px;
+.client-url-input {
+  margin-bottom: 10px;
+}
+
+.client-actions {
+  justify-content: flex-start;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 640px) {
+  .client-dialog-head,
+  .client-card-title {
+    align-items: flex-start;
+    flex-direction: column;
+  }
 }
 </style>

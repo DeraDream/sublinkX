@@ -21,6 +21,7 @@ const form = reactive<TelegramConfig>({
   admin_chat_ids: "",
   language: "zh-CN",
   api_base_url: "https://api.telegram.org",
+  public_base_url: "https://sublink.yforward7.com",
 });
 
 const tokenPlaceholder = computed(() =>
@@ -50,6 +51,10 @@ function validate(requireToken = false) {
   }
   if (!/^https?:\/\//i.test(form.api_base_url.trim())) {
     ElMessage.warning("Telegram API 地址格式不正确");
+    return false;
+  }
+  if (!/^https?:\/\//i.test(form.public_base_url.trim())) {
+    ElMessage.warning("主控公网地址格式不正确");
     return false;
   }
   return true;
@@ -161,6 +166,18 @@ onMounted(loadConfig);
           v-model="form.api_base_url"
           class="setting-control"
           placeholder="https://api.telegram.org"
+        />
+      </div>
+
+      <div class="setting-row">
+        <div class="setting-copy">
+          <strong>主控公网地址</strong>
+          <span>Telegram 生成订阅链接时使用，例如 https://sublink.yforward7.com</span>
+        </div>
+        <el-input
+          v-model="form.public_base_url"
+          class="setting-control"
+          placeholder="https://sublink.yforward7.com"
         />
       </div>
 

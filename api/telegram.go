@@ -10,11 +10,12 @@ import (
 )
 
 type TelegramConfigRequest struct {
-	Enabled      bool   `json:"enabled"`
-	Token        string `json:"token"`
-	AdminChatIDs string `json:"admin_chat_ids"`
-	Language     string `json:"language"`
-	APIBaseURL   string `json:"api_base_url"`
+	Enabled       bool   `json:"enabled"`
+	Token         string `json:"token"`
+	AdminChatIDs  string `json:"admin_chat_ids"`
+	Language      string `json:"language"`
+	APIBaseURL    string `json:"api_base_url"`
+	PublicBaseURL string `json:"public_base_url"`
 }
 
 func GetTelegramConfig(c *gin.Context) {
@@ -25,6 +26,9 @@ func GetTelegramConfig(c *gin.Context) {
 	if config.APIBaseURL == "" {
 		config.APIBaseURL = "https://api.telegram.org"
 	}
+	if config.PublicBaseURL == "" {
+		config.PublicBaseURL = "https://sublink.yforward7.com"
+	}
 	c.JSON(200, gin.H{
 		"code": "00000",
 		"data": gin.H{
@@ -33,6 +37,7 @@ func GetTelegramConfig(c *gin.Context) {
 			"admin_chat_ids":   config.AdminChatIDs,
 			"language":         config.Language,
 			"api_base_url":     config.APIBaseURL,
+			"public_base_url":  config.PublicBaseURL,
 		},
 		"msg": "获取成功",
 	})
@@ -99,12 +104,21 @@ func normalizeTelegramConfig(request TelegramConfigRequest) (models.TelegramConf
 	if err != nil || (parsedURL.Scheme != "http" && parsedURL.Scheme != "https") {
 		return models.TelegramConfig{}, &configError{"Telegram API 地址格式不正确"}
 	}
+	publicBaseURL := strings.TrimSpace(request.PublicBaseURL)
+	if publicBaseURL == "" {
+		publicBaseURL = "https://sublink.yforward7.com"
+	}
+	parsedPublicURL, err := url.ParseRequestURI(publicBaseURL)
+	if err != nil || (parsedPublicURL.Scheme != "http" && parsedPublicURL.Scheme != "https") {
+		return models.TelegramConfig{}, &configError{"主控公网地址格式不正确"}
+	}
 	return models.TelegramConfig{
-		Enabled:      request.Enabled,
-		Token:        strings.TrimSpace(request.Token),
-		AdminChatIDs: strings.TrimSpace(request.AdminChatIDs),
-		Language:     "zh-CN",
-		APIBaseURL:   strings.TrimRight(apiBaseURL, "/"),
+		Enabled:       request.Enabled,
+		Token:         strings.TrimSpace(request.Token),
+		AdminChatIDs:  strings.TrimSpace(request.AdminChatIDs),
+		Language:      "zh-CN",
+		APIBaseURL:    strings.TrimRight(apiBaseURL, "/"),
+		PublicBaseURL: strings.TrimRight(publicBaseURL, "/"),
 	}, nil
 }
 
