@@ -1,10 +1,9 @@
 <script setup lang='ts'>
 import { ref,onMounted  } from 'vue'
-import {getSubs,AddSub,DelSub,UpdateSub} from "@/api/subcription/subs"
+import {getSubs,AddSub,DelSub,UpdateSub, ResetSubToken, SetSubRevoked} from "@/api/subcription/subs"
 import {getTemp} from "@/api/subcription/temp"
 import {getNodes} from "@/api/subcription/node"
 import QrcodeVue from 'qrcode.vue'
-import md5 from 'md5'
 import { VueDraggable } from 'vue-draggable-plus'
 
 interface Sub {
@@ -14,11 +13,17 @@ interface Sub {
   Config: Config;
   Nodes: Node[];
   SubLogs:SubLogs[];
+  Token: string;
+  Revoked: boolean;
+  ExpireAt?: string;
+  AccessLimit: number;
+  AccessCount: number;
 }
 interface Node {
   ID: number;
   Name: string;
   Link: string;
+  Disabled?: boolean;
   CreateDate: string;
 }
 interface Config {
@@ -44,6 +49,8 @@ const Surge = ref('')
 const SubTitle = ref('')
 const Subname = ref('')
 const oldSubname = ref('')
+const expireAt = ref('')
+const accessLimit = ref<number | undefined>()
 const dialogVisible = ref(false)
 const table = ref()
 const NodesList = ref<Node[]>([])
@@ -84,7 +91,9 @@ const addSubs = async ()=>{
     await AddSub({
       config: config,
       name: Subname.value.trim(),
-      nodes: value1.value.join(',')
+      nodes: value1.value.join(','),
+      expire_at: expireAt.value || '',
+      access_limit: accessLimit.value || ''
     })
     getsubs()
     ElMessage.success("添加成功");
@@ -93,7 +102,9 @@ const addSubs = async ()=>{
       config: config,
       name: Subname.value.trim(),
       nodes: value1.value.join(','),
-      oldname: oldSubname.value
+      oldname: oldSubname.value,
+      expire_at: expireAt.value || '',
+      access_limit: accessLimit.value || ''
     })
     getsubs()
     ElMessage.success("更新成功");
@@ -133,6 +144,8 @@ const handleAddSub = ()=>{
   SubTitle.value = '添加订阅'
   Subname.value = ''
   oldSubname.value = ''
+  expireAt.value = ''
+  accessLimit.value = undefined
   checkList.value = []
   Clash.value = './template/clash.yaml'
   Surge.value = './template/surge.conf'
@@ -154,6 +167,10 @@ const handleEdit = (row:any) => {
       SubTitle.value = '编辑订阅'
       Subname.value = tableData.value[i].Name
       oldSubname.value = Subname.value
+      expireAt.value = tableData.value[i].ExpireAt
+        ? new Date(tableData.value[i].ExpireAt as string).toISOString().slice(0, 19).replace('T', ' ')
+        : ''
+      accessLimit.value = tableData.value[i].AccessLimit || undefined
       if (config.udp)  {
         checkList.value.push('udp')
       }
@@ -187,6 +204,27 @@ const handleDel = (row:any) => {
       })
       
     })
+}
+
+const handleResetToken = async (row: any) => {
+  await ElMessageBox.confirm(
+    `重置 ${row.Name} 的订阅 token？旧随机 token 会立即失效。`,
+    '重置 token',
+    {
+      confirmButtonText: '重置',
+      cancelButtonText: '取消',
+      type: 'warning',
+    }
+  )
+  await ResetSubToken({ id: row.ID })
+  await getsubs()
+  ElMessage.success('token 已重置')
+}
+
+const handleToggleRevoked = async (row: any) => {
+  await SetSubRevoked({ id: row.ID, revoked: !row.Revoked })
+  await getsubs()
+  ElMessage.success(row.Revoked ? '订阅已恢复' : '订阅已手动失效')
 }
 
 const selectDel = () => {
@@ -269,12 +307,12 @@ const ClientDiaLog = ref(false)
 const ClientList = ['v2ray','clash','surge'] // 客户端列表
 const ClientUrls = ref<Record<string, string>>({})
 const ClientUrl = ref('')
-const handleClient = (name:string) => {
+const handleClient = (row: any) => {
   let serverAddress = location.protocol + '//' + location.hostname + (location.port ? ':' + location.port : '');
   ClientDiaLog.value = true
-  ClientUrl.value = `${serverAddress}/c/?token=${md5(name)}`
+  ClientUrl.value = `${serverAddress}/c/?token=${row.Token}`
   ClientList.forEach((item:string) => {
-    ClientUrls.value[item]=`${serverAddress}/c/?token=${md5(name)}`
+    ClientUrls.value[item]=`${serverAddress}/c/?token=${row.Token}&client=${item}`
   })
 }
 
@@ -373,6 +411,29 @@ const toggleSelect = (name: string) => {
           <el-input v-model="Subname" placeholder="输入便于识别的订阅名称" />
         </label>
 
+        <div class="form-grid">
+          <label class="field">
+            <span class="field-label">到期时间</span>
+            <el-date-picker
+              v-model="expireAt"
+              type="datetime"
+              value-format="YYYY-MM-DD HH:mm:ss"
+              placeholder="不填表示永不过期"
+              style="width: 100%"
+            />
+          </label>
+          <label class="field">
+            <span class="field-label">访问次数限制</span>
+            <el-input-number
+              v-model="accessLimit"
+              :min="0"
+              controls-position="right"
+              placeholder="0 为不限"
+              style="width: 100%"
+            />
+          </label>
+        </div>
+
         <section class="form-section">
           <div class="section-heading">
             <strong>输出模板</strong>
@@ -422,7 +483,7 @@ const toggleSelect = (name: string) => {
             <el-option
               v-for="item in NodesList"
               :key="item.Name"
-              :label="item.Name"
+              :label="item.Disabled ? `${item.Name}（已禁用）` : item.Name"
               :value="item.Name"
             />
           </el-select>
@@ -477,18 +538,46 @@ const toggleSelect = (name: string) => {
               v-if="row.Nodes"
               link
               type="primary"
-              @click="handleClient(row.Name)"
+              @click="handleClient(row)"
             >
               查看客户端
             </el-button>
             <span v-else class="muted-cell">节点</span>
           </template>
         </el-table-column>
+        <el-table-column label="状态" width="110">
+          <template #default="{ row }">
+            <template v-if="row.Nodes">
+              <el-tag v-if="row.Revoked" type="danger" effect="plain">已失效</el-tag>
+              <el-tag
+                v-else-if="row.ExpireAt && new Date(row.ExpireAt).getTime() < Date.now()"
+                type="warning"
+                effect="plain"
+              >
+                已过期
+              </el-tag>
+              <el-tag v-else type="success" effect="plain">有效</el-tag>
+            </template>
+            <span v-else class="muted-cell">节点</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="访问" width="110">
+          <template #default="{ row }">
+            <span v-if="row.Nodes">
+              {{ row.AccessCount || 0 }}/{{ row.AccessLimit || "不限" }}
+            </span>
+            <span v-else class="muted-cell">--</span>
+          </template>
+        </el-table-column>
         <el-table-column prop="CreatedAt" label="创建时间" min-width="180" sortable />
-        <el-table-column label="操作" width="190" align="right">
+        <el-table-column label="操作" width="280" align="right">
           <template #default="scope">
             <template v-if="scope.row.Nodes">
               <el-button link @click="handleIplogs(scope.row)">记录</el-button>
+              <el-button link @click="handleResetToken(scope.row)">重置 token</el-button>
+              <el-button link @click="handleToggleRevoked(scope.row)">
+                {{ scope.row.Revoked ? "恢复" : "失效" }}
+              </el-button>
               <el-button link type="primary" @click="handleEdit(scope.row)">编辑</el-button>
               <el-button link type="danger" @click="handleDel(scope.row)">删除</el-button>
             </template>
@@ -530,6 +619,12 @@ const toggleSelect = (name: string) => {
 .primary-cell {
   font-weight: 550;
   color: var(--el-text-color-primary);
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
 }
 /**拖拽样式 */
 .draggable-item {

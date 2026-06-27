@@ -244,6 +244,29 @@ func ListSpeedTestTasks(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"code": "00000", "data": tasks, "msg": "获取成功"})
 }
 
+func CancelSpeedTestTasks(c *gin.Context) {
+	agentID, _ := strconv.Atoi(c.PostForm("agent_id"))
+	nodeID, _ := strconv.Atoi(c.PostForm("node_id"))
+	query := models.DB.Model(&models.SpeedTestTask{}).
+		Where("status IN ?", []string{models.SpeedTaskPending, models.SpeedTaskRunning})
+	if agentID > 0 {
+		query = query.Where("home_agent_id = ?", agentID)
+	}
+	if nodeID > 0 {
+		query = query.Where("node_id = ?", nodeID)
+	}
+	now := time.Now()
+	if err := query.Updates(map[string]any{
+		"status":        models.SpeedTaskCanceled,
+		"error_message": "用户手动结束测速",
+		"completed_at":  &now,
+	}).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"msg": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"code": "00000", "msg": "测速任务已结束"})
+}
+
 func authenticateHomeAgent(c *gin.Context) (*models.HomeAgent, bool) {
 	token := c.GetHeader("X-Agent-Token")
 	if token == "" {
@@ -329,6 +352,10 @@ func HomeAgentReport(c *gin.Context) {
 	var task models.SpeedTestTask
 	if err := models.DB.Where("id = ? AND home_agent_id = ?", result.TaskID, agent.ID).First(&task).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"msg": "任务不存在"})
+		return
+	}
+	if task.Status == models.SpeedTaskCanceled {
+		c.JSON(http.StatusOK, gin.H{"code": "00000", "msg": "任务已取消，结果已忽略"})
 		return
 	}
 	now := time.Now()

@@ -7,10 +7,11 @@ import (
 )
 
 const (
-	SpeedTaskPending = "pending"
-	SpeedTaskRunning = "running"
-	SpeedTaskSuccess = "success"
-	SpeedTaskFailed  = "failed"
+	SpeedTaskPending  = "pending"
+	SpeedTaskRunning  = "running"
+	SpeedTaskSuccess  = "success"
+	SpeedTaskFailed   = "failed"
+	SpeedTaskCanceled = "canceled"
 )
 
 type HomeAgent struct {

@@ -32,6 +32,14 @@ func TestNormalizeReplyKeyboardCommands(t *testing.T) {
 	}
 }
 
+func TestSubscriptionPath(t *testing.T) {
+	got := subscriptionPath("myclash", "clash")
+	want := "/c/?token=bd201e7e5dd57d7c21a2412ee1523905&client=clash"
+	if got != want {
+		t.Fatalf("subscriptionPath() = %q, want %q", got, want)
+	}
+}
+
 func TestManagerTestMessage(t *testing.T) {
 	var calledPaths []string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

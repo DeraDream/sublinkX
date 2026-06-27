@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sublink/models"
 	"sublink/node"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -34,66 +35,70 @@ func GetClient(c *gin.Context) {
 		c.Writer.WriteString("token为空")
 		return
 	}
-	// fmt.Println(c.Query("token"))
-	Sub := new(models.Subcription)
-	// 获取所有订阅
-	list, _ := Sub.List()
-	// 查找订阅是否包含此名字
-	for _, sub := range list {
-		// 数据库订阅名字赋值变量
-		SunName = sub.Name
-		//查找token的md5是否匹配并且转换成小写
-		if Md5(SunName) == strings.ToLower(token) {
-			// 判断是否带客户端参数
-			switch ClientIndex {
-			case "clash":
-				GetClash(c)
-				return
-			case "surge":
-				GetSurge(c)
-				return
-			case "v2ray":
-				GetV2ray(c)
-				return
-			}
-			// 自动识别客户端
-			ClientList := []string{"clash", "surge"}
-			for k, v := range c.Request.Header {
-				if k == "User-Agent" {
-					for _, UserAgent := range v {
-						if UserAgent == "" {
-							fmt.Println("User-Agent为空")
-						}
-						// fmt.Println("协议头:", UserAgent)
-						// 遍历客户端列表
-						// SunName = sub.Name
-						for _, client := range ClientList {
-							// fmt.Println(strings.ToLower(UserAgent), strings.ToLower(client))
-							// fmt.Println(strings.Contains(strings.ToLower(UserAgent), strings.ToLower(client)))
-							if strings.Contains(strings.ToLower(UserAgent), strings.ToLower(client)) {
-								// fmt.Println("客户端", client)
-								switch client {
-								case "clash":
-									GetClash(c)
-									return
-								case "surge":
-									GetSurge(c)
-									return
-								default:
-									fmt.Println("未知客户端") // 这个应该是不能达到的，因为已经在上面列出所有情况
-								}
-								// 找到匹配的客户端后退出循环
+	sub, ok := findSubscriptionByToken(token)
+	if !ok {
+		c.Writer.WriteHeader(http.StatusNotFound)
+		c.Writer.WriteString("订阅不存在或 token 无效")
+		return
+	}
+	if available, reason := sub.IsAvailable(time.Now()); !available {
+		c.Writer.WriteHeader(http.StatusForbidden)
+		c.Writer.WriteString(reason)
+		return
+	}
+	models.DB.Model(&models.Subcription{}).Where("id = ?", sub.ID).
+		UpdateColumn("access_count", sub.AccessCount+1)
+	SunName = sub.Name
+	c.Set("subname", sub.Name)
 
-							}
-						}
-						GetV2ray(c)
-					}
-
-				}
-			}
+	switch ClientIndex {
+	case "clash":
+		GetClash(c)
+		return
+	case "surge":
+		GetSurge(c)
+		return
+	case "v2ray":
+		GetV2ray(c)
+		return
+	}
+	for _, userAgent := range c.Request.Header.Values("User-Agent") {
+		ua := strings.ToLower(userAgent)
+		if strings.Contains(ua, "clash") {
+			GetClash(c)
+			return
+		}
+		if strings.Contains(ua, "surge") {
+			GetSurge(c)
+			return
 		}
 	}
+	GetV2ray(c)
+}
 
+func findSubscriptionByToken(token string) (models.Subcription, bool) {
+	token = strings.ToLower(strings.TrimSpace(token))
+	var sub models.Subcription
+	if err := models.DB.Preload("Nodes").Preload("SubLogs").Where("token = ?", token).First(&sub).Error; err == nil {
+		return sub, true
+	}
+	var subs []models.Subcription
+	if err := models.DB.Preload("Nodes").Preload("SubLogs").Find(&subs).Error; err != nil {
+		return models.Subcription{}, false
+	}
+	for _, item := range subs {
+		if item.LegacyTokenDisabled {
+			continue
+		}
+		if models.LegacySubscriptionToken(item.Name) == token {
+			if strings.TrimSpace(item.Token) == "" {
+				item.EnsureToken()
+				_ = models.DB.Model(&item).Update("token", item.Token).Error
+			}
+			return item, true
+		}
+	}
+	return models.Subcription{}, false
 }
 func GetV2ray(c *gin.Context) {
 	var sub models.Subcription
@@ -116,7 +121,7 @@ func GetV2ray(c *gin.Context) {
 		return
 	}
 	baselist := ""
-	for _, v := range sub.Nodes {
+	for _, v := range sub.ActiveNodes() {
 		switch {
 		// 如果包含多条节点
 		case strings.Contains(v.Link, ","):
@@ -162,7 +167,7 @@ func GetClash(c *gin.Context) {
 
 	models.DB.Model(sub).Preload("Nodes").Find(&sub)
 	log.Println("订阅名:", sub.Nodes)
-	for _, v := range sub.Nodes {
+	for _, v := range sub.ActiveNodes() {
 		log.Println("节点信息:", v)
 		log.Println("节点链接:", v.Link)
 		switch {
@@ -223,7 +228,7 @@ func GetSurge(c *gin.Context) {
 		return
 	}
 	urls := []string{}
-	for _, v := range sub.Nodes {
+	for _, v := range sub.ActiveNodes() {
 		switch {
 		// 如果包含多条节点
 		case strings.Contains(v.Link, ","):

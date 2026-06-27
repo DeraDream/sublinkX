@@ -417,6 +417,23 @@ func NodeDel(c *gin.Context) {
 	})
 }
 
+func NodeSetDisabled(c *gin.Context) {
+	id, err := strconv.Atoi(c.PostForm("id"))
+	if err != nil || id <= 0 {
+		c.JSON(400, gin.H{"msg": "id 不能为空"})
+		return
+	}
+	disabled := c.PostForm("disabled") == "true"
+	if err := models.DB.Model(&models.Node{}).Where("id = ?", id).Update("disabled", disabled).Error; err != nil {
+		c.JSON(500, gin.H{"msg": err.Error()})
+		return
+	}
+	c.JSON(200, gin.H{
+		"code": "00000",
+		"msg":  "节点状态已更新",
+	})
+}
+
 // 删除分组
 func NodesGroup(c *gin.Context) {
 	var gn models.GroupNode

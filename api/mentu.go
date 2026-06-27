@@ -110,33 +110,6 @@ func GetMenus(c *gin.Context) {
 			},
 		},
 		{
-			Path:      "/settings",
-			Component: "Layout",
-			Redirect:  "/settings/telegram",
-			Name:      "settings",
-			Meta: Meta{
-				Title:      "settingsmenu",
-				Icon:       "setting",
-				Hidden:     false,
-				Roles:      []string{"ADMIN"},
-				AlwaysShow: true,
-			},
-			Children: []Child{
-				{
-					Path:      "telegram",
-					Component: "settings/telegram",
-					Name:      "TelegramBot",
-					Meta: Meta{
-						Title:     "telegrambot",
-						Icon:      "message",
-						Hidden:    false,
-						Roles:     []string{"ADMIN"},
-						KeepAlive: true,
-					},
-				},
-			},
-		},
-		{
 			Path:      "/templates",
 			Component: "Layout",
 			Redirect:  "/templates/index",
@@ -181,6 +154,33 @@ func GetMenus(c *gin.Context) {
 					Meta: Meta{
 						Title:     "speedtestagents",
 						Icon:      "monitor",
+						Hidden:    false,
+						Roles:     []string{"ADMIN"},
+						KeepAlive: true,
+					},
+				},
+			},
+		},
+		{
+			Path:      "/settings",
+			Component: "Layout",
+			Redirect:  "/settings/telegram",
+			Name:      "settings",
+			Meta: Meta{
+				Title:      "settingsmenu",
+				Icon:       "setting",
+				Hidden:     false,
+				Roles:      []string{"ADMIN"},
+				AlwaysShow: true,
+			},
+			Children: []Child{
+				{
+					Path:      "telegram",
+					Component: "settings/telegram",
+					Name:      "TelegramBot",
+					Meta: Meta{
+						Title:     "telegrambot",
+						Icon:      "message",
 						Hidden:    false,
 						Roles:     []string{"ADMIN"},
 						KeepAlive: true,

@@ -32,7 +32,7 @@ const handleAddTemp = () => {
 };
 
 const addtemp = async () => {
-  const filename = Tempname.value.trim();
+  const filename = normalizeTemplateFilename(Tempname.value, TempText.value);
   if (!filename) {
     ElMessage.warning("请输入模板文件名");
     return;
@@ -64,6 +64,26 @@ const handleSelectionChange = (val: Temp[]) => {
   multipleSelection.value = val;
 };
 
+const normalizeTemplateFilename = (filename: string, text = "") => {
+  const name = (filename || "").trim();
+  if (!name) {
+    return "template.yaml";
+  }
+  if (/\.[^./\\]+$/.test(name)) {
+    return name;
+  }
+  const lowerName = name.toLowerCase();
+  const lowerText = text.toLowerCase();
+  if (
+    lowerName.includes("surge") ||
+    lowerText.includes("[general]") ||
+    lowerText.includes("[proxy]")
+  ) {
+    return `${name}.conf`;
+  }
+  return `${name}.yaml`;
+};
+
 const selectAll = () => {
   nextTick(() => {
     tableData.value.forEach((row) => {
@@ -79,7 +99,7 @@ const handleExport = (row: any) => {
   const url = URL.createObjectURL(blob);
   const downloadLink = document.createElement("a");
   downloadLink.href = url;
-  downloadLink.download = row.file;
+  downloadLink.download = normalizeTemplateFilename(row.file, row.text);
   document.body.appendChild(downloadLink);
   downloadLink.click();
   downloadLink.remove();

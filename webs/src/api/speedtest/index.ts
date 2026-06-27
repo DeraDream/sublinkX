@@ -49,3 +49,12 @@ export function listSpeedTasks(params?: any) {
     params,
   });
 }
+
+export function cancelSpeedTasks(data?: any) {
+  return request({
+    url: "/api/v1/speedtest/tasks/cancel",
+    method: "post",
+    data,
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+}

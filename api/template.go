@@ -18,6 +18,21 @@ type Temp struct {
 	CreateDate string `json:"create_date"`
 }
 
+func normalizeTemplateFilename(filename string, text string) string {
+	filename = strings.TrimSpace(filename)
+	if filename == "" || filepath.Ext(filename) != "" {
+		return filename
+	}
+	lowerName := strings.ToLower(filename)
+	lowerText := strings.ToLower(text)
+	if strings.Contains(lowerName, "surge") ||
+		strings.Contains(lowerText, "[general]") ||
+		strings.Contains(lowerText, "[proxy]") {
+		return filename + ".conf"
+	}
+	return filename + ".yaml"
+}
+
 // 定义允许操作的基础目录
 
 var baseTemplateDir string
@@ -164,6 +179,7 @@ func UpdateTemp(c *gin.Context) {
 	filename := c.PostForm("filename")
 	oldname := c.PostForm("oldname")
 	text := c.PostForm("text")
+	filename = normalizeTemplateFilename(filename, text)
 
 	if filename == "" || oldname == "" || text == "" {
 		c.JSON(400, gin.H{
@@ -254,6 +270,7 @@ func AddTemp(c *gin.Context) {
 	}
 	filename := c.PostForm("filename")
 	text := c.PostForm("text")
+	filename = normalizeTemplateFilename(filename, text)
 
 	if filename == "" || text == "" {
 		c.JSON(400, gin.H{

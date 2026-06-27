@@ -235,6 +235,14 @@ func (b *Bot) handleMessage(chatID int64, text string) {
 	}
 
 	state := b.getState(chatID)
+	if strings.HasPrefix(state, "set_sub_expire:") && !strings.HasPrefix(text, "/") {
+		b.setSubscriptionExpire(chatID, strings.TrimPrefix(state, "set_sub_expire:"), text)
+		return
+	}
+	if strings.HasPrefix(state, "set_sub_limit:") && !strings.HasPrefix(text, "/") {
+		b.setSubscriptionLimit(chatID, strings.TrimPrefix(state, "set_sub_limit:"), text)
+		return
+	}
 	if state == "add_node" && !strings.HasPrefix(text, "/") && !isMenuCommand(command) {
 		b.addNode(chatID, text)
 		return
@@ -267,6 +275,22 @@ func (b *Bot) handleCallback(chatID int64, data string) {
 		b.sendNodeList(chatID)
 	case data == "subs":
 		b.sendSubscriptionList(chatID)
+	case strings.HasPrefix(data, "sub_logs:"):
+		b.sendSubscriptionLogs(chatID, strings.TrimPrefix(data, "sub_logs:"))
+	case strings.HasPrefix(data, "sub_reset_token:"):
+		b.resetSubscriptionToken(chatID, strings.TrimPrefix(data, "sub_reset_token:"))
+	case strings.HasPrefix(data, "sub_revoke:"):
+		b.setSubscriptionRevoked(chatID, strings.TrimPrefix(data, "sub_revoke:"), true)
+	case strings.HasPrefix(data, "sub_restore:"):
+		b.setSubscriptionRevoked(chatID, strings.TrimPrefix(data, "sub_restore:"), false)
+	case strings.HasPrefix(data, "sub_expire:"):
+		id := strings.TrimPrefix(data, "sub_expire:")
+		b.setState(chatID, "set_sub_expire:"+id)
+		_ = b.SendHTML(chatID, "⏳ <b>设置订阅到期日</b>\n\n请发送日期，例如 <code>2026-12-31</code>。\n发送 <code>0</code> 清除到期日，发送 <code>/cancel</code> 取消。", mainReplyKeyboard())
+	case strings.HasPrefix(data, "sub_limit:"):
+		id := strings.TrimPrefix(data, "sub_limit:")
+		b.setState(chatID, "set_sub_limit:"+id)
+		_ = b.SendHTML(chatID, "🔢 <b>设置访问次数限制</b>\n\n请发送数字，例如 <code>100</code>。\n发送 <code>0</code> 表示不限，发送 <code>/cancel</code> 取消。", mainReplyKeyboard())
 	case data == "add_node":
 		b.promptAddNode(chatID)
 	case data == "delete_nodes":
@@ -314,8 +338,8 @@ func (b *Bot) sendNodeList(chatID int64) {
 		} else {
 			text.WriteString("分组：未分组\n")
 		}
-		if protocol == "ss" {
-			fmt.Fprintf(&text, "SS 链接：\n%s\n", htmlCodeBlock(item.Link))
+		if item.Link != "" {
+			fmt.Fprintf(&text, "%s 链接：\n%s\n", escapeHTML(strings.ToUpper(protocol)), htmlCodeBlock(item.Link))
 		}
 		text.WriteString("\n")
 		if text.Len() > 3500 {
@@ -365,16 +389,125 @@ func (b *Bot) sendSubscriptionList(chatID int64) {
 		text.WriteString("当前还没有订阅。")
 	}
 	for index, item := range subs {
-		fmt.Fprintf(&text, "▣ <b>%d. %s</b>\n节点数：<code>%d</code>\n\n", index+1, escapeHTML(item.Name), len(item.Nodes))
+		token := item.Token
+		if token == "" {
+			token = models.LegacySubscriptionToken(item.Name)
+		}
+		status := "有效"
+		if ok, reason := item.IsAvailable(time.Now()); !ok {
+			status = reason
+		}
+		fmt.Fprintf(&text, "▣ <b>%d. %s</b>\n节点数：<code>%d</code>\n状态：<code>%s</code>\n访问：<code>%d/%s</code>\n", index+1, escapeHTML(item.Name), len(item.Nodes), escapeHTML(status), item.AccessCount, accessLimitText(item.AccessLimit))
+		fmt.Fprintf(&text, "V2Ray：\n%s\n", htmlCodeBlock(subscriptionPathWithToken(token, "v2ray")))
+		fmt.Fprintf(&text, "Clash：\n%s\n", htmlCodeBlock(subscriptionPathWithToken(token, "clash")))
+		fmt.Fprintf(&text, "Surge：\n%s\n\n", htmlCodeBlock(subscriptionPathWithToken(token, "surge")))
 		if text.Len() > 3500 {
 			text.WriteString("订阅较多，当前消息仅展示前半部分。")
 			break
 		}
 	}
-	keyboard := inlineKeyboard{InlineKeyboard: [][]inlineButton{
-		{{Text: "🔄 刷新订阅", CallbackData: "subs"}, {Text: "🏠 主菜单", CallbackData: "menu"}},
-	}}
+	rows := [][]inlineButton{}
+	for index, item := range subs {
+		if index >= 10 {
+			break
+		}
+		id := strconv.Itoa(item.ID)
+		stateText := "失效"
+		stateAction := "sub_revoke:" + id
+		if item.Revoked {
+			stateText = "恢复"
+			stateAction = "sub_restore:" + id
+		}
+		rows = append(rows,
+			[]inlineButton{{Text: "📄 " + item.Name + " 日志", CallbackData: "sub_logs:" + id}, {Text: "🔑 重置Token", CallbackData: "sub_reset_token:" + id}},
+			[]inlineButton{{Text: "⏳ 到期日", CallbackData: "sub_expire:" + id}, {Text: "🔢 次数", CallbackData: "sub_limit:" + id}, {Text: stateText, CallbackData: stateAction}},
+		)
+	}
+	rows = append(rows, []inlineButton{{Text: "🔄 刷新订阅", CallbackData: "subs"}, {Text: "🏠 主菜单", CallbackData: "menu"}})
+	keyboard := inlineKeyboard{InlineKeyboard: rows}
 	_ = b.SendHTML(chatID, text.String(), keyboard)
+}
+
+func (b *Bot) sendSubscriptionLogs(chatID int64, idText string) {
+	var sub models.Subcription
+	if err := models.DB.Preload("SubLogs").First(&sub, idText).Error; err != nil {
+		_ = b.SendHTML(chatID, "读取订阅访问日志失败："+escapeHTML(err.Error()), mainReplyKeyboard())
+		return
+	}
+	var text strings.Builder
+	fmt.Fprintf(&text, "📄 <b>%s 访问日志</b>\n\n", escapeHTML(sub.Name))
+	if len(sub.SubLogs) == 0 {
+		text.WriteString("暂无访问记录。")
+	}
+	for index, item := range sub.SubLogs {
+		if index >= 20 {
+			text.WriteString("\n仅显示最近 20 条。")
+			break
+		}
+		fmt.Fprintf(&text, "▣ <code>%s</code>\n次数：<code>%d</code>\n来源：%s\n最近：<code>%s</code>\n\n", escapeHTML(item.IP), item.Count, escapeHTML(item.Addr), escapeHTML(item.Date))
+	}
+	_ = b.SendHTML(chatID, text.String(), inlineKeyboard{InlineKeyboard: [][]inlineButton{{{Text: "返回订阅列表", CallbackData: "subs"}}}})
+}
+
+func (b *Bot) resetSubscriptionToken(chatID int64, idText string) {
+	token := models.GenerateSubscriptionToken()
+	if token == "" {
+		_ = b.SendHTML(chatID, "生成 token 失败。", mainReplyKeyboard())
+		return
+	}
+	if err := models.DB.Model(&models.Subcription{}).Where("id = ?", idText).
+		Updates(map[string]any{"token": token, "legacy_token_disabled": true, "revoked": false, "access_count": 0}).Error; err != nil {
+		_ = b.SendHTML(chatID, "重置 token 失败："+escapeHTML(err.Error()), mainReplyKeyboard())
+		return
+	}
+	_ = b.SendHTML(chatID, "✅ <b>订阅 token 已重置</b>\n\nClash：\n"+htmlCodeBlock(subscriptionPathWithToken(token, "clash")), inlineKeyboard{InlineKeyboard: [][]inlineButton{{{Text: "返回订阅列表", CallbackData: "subs"}}}})
+}
+
+func (b *Bot) setSubscriptionRevoked(chatID int64, idText string, revoked bool) {
+	if err := models.DB.Model(&models.Subcription{}).Where("id = ?", idText).Update("revoked", revoked).Error; err != nil {
+		_ = b.SendHTML(chatID, "更新订阅状态失败："+escapeHTML(err.Error()), mainReplyKeyboard())
+		return
+	}
+	if revoked {
+		_ = b.SendHTML(chatID, "✅ 订阅已手动失效。", inlineKeyboard{InlineKeyboard: [][]inlineButton{{{Text: "返回订阅列表", CallbackData: "subs"}}}})
+		return
+	}
+	_ = b.SendHTML(chatID, "✅ 订阅已恢复。", inlineKeyboard{InlineKeyboard: [][]inlineButton{{{Text: "返回订阅列表", CallbackData: "subs"}}}})
+}
+
+func (b *Bot) setSubscriptionExpire(chatID int64, idText string, value string) {
+	value = strings.TrimSpace(value)
+	updates := map[string]any{}
+	if value == "0" {
+		updates["expire_at"] = nil
+	} else {
+		parsed, err := time.ParseInLocation("2006-01-02", value, time.Local)
+		if err != nil {
+			_ = b.SendHTML(chatID, "日期格式不正确，请发送例如 <code>2026-12-31</code>，或发送 <code>0</code> 清除。", mainReplyKeyboard())
+			return
+		}
+		updates["expire_at"] = parsed
+	}
+	if err := models.DB.Model(&models.Subcription{}).Where("id = ?", idText).Updates(updates).Error; err != nil {
+		_ = b.SendHTML(chatID, "设置到期日失败："+escapeHTML(err.Error()), mainReplyKeyboard())
+		return
+	}
+	b.setState(chatID, "")
+	_ = b.SendHTML(chatID, "✅ 到期日已更新。", inlineKeyboard{InlineKeyboard: [][]inlineButton{{{Text: "返回订阅列表", CallbackData: "subs"}}}})
+}
+
+func (b *Bot) setSubscriptionLimit(chatID int64, idText string, value string) {
+	limit, err := strconv.Atoi(strings.TrimSpace(value))
+	if err != nil || limit < 0 {
+		_ = b.SendHTML(chatID, "次数格式不正确，请发送非负整数，例如 <code>100</code>。", mainReplyKeyboard())
+		return
+	}
+	if err := models.DB.Model(&models.Subcription{}).Where("id = ?", idText).Update("access_limit", limit).Error; err != nil {
+		_ = b.SendHTML(chatID, "设置访问次数失败："+escapeHTML(err.Error()), mainReplyKeyboard())
+		return
+	}
+	b.setState(chatID, "")
+	_ = b.SendHTML(chatID, "✅ 访问次数限制已更新。", inlineKeyboard{InlineKeyboard: [][]inlineButton{{{Text: "返回订阅列表", CallbackData: "subs"}}}})
 }
 
 func (b *Bot) promptAddNode(chatID int64) {
@@ -647,6 +780,21 @@ func isMenuCommand(command string) bool {
 
 func htmlCodeBlock(value string) string {
 	return "<pre><code>" + escapeHTML(value) + "</code></pre>"
+}
+
+func subscriptionPath(name string, client string) string {
+	return subscriptionPathWithToken(models.LegacySubscriptionToken(name), client)
+}
+
+func subscriptionPathWithToken(token string, client string) string {
+	return fmt.Sprintf("/c/?token=%s&client=%s", token, url.QueryEscape(client))
+}
+
+func accessLimitText(limit int) string {
+	if limit <= 0 {
+		return "不限"
+	}
+	return strconv.Itoa(limit)
 }
 
 func welcomeMessage() string {

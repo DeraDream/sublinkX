@@ -20,6 +20,7 @@ type Node struct {
 	ID                    int
 	Name                  string
 	Link                  string
+	Disabled              bool
 	ControlEntryLatencyMs int64
 	ControlProxyLatencyMs int64
 	ControlExitLatencyMs  int64

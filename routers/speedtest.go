@@ -15,6 +15,7 @@ func SpeedTest(r *gin.Engine) {
 		admin.DELETE("/agents", api.DeleteHomeAgent)
 		admin.POST("/tasks", api.CreateSpeedTestTask)
 		admin.GET("/tasks", api.ListSpeedTestTasks)
+		admin.POST("/tasks/cancel", api.CancelSpeedTestTasks)
 	}
 
 	agent := r.Group("/api/v1/agent")

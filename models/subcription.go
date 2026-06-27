@@ -1,9 +1,13 @@
 package models
 
 import (
+	"crypto/md5"
+	"crypto/rand"
+	"encoding/hex"
 	// 用于将配置解析为结构体
 	"log"
 	"strings" // 用于处理逗号分隔的字符串
+	"time"
 
 	"gorm.io/gorm"
 )
@@ -11,12 +15,18 @@ import (
 // Subcription 结构体
 type Subcription struct {
 	gorm.Model
-	ID        int
-	Name      string
-	Config    string    `gorm:"type:text"` // Config 存储为 JSON 字符串
-	NodeOrder string    `gorm:"type:text"`
-	Nodes     []Node    `gorm:"many2many:subcription_nodes;"`
-	SubLogs   []SubLogs `gorm:"foreignKey:SubcriptionID;"`
+	ID          int
+	Name        string
+	Config      string `gorm:"type:text"` // Config 存储为 JSON 字符串
+	NodeOrder   string `gorm:"type:text"`
+	Token               string `gorm:"index"`
+	LegacyTokenDisabled bool
+	Revoked             bool
+	ExpireAt            *time.Time
+	AccessLimit         int
+	AccessCount         int
+	Nodes               []Node    `gorm:"many2many:subcription_nodes;"`
+	SubLogs             []SubLogs `gorm:"foreignKey:SubcriptionID;"`
 }
 
 // Config 结构体，用于解析 Subcription.Config 字段的 JSON 内容
@@ -28,8 +38,51 @@ type SubscriptionConfig struct { // <--- 这里重命名了
 	Cert  bool   `json:"cert"`
 }
 
+func GenerateSubscriptionToken() string {
+	buf := make([]byte, 16)
+	if _, err := rand.Read(buf); err != nil {
+		return ""
+	}
+	return hex.EncodeToString(buf)
+}
+
+func LegacySubscriptionToken(name string) string {
+	sum := md5.Sum([]byte(name))
+	return hex.EncodeToString(sum[:])
+}
+
+func (sub *Subcription) EnsureToken() {
+	if strings.TrimSpace(sub.Token) == "" {
+		sub.Token = GenerateSubscriptionToken()
+	}
+}
+
+func (sub *Subcription) ActiveNodes() []Node {
+	nodes := make([]Node, 0, len(sub.Nodes))
+	for _, item := range sub.Nodes {
+		if !item.Disabled {
+			nodes = append(nodes, item)
+		}
+	}
+	return nodes
+}
+
+func (sub *Subcription) IsAvailable(now time.Time) (bool, string) {
+	if sub.Revoked {
+		return false, "订阅链接已失效"
+	}
+	if sub.ExpireAt != nil && now.After(*sub.ExpireAt) {
+		return false, "订阅已过期"
+	}
+	if sub.AccessLimit > 0 && sub.AccessCount >= sub.AccessLimit {
+		return false, "订阅访问次数已用完"
+	}
+	return true, ""
+}
+
 // Add 添加订阅
 func (sub *Subcription) Add() error {
+	sub.EnsureToken()
 	// 在创建订阅时，如果 sub.Nodes 已经被前端填充并排序，可以将其名称转换为 NodeOrder 字符串
 	if len(sub.Nodes) > 0 {
 		names := make([]string, len(sub.Nodes))
@@ -60,6 +113,8 @@ func (sub *Subcription) Update(NewName *Subcription) error {
 	// 更新非多对多字段，包括 NodeOrder
 	existingSub.Name = NewName.Name // 新名称
 	existingSub.Config = NewName.Config
+	existingSub.ExpireAt = NewName.ExpireAt
+	existingSub.AccessLimit = NewName.AccessLimit
 
 	// 更新 NodeOrder 字段
 	if len(NewName.Nodes) > 0 {
@@ -88,6 +143,10 @@ func (sub *Subcription) Find() error {
 	// 使用 Preload 加载 Nodes 和 SubLogs 关联数据
 	if err := DB.Preload("Nodes").Preload("SubLogs").Where("id = ? or name = ?", sub.ID, sub.Name).First(sub).Error; err != nil {
 		return err
+	}
+	if strings.TrimSpace(sub.Token) == "" {
+		sub.Token = GenerateSubscriptionToken()
+		_ = DB.Model(sub).Update("token", sub.Token).Error
 	}
 	// 根据 NodeOrder 字段重新排序 Nodes
 	if sub.NodeOrder != "" && len(sub.Nodes) > 0 {
@@ -120,6 +179,10 @@ func (sub *Subcription) List() ([]Subcription, error) {
 	}
 
 	for i := range subs {
+		if strings.TrimSpace(subs[i].Token) == "" {
+			subs[i].Token = GenerateSubscriptionToken()
+			_ = DB.Model(&subs[i]).Update("token", subs[i].Token).Error
+		}
 		// 根据 NodeOrder 字段重新排序每个订阅的 Nodes
 		if subs[i].NodeOrder != "" && len(subs[i].Nodes) > 0 {
 			orderedNames := strings.Split(subs[i].NodeOrder, ",")

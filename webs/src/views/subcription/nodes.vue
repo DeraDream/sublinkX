@@ -7,9 +7,10 @@ import {
   UpdateNode,
   GetGroup,
   SetGroup,
-  testControlLatency,
+  setNodeDisabled,
 } from "@/api/subcription/node";
 import {
+  cancelSpeedTasks,
   createSpeedTask,
   listHomeAgents,
   listSpeedTasks,
@@ -24,6 +25,7 @@ interface Node {
   ID: number;
   Name: string;
   Link: string;
+  Disabled?: boolean;
   CreateDate: string;
   ControlEntryLatencyMs?: number;
   ControlProxyLatencyMs?: number;
@@ -77,7 +79,6 @@ const nodelistShow = ref(false); // 节点列表
 const SelectionNodeGroups = ref<string[]>([]); // 选中的分组
 const SelectionNode = ref(""); // 选中的节点
 const speedLoading = ref(false);
-const controlLatencyLoading = ref(false);
 const speedAgents = ref<any[]>([]);
 const selectedAgentId = ref<number>();
 const speedResultMap = ref<Record<number, { latency?: any; speed?: any }>>({});
@@ -419,6 +420,15 @@ const selectCopy = async () => {
     }
   }
 };
+
+const toggleNodeDisabled = async (row: any) => {
+  await setNodeDisabled({
+    id: row.ID,
+    disabled: !row.Disabled,
+  });
+  ElMessage.success(row.Disabled ? "节点已恢复" : "节点已禁用");
+  await getnodes();
+};
 async function loadSpeedAgents() {
   const { data } = await listHomeAgents();
   speedAgents.value = (data || []).filter((item: any) => item.online);
@@ -468,7 +478,7 @@ const runSpeedTest = async (type: "latency" | "speed") => {
   const targets =
     multipleSelection.value.length > 0
       ? multipleSelection.value
-      : tableData.value;
+      : tableData.value.filter((item) => !item.Disabled);
   if (targets.length === 0) {
     ElMessage.warning("没有可测速的节点");
     return;
@@ -483,7 +493,9 @@ const runSpeedTest = async (type: "latency" | "speed") => {
   let failedCount = 0;
   try {
     for (let index = 0; index < targets.length; index++) {
+      if (speedRunCancelled) break;
       const item = targets[index];
+      if (item.Disabled) continue;
       ElMessage.info(`正在测试 ${index + 1}/${targets.length}：${item.Name}`);
       try {
         const { data: task } = await createSpeedTask({
@@ -518,53 +530,14 @@ const runSpeedTest = async (type: "latency" | "speed") => {
   }
 };
 
-const runControlLatencyTest = async () => {
-  const targets =
-    multipleSelection.value.length > 0
-      ? multipleSelection.value
-      : tableData.value;
-  if (targets.length === 0) {
-    ElMessage.warning("没有可测试的节点");
-    return;
-  }
-  controlLatencyLoading.value = true;
-  let successCount = 0;
-  let failedCount = 0;
-  try {
-    for (let index = 0; index < targets.length; index++) {
-      const item = targets[index];
-      item.ControlLatencyStatus = "running";
-      item.ControlLatencyError = "";
-      ElMessage.info(
-        `主控测速 ${index + 1}/${targets.length}：${item.Name}`
-      );
-      try {
-        const { data } = await testControlLatency({ id: item.ID });
-        item.ControlEntryLatencyMs = data.entry_latency_ms;
-        item.ControlProxyLatencyMs = data.proxy_latency_ms;
-        item.ControlExitLatencyMs = data.exit_latency_ms;
-        item.ControlLatencyStatus = "success";
-        item.ControlLatencyAt = data.checked_at;
-        successCount++;
-      } catch (error: any) {
-        const result = error?.response?.data?.data;
-        if (result) {
-          item.ControlEntryLatencyMs = result.entry_latency_ms;
-          item.ControlProxyLatencyMs = result.proxy_latency_ms;
-          item.ControlExitLatencyMs = result.exit_latency_ms;
-        }
-        item.ControlLatencyStatus = "failed";
-        item.ControlLatencyError =
-          error?.response?.data?.msg || error?.message || "主控测速失败";
-        failedCount++;
-      }
-    }
-    ElMessage.success(
-      `主控测速完成：成功 ${successCount}，失败 ${failedCount}`
-    );
-  } finally {
-    controlLatencyLoading.value = false;
-  }
+const stopSpeedTest = async () => {
+  speedRunCancelled = true;
+  await cancelSpeedTasks(
+    selectedAgentId.value ? { agent_id: selectedAgentId.value } : {}
+  );
+  speedLoading.value = false;
+  await loadSpeedResults();
+  ElMessage.success("已结束家宽测速");
 };
 const handleSelectionChange = (val: Node[]) => {
   multipleSelection.value = val;
@@ -708,7 +681,12 @@ onBeforeUnmount(() => {
         <el-table-column type="index" width="56" label="#" />
         <el-table-column prop="Name" label="节点名称" min-width="130" sortable>
           <template #default="{ row }">
-            <span class="primary-cell">{{ row.Name }}</span>
+            <span class="primary-cell" :class="{ 'is-disabled-node': row.Disabled }">
+              {{ row.Name }}
+            </span>
+            <el-tag v-if="row.Disabled" size="small" type="info" effect="plain">
+              已禁用
+            </el-tag>
           </template>
         </el-table-column>
         <el-table-column
@@ -735,98 +713,6 @@ onBeforeUnmount(() => {
           :formatter="Groupformatter"
           show-overflow-tooltip
         />
-        <el-table-column label="主控测速" align="center">
-          <el-table-column label="总延迟" width="90" align="center">
-            <template #header>
-              <el-tooltip
-                content="主控通过节点访问 HTTP 204 地址并返回的完整代理延迟"
-                placement="top"
-              >
-                <span>总延迟</span>
-              </el-tooltip>
-            </template>
-            <template #default="{ row }">
-              <span
-                v-if="
-                  row.ControlLatencyStatus === 'success' &&
-                  row.ControlProxyLatencyMs > 0
-                "
-                class="latency is-success"
-              >
-                {{ row.ControlProxyLatencyMs }} ms
-              </span>
-              <el-tooltip
-                v-else-if="row.ControlLatencyStatus === 'failed'"
-                :content="row.ControlLatencyError || '主控测速失败'"
-                placement="top"
-              >
-                <span class="latency is-failed">失败</span>
-              </el-tooltip>
-              <span
-                v-else-if="row.ControlLatencyStatus === 'running'"
-                class="muted-cell"
-                >测试中</span
-              >
-              <span v-else class="muted-cell">未测试</span>
-            </template>
-          </el-table-column>
-          <el-table-column label="主控-节点" width="100" align="center">
-            <template #header>
-              <el-tooltip
-                content="主控服务器到节点入口地址的 TCP 建连延迟"
-                placement="top"
-              >
-                <span>主控-节点</span>
-              </el-tooltip>
-            </template>
-            <template #default="{ row }">
-              <span
-                v-if="row.ControlEntryLatencyMs > 0"
-                class="latency"
-                :class="
-                  row.ControlLatencyStatus === 'success'
-                    ? 'is-success'
-                    : 'is-warning'
-                "
-              >
-                {{ row.ControlEntryLatencyMs }} ms
-              </span>
-              <span
-                v-else-if="row.ControlLatencyStatus === 'running'"
-                class="muted-cell"
-                >测试中</span
-              >
-              <span v-else class="muted-cell">--</span>
-            </template>
-          </el-table-column>
-          <el-table-column label="节点-出口" width="100" align="center">
-            <template #header>
-              <el-tooltip
-                content="总延迟减去主控到节点入口延迟，包含节点转发、出口到 204 地址及响应耗时"
-                placement="top"
-              >
-                <span>节点-出口</span>
-              </el-tooltip>
-            </template>
-            <template #default="{ row }">
-              <span
-                v-if="
-                  row.ControlLatencyStatus === 'success' &&
-                  row.ControlExitLatencyMs > 0
-                "
-                class="latency is-success"
-              >
-                {{ row.ControlExitLatencyMs }} ms
-              </span>
-              <span
-                v-else-if="row.ControlLatencyStatus === 'running'"
-                class="muted-cell"
-                >测试中</span
-              >
-              <span v-else class="muted-cell">--</span>
-            </template>
-          </el-table-column>
-        </el-table-column>
         <el-table-column label="家宽延迟" width="90">
           <template #default="{ row }">
             <span
@@ -895,12 +781,15 @@ onBeforeUnmount(() => {
             <span v-else class="muted-cell">--</span>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="145" align="right" fixed="right">
+        <el-table-column label="操作" width="190" align="right" fixed="right">
           <template #default="scope">
             <el-button link type="primary" @click="handleEditNode(scope.row)"
               >编辑</el-button
             >
             <el-button link @click="copyInfo(scope.row)">复制</el-button>
+            <el-button link @click="toggleNodeDisabled(scope.row)">
+              {{ scope.row.Disabled ? "恢复" : "禁用" }}
+            </el-button>
             <el-button link type="danger" @click="handleDel(scope.row)"
               >删除</el-button
             >
@@ -916,11 +805,6 @@ onBeforeUnmount(() => {
             >复制选中</el-button
           >
           <el-button type="danger" plain @click="selectDel">删除选中</el-button>
-          <el-button
-            :loading="controlLatencyLoading"
-            @click="runControlLatencyTest"
-            >主控测延迟</el-button
-          >
           <el-select
             v-model="selectedAgentId"
             placeholder="选择家宽测速端"
@@ -943,6 +827,9 @@ onBeforeUnmount(() => {
             @click="runSpeedTest('speed')"
             >测试下载速度</el-button
           >
+          <el-button v-if="speedLoading" type="danger" plain @click="stopSpeedTest">
+            结束测速
+          </el-button>
         </div>
         <span class="record-count">共 {{ tableData.length }} 个节点</span>
       </div>
@@ -964,6 +851,11 @@ onBeforeUnmount(() => {
 
 .primary-cell {
   font-weight: 550;
+}
+
+.is-disabled-node {
+  color: var(--el-text-color-placeholder);
+  text-decoration: line-through;
 }
 
 .node-link {
