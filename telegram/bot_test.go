@@ -16,6 +16,22 @@ func TestParseAdminIDs(t *testing.T) {
 	}
 }
 
+func TestNormalizeReplyKeyboardCommands(t *testing.T) {
+	cases := map[string]string{
+		"📋 节点列表":          "📋 节点列表",
+		"节点列表":            "📋 节点列表",
+		"  🧾 订阅列表  ":      "🧾 订阅列表",
+		"➕ 添加节点":          "➕ 添加节点",
+		"🗑 删除节点":          "🗑 删除节点",
+		"/nodes@demo_bot": "/nodes",
+	}
+	for input, expected := range cases {
+		if got := normalizeCommand(input); got != expected {
+			t.Fatalf("normalizeCommand(%q) = %q, want %q", input, got, expected)
+		}
+	}
+}
+
 func TestManagerTestMessage(t *testing.T) {
 	var calledPaths []string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

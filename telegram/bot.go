@@ -51,9 +51,10 @@ type Update struct {
 }
 
 type Message struct {
-	MessageID int64  `json:"message_id"`
-	Chat      Chat   `json:"chat"`
-	Text      string `json:"text"`
+	MessageID      int64    `json:"message_id"`
+	Chat           Chat     `json:"chat"`
+	Text           string   `json:"text"`
+	ReplyToMessage *Message `json:"reply_to_message,omitempty"`
 }
 
 type Chat struct {
@@ -76,10 +77,11 @@ type inlineButton struct {
 }
 
 type replyKeyboard struct {
-	Keyboard        [][]replyButton `json:"keyboard"`
-	ResizeKeyboard  bool            `json:"resize_keyboard"`
-	OneTimeKeyboard bool            `json:"one_time_keyboard"`
-	IsPersistent    bool            `json:"is_persistent"`
+	Keyboard              [][]replyButton `json:"keyboard"`
+	ResizeKeyboard        bool            `json:"resize_keyboard"`
+	OneTimeKeyboard       bool            `json:"one_time_keyboard"`
+	IsPersistent          bool            `json:"is_persistent"`
+	InputFieldPlaceholder string          `json:"input_field_placeholder,omitempty"`
 }
 
 type replyButton struct {
@@ -225,6 +227,7 @@ func (b *Bot) handleUpdate(update Update) {
 }
 
 func (b *Bot) handleMessage(chatID int64, text string) {
+	command := normalizeCommand(text)
 	if text == "/cancel" {
 		b.setState(chatID, "")
 		_ = b.SendHTML(chatID, "已取消当前操作。", mainReplyKeyboard())
@@ -232,12 +235,15 @@ func (b *Bot) handleMessage(chatID int64, text string) {
 	}
 
 	state := b.getState(chatID)
-	if state == "add_node" && !strings.HasPrefix(text, "/") {
+	if state == "add_node" && !strings.HasPrefix(text, "/") && !isMenuCommand(command) {
 		b.addNode(chatID, text)
 		return
 	}
+	if isMenuCommand(command) {
+		b.setState(chatID, "")
+	}
 
-	switch normalizeCommand(text) {
+	switch command {
 	case "/start", "/menu":
 		_ = b.SendHTML(chatID, welcomeMessage(), mainReplyKeyboard())
 	case "/id":
@@ -286,7 +292,8 @@ func (b *Bot) sendNodeList(chatID int64) {
 	}
 
 	var text strings.Builder
-	fmt.Fprintf(&text, "📋 <b>节点列表</b>\n共 <b>%d</b> 个节点\n\n", len(nodes))
+	fmt.Fprintf(&text, "📋 <b>节点列表</b>\n")
+	fmt.Fprintf(&text, "共 <b>%d</b> 个节点\n\n", len(nodes))
 	if len(nodes) == 0 {
 		text.WriteString("当前还没有节点。可以点击输入框上方的「➕ 添加节点」开始添加。")
 	}
@@ -300,7 +307,7 @@ func (b *Bot) sendNodeList(chatID int64) {
 			protocol = parsed.Scheme
 		}
 
-		fmt.Fprintf(&text, "▫️ <b>#%d %s</b>\n", item.ID, escapeHTML(item.Name))
+		fmt.Fprintf(&text, "▣ <b>#%d %s</b>\n", item.ID, escapeHTML(item.Name))
 		fmt.Fprintf(&text, "协议：<code>%s</code>\n", escapeHTML(strings.ToUpper(protocol)))
 		if len(groups) > 0 {
 			fmt.Fprintf(&text, "分组：%s\n", escapeHTML(strings.Join(groups, " / ")))
@@ -308,7 +315,7 @@ func (b *Bot) sendNodeList(chatID int64) {
 			text.WriteString("分组：未分组\n")
 		}
 		if protocol == "ss" {
-			fmt.Fprintf(&text, "SS 链接：\n<code>%s</code>\n", escapeHTML(item.Link))
+			fmt.Fprintf(&text, "SS 链接：\n%s\n", htmlCodeBlock(item.Link))
 		}
 		text.WriteString("\n")
 		if text.Len() > 3500 {
@@ -358,7 +365,7 @@ func (b *Bot) sendSubscriptionList(chatID int64) {
 		text.WriteString("当前还没有订阅。")
 	}
 	for index, item := range subs {
-		fmt.Fprintf(&text, "▫️ <b>%d. %s</b>\n节点数：<code>%d</code>\n\n", index+1, escapeHTML(item.Name), len(item.Nodes))
+		fmt.Fprintf(&text, "▣ <b>%d. %s</b>\n节点数：<code>%d</code>\n\n", index+1, escapeHTML(item.Name), len(item.Nodes))
 		if text.Len() > 3500 {
 			text.WriteString("订阅较多，当前消息仅展示前半部分。")
 			break
@@ -591,14 +598,30 @@ func mainReplyKeyboard() replyKeyboard {
 			{{Text: "📋 节点列表"}, {Text: "🧾 订阅列表"}},
 			{{Text: "➕ 添加节点"}, {Text: "🗑 删除节点"}},
 		},
-		ResizeKeyboard:  true,
-		IsPersistent:    true,
-		OneTimeKeyboard: false,
+		ResizeKeyboard:        true,
+		IsPersistent:          true,
+		OneTimeKeyboard:       false,
+		InputFieldPlaceholder: "选择下方按钮或发送节点链接",
 	}
 }
 
 func normalizeCommand(text string) string {
-	command := strings.Split(strings.TrimSpace(text), " ")[0]
+	command := strings.TrimSpace(text)
+	command = strings.TrimPrefix(command, "\ufeff")
+	if strings.HasPrefix(command, "/") {
+		command = strings.Split(command, " ")[0]
+		if index := strings.Index(command, "@"); index > 0 {
+			command = command[:index]
+		}
+		return command
+	}
+	command = strings.Join(strings.Fields(command), " ")
+	command = strings.Trim(command, " \t\r\n。.!！")
+	command = strings.TrimPrefix(command, "📋")
+	command = strings.TrimPrefix(command, "🧾")
+	command = strings.TrimPrefix(command, "➕")
+	command = strings.TrimPrefix(command, "🗑")
+	command = strings.TrimSpace(command)
 	switch command {
 	case "节点列表":
 		return "📋 节点列表"
@@ -613,8 +636,21 @@ func normalizeCommand(text string) string {
 	}
 }
 
+func isMenuCommand(command string) bool {
+	switch command {
+	case "📋 节点列表", "🧾 订阅列表", "➕ 添加节点", "🗑 删除节点", "/nodes", "/subs", "/addnode", "/menu", "/start":
+		return true
+	default:
+		return false
+	}
+}
+
+func htmlCodeBlock(value string) string {
+	return "<pre><code>" + escapeHTML(value) + "</code></pre>"
+}
+
 func welcomeMessage() string {
-	return "✨ <b>SublinkX 管理机器人</b>\n\n输入框上方的四个常用操作已固定显示：\n<code>节点列表 / 订阅列表 / 添加节点 / 删除节点</code>"
+	return "✨ <b>SublinkX 管理机器人</b>\n\n输入框下方的常用按钮会保持显示。\n\n<pre><code>节点列表\n订阅列表\n添加节点\n删除节点</code></pre>"
 }
 
 func escapeHTML(value string) string {
