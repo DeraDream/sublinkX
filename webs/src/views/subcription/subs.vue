@@ -1121,4 +1121,77 @@ const OpenUrl = (url: string) => {
     flex-direction: column;
   }
 }
+
+@media (max-width: 640px) {
+  :deep(.subscription-wizard-dialog) {
+    width: calc(100vw - 12px) !important;
+    margin-top: 6px !important;
+  }
+
+  :deep(.subscription-wizard-dialog .el-dialog__body) {
+    padding: 14px 12px;
+  }
+
+  :deep(.subscription-wizard-dialog .el-dialog__footer) {
+    padding: 10px 12px;
+  }
+
+  .wizard-steps {
+    overflow-x: auto;
+    padding: 6px;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .wizard-steps :deep(.el-step) {
+    min-width: 96px;
+  }
+
+  .wizard-panel {
+    padding-top: 12px;
+  }
+
+  .panel-copy {
+    margin-bottom: 12px;
+  }
+
+  .template-card,
+  .summary-card,
+  .summary-block {
+    border-radius: 10px;
+  }
+
+  .template-card-head,
+  .node-column-head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .node-column {
+    min-height: auto;
+  }
+
+  .node-list,
+  .selected-nodes {
+    max-height: 220px;
+  }
+
+  .draggable-item {
+    grid-template-columns: 18px 24px minmax(0, 1fr);
+    padding: 8px 10px;
+  }
+
+  .draggable-item .el-button {
+    grid-column: 3;
+    justify-self: start;
+    padding: 0;
+  }
+
+  .client-dialog-head {
+    gap: 10px;
+  }
+
+  .client-card {
+    padding: 12px;
+  }
+}
 </style>

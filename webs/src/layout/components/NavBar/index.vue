@@ -13,7 +13,15 @@
   @apply flex-x-between;
 
   height: $navbar-height;
+  min-width: 0;
+  padding-right: 8px;
   background: var(--el-bg-color);
   border-bottom: 1px solid var(--el-border-color-lighter);
+}
+
+@media (max-width: 640px) {
+  .navbar-container {
+    padding-right: 4px;
+  }
 }
 </style>

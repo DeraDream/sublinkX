@@ -29,6 +29,7 @@ function toggleSideBar() {
   display: flex;
   align-items: center;
   min-width: 0;
+  flex: 1;
 }
 
 .page-title {
@@ -38,5 +39,12 @@ function toggleSideBar() {
   color: var(--el-text-color-primary);
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+@media (max-width: 640px) {
+  .page-title {
+    max-width: 46vw;
+    font-size: 14px;
+  }
 }
 </style>

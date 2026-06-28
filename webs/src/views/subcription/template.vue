@@ -548,4 +548,41 @@ const currentTableData = computed(() => {
     height: 420px;
   }
 }
+
+@media (max-width: 640px) {
+  :deep(.template-editor-dialog) {
+    width: calc(100vw - 12px) !important;
+    margin-top: 6px !important;
+  }
+
+  :deep(.template-editor-dialog .el-dialog__body) {
+    padding: 14px 12px;
+  }
+
+  :deep(.template-editor-dialog .el-dialog__footer) {
+    padding: 10px 12px;
+  }
+
+  .editor-dialog-heading {
+    padding-right: 28px;
+  }
+
+  .editor-layout {
+    gap: 12px;
+  }
+
+  .editor-panel {
+    height: 330px;
+  }
+
+  .panel-heading {
+    min-height: 40px;
+    padding: 0 12px;
+  }
+
+  .yaml-preview {
+    padding: 12px;
+    font-size: 12px;
+  }
+}
 </style>

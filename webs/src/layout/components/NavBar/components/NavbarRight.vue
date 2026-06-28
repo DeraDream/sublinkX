@@ -126,4 +126,17 @@ function logout() {
 .dark .setting-item:hover {
   background: rgb(255 255 255 / 20%);
 }
+
+@media (max-width: 640px) {
+  .setting-item {
+    min-width: 34px;
+  }
+
+  .setting-item :deep(span) {
+    max-width: 54px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
 </style>

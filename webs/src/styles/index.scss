@@ -77,12 +77,14 @@
 @media (max-width: 768px) {
   .app-container,
   .page-workspace {
-    padding: 14px;
+    padding: 12px;
   }
 
   .work-surface {
-    padding: 14px;
+    padding: 12px;
     overflow-x: auto;
+    border-radius: 8px;
+    -webkit-overflow-scrolling: touch;
   }
 
   .page-heading,
@@ -96,10 +98,58 @@
     flex-direction: column;
   }
 
+  .page-heading {
+    gap: 12px;
+    margin-bottom: 14px;
+  }
+
+  .page-heading h1 {
+    font-size: 19px;
+    line-height: 1.25;
+  }
+
+  .page-heading p {
+    max-width: 100%;
+    line-height: 1.5;
+  }
+
+  .page-heading > .el-button,
+  .page-heading > .heading-actions,
+  .page-heading > div:last-child {
+    max-width: 100%;
+  }
+
   .table-pagination {
     width: 100%;
     margin-left: 0;
     overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .table-footer {
+    gap: 12px;
+  }
+
+  .batch-actions {
+    width: 100%;
+    gap: 6px;
+  }
+
+  .batch-actions .el-button {
+    min-width: 0;
+    padding-right: 10px;
+    padding-left: 10px;
+  }
+
+  .work-surface > .el-table,
+  .work-surface .el-table {
+    min-width: 640px;
+  }
+
+  .el-table th.el-table__cell,
+  .el-table td.el-table__cell {
+    padding-right: 8px;
+    padding-left: 8px;
   }
 
   .el-overlay-dialog {
@@ -109,6 +159,7 @@
   .el-dialog {
     width: calc(100vw - 16px) !important;
     max-width: none;
+    max-height: calc(100dvh - 24px);
   }
 
   .el-dialog__header,
@@ -119,12 +170,57 @@
   }
 
   .el-dialog__body {
-    max-height: calc(100dvh - 164px);
+    max-height: calc(100dvh - 172px);
   }
 
   .template-meta {
     align-items: flex-start;
     flex-direction: column;
+  }
+}
+
+@media (max-width: 480px) {
+  .page-workspace {
+    padding: 10px;
+  }
+
+  .work-surface {
+    padding: 10px;
+  }
+
+  .page-heading > .el-button {
+    width: 100%;
+  }
+
+  .table-toolbar {
+    margin-bottom: 10px;
+  }
+
+  .table-pagination .el-pagination__sizes,
+  .table-pagination .el-pagination__jump {
+    display: none;
+  }
+
+  .table-pagination .el-pagination {
+    justify-content: flex-start;
+  }
+
+  .el-pagination {
+    --el-pagination-button-width: 28px;
+    --el-pagination-button-height: 28px;
+    font-size: 12px;
+  }
+
+  .dialog-footer,
+  .wizard-footer {
+    flex-direction: column-reverse;
+    align-items: stretch;
+  }
+
+  .dialog-footer .el-button,
+  .wizard-footer .el-button {
+    width: 100%;
+    margin-left: 0 !important;
   }
 }
 
@@ -370,10 +466,14 @@ html.dark .el-dialog {
 @media (max-width: 768px) {
   .el-overlay-dialog {
     padding: 12px 8px;
+    overflow: hidden;
   }
 
   .el-dialog {
     margin-top: 12px !important;
+    display: flex;
+    max-height: calc(100dvh - 24px);
+    flex-direction: column;
   }
 
   .el-dialog__header,
@@ -384,7 +484,8 @@ html.dark .el-dialog {
   }
 
   .el-dialog__body {
-    max-height: calc(100dvh - 180px);
+    max-height: none;
+    flex: 1;
   }
 }
 
