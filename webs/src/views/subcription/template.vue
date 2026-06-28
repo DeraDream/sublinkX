@@ -16,17 +16,22 @@ const TempText = ref("");
 const dialogVisible = ref(false);
 const table = ref();
 const TempTitle = ref("");
+const editorMode = ref<"add" | "edit" | "import">("add");
+const fileInput = ref<HTMLInputElement>();
+const isDragging = ref(false);
 
 async function gettemps() {
-  const {data} = await getTemp();
+  const { data } = await getTemp();
   tableData.value = data;
 }
 
 onMounted(gettemps);
 
 const handleAddTemp = () => {
+  editorMode.value = "add";
   TempTitle.value = "添加模板";
   Tempname.value = "";
+  Tempoldname.value = "";
   TempText.value = "";
   dialogVisible.value = true;
 };
@@ -37,24 +42,29 @@ const addtemp = async () => {
     ElMessage.warning("请输入模板文件名");
     return;
   }
+  if (!TempText.value.trim()) {
+    ElMessage.warning("模板内容不能为空");
+    return;
+  }
 
-  if (TempTitle.value === "添加模板") {
-    await AddTemp({
-      filename,
-      text: TempText.value,
-    });
-    ElMessage.success("添加成功");
-  } else {
+  if (editorMode.value === "edit") {
     await UpdateTemp({
       filename,
       oldname: Tempoldname.value.trim(),
       text: TempText.value,
     });
     ElMessage.success("更新成功");
+  } else {
+    await AddTemp({
+      filename,
+      text: TempText.value,
+    });
+    ElMessage.success(editorMode.value === "import" ? "导入成功" : "添加成功");
   }
 
   await gettemps();
   Tempname.value = "";
+  Tempoldname.value = "";
   TempText.value = "";
   dialogVisible.value = false;
 };
@@ -67,7 +77,7 @@ const handleSelectionChange = (val: Temp[]) => {
 const normalizeTemplateFilename = (filename: string, text = "") => {
   const name = (filename || "").trim();
   if (!name) {
-    return "template.yaml";
+    return "";
   }
   if (/\.[^./\\]+$/.test(name)) {
     return name;
@@ -107,6 +117,7 @@ const handleExport = (row: any) => {
 };
 
 const handleEdit = (row: any) => {
+  editorMode.value = "edit";
   TempTitle.value = "编辑模板";
   Tempname.value = row.file;
   Tempoldname.value = row.file;
@@ -118,16 +129,45 @@ const toggleSelection = () => {
   table.value.clearSelection();
 };
 
+const openFilePicker = () => {
+  fileInput.value?.click();
+};
+
+const handleFileInputChange = async (event: Event) => {
+  const target = event.target as HTMLInputElement;
+  const file = target.files?.[0];
+  if (file) {
+    await previewImportFile(file);
+  }
+  target.value = "";
+};
+
+const handleDrop = async (event: DragEvent) => {
+  isDragging.value = false;
+  const file = event.dataTransfer?.files?.[0];
+  if (!file) {
+    return;
+  }
+  await previewImportFile(file);
+};
+
+const previewImportFile = async (file: File) => {
+  const text = await file.text();
+  editorMode.value = "import";
+  TempTitle.value = "导入模板预览";
+  Tempname.value = normalizeTemplateFilename(file.name, text);
+  Tempoldname.value = "";
+  TempText.value = text;
+  dialogVisible.value = true;
+  ElMessage.info("已读取本地文件，请检查内容，点击保存后才会真正导入");
+};
+
 const handleDel = (row: any) => {
-  ElMessageBox.confirm(
-    `你是否要删除 ${row.file} ?`,
-    "提示",
-    {
-      confirmButtonText: "确定",
-      cancelButtonText: "取消",
-      type: "warning",
-    }
-  ).then(async () => {
+  ElMessageBox.confirm(`你是否要删除 ${row.file} ?`, "提示", {
+    confirmButtonText: "确定",
+    cancelButtonText: "取消",
+    type: "warning",
+  }).then(async () => {
     await DelTemp({
       filename: row.file,
     });
@@ -143,15 +183,11 @@ const selectDel = () => {
   if (multipleSelection.value.length === 0) {
     return;
   }
-  ElMessageBox.confirm(
-    "你是否要删除选中的模板？",
-    "提示",
-    {
-      confirmButtonText: "确定",
-      cancelButtonText: "取消",
-      type: "warning",
-    }
-  ).then(async () => {
+  ElMessageBox.confirm("你是否要删除选中的模板？", "提示", {
+    confirmButtonText: "确定",
+    cancelButtonText: "取消",
+    type: "warning",
+  }).then(async () => {
     await Promise.all(
       multipleSelection.value.map((item) =>
         DelTemp({
@@ -185,6 +221,14 @@ const currentTableData = computed(() => {
 
 <template>
   <div class="page-workspace">
+    <input
+      ref="fileInput"
+      class="hidden-file-input"
+      type="file"
+      accept=".yaml,.yml,.conf,.txt"
+      @change="handleFileInputChange"
+    />
+
     <el-dialog
       v-model="dialogVisible"
       class="template-editor-dialog"
@@ -197,7 +241,13 @@ const currentTableData = computed(() => {
         <div class="editor-dialog-heading">
           <div>
             <h2>{{ TempTitle }}</h2>
-            <p>编辑 YAML 配置，右侧内容会实时同步</p>
+            <p>
+              {{
+                editorMode === "import"
+                  ? "这是本地文件预览，还没有写入服务器；确认无误后点击保存模板。"
+                  : "编辑 YAML 配置，右侧内容会实时同步。"
+              }}
+            </p>
           </div>
           <el-input
             v-model="Tempname"
@@ -208,6 +258,16 @@ const currentTableData = computed(() => {
           </el-input>
         </div>
       </template>
+
+      <el-alert
+        v-if="editorMode === 'import'"
+        class="import-preview-alert"
+        title="当前只是导入预览"
+        type="info"
+        show-icon
+        :closable="false"
+        description="你可以先修改文件名和内容。只有点击底部“保存模板”后，模板才会真正导入。"
+      />
 
       <div class="editor-layout">
         <section class="editor-panel">
@@ -242,12 +302,22 @@ const currentTableData = computed(() => {
         <h1>模板列表</h1>
         <p>维护 Clash、Surge 等订阅输出模板</p>
       </div>
-      <el-button type="primary" @click="handleAddTemp">添加模板</el-button>
+      <div class="heading-actions">
+        <el-button @click="openFilePicker">导入本地文件</el-button>
+        <el-button type="primary" @click="handleAddTemp">添加模板</el-button>
+      </div>
     </div>
 
-    <section class="work-surface">
+    <section
+      class="work-surface template-drop-surface"
+      :class="{ 'is-dragging': isDragging }"
+      @dragover.prevent="isDragging = true"
+      @dragleave.prevent="isDragging = false"
+      @drop.prevent="handleDrop"
+    >
       <div class="table-toolbar">
         <span class="record-count">共 {{ tableData.length }} 个模板</span>
+        <span class="drop-hint">可把 .yaml / .yml / .conf 文件拖到这里导入预览</span>
       </div>
 
       <el-table
@@ -271,6 +341,13 @@ const currentTableData = computed(() => {
         </el-table-column>
       </el-table>
 
+      <div class="drop-overlay">
+        <div>
+          <strong>松开文件，打开导入预览</strong>
+          <span>保存前不会写入模板目录</span>
+        </div>
+      </div>
+
       <div class="table-footer">
         <div class="batch-actions">
           <el-button @click="selectAll">全选</el-button>
@@ -293,13 +370,78 @@ const currentTableData = computed(() => {
 </template>
 
 <style scoped>
+.hidden-file-input {
+  display: none;
+}
+
+.heading-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
 .record-count {
   color: var(--el-text-color-secondary);
   font-size: 13px;
 }
 
+.drop-hint {
+  color: var(--el-text-color-placeholder);
+  font-size: 13px;
+}
+
 .primary-cell {
   font-weight: 550;
+}
+
+.template-drop-surface {
+  position: relative;
+  overflow: hidden;
+}
+
+.template-drop-surface.is-dragging {
+  border-color: var(--el-color-primary);
+  background: color-mix(in srgb, var(--el-color-primary) 7%, var(--el-bg-color));
+}
+
+.drop-overlay {
+  position: absolute;
+  z-index: 5;
+  inset: 12px;
+  display: none;
+  place-items: center;
+  border: 1px dashed var(--el-color-primary);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--el-bg-color) 86%, transparent);
+  pointer-events: none;
+}
+
+.template-drop-surface.is-dragging .drop-overlay {
+  display: grid;
+}
+
+.drop-overlay div {
+  display: grid;
+  gap: 6px;
+  padding: 20px 26px;
+  border-radius: 12px;
+  background: var(--el-bg-color);
+  box-shadow: var(--el-box-shadow-light);
+  text-align: center;
+}
+
+.drop-overlay strong {
+  color: var(--el-color-primary);
+  font-size: 16px;
+}
+
+.drop-overlay span {
+  color: var(--el-text-color-secondary);
+  font-size: 13px;
+}
+
+.import-preview-alert {
+  margin-bottom: 14px;
 }
 
 .editor-dialog-heading {
@@ -331,8 +473,8 @@ const currentTableData = computed(() => {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 16px;
-  height: calc(100vh - 220px);
-  min-height: 480px;
+  height: calc(100vh - 270px);
+  min-height: 440px;
 }
 
 .editor-panel {
