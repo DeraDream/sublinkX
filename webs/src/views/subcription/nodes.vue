@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, nextTick } from "vue";
+import { ref, onMounted, nextTick, computed } from "vue";
 import {
   getNodes,
   AddNodes,
@@ -15,6 +15,7 @@ import {
   listHomeAgents,
   listSpeedTasks,
 } from "@/api/speedtest";
+import { formatBeijingTime } from "@/utils/time";
 
 interface GroupNode {
   ID: number;
@@ -86,6 +87,45 @@ let speedRunCancelled = false;
 
 // const SelectionNodes = ref([]); // 选中的节点
 const RadioGroup = ref("1"); // 分组单选框
+const parsedAddLinks = computed(() =>
+  NodeForm.value.Link.trim()
+    .split(/[\n,]/)
+    .map((item) => item.trim())
+    .filter((item) => item)
+);
+const inferredAddNames = computed(() =>
+  parsedAddLinks.value.map((link) => extractNodeRemark(link))
+);
+
+function decodeBase64Text(text: string) {
+  try {
+    const normalized = text.replace(/-/g, "+").replace(/_/g, "/");
+    const padding =
+      normalized.length % 4 ? "=".repeat(4 - (normalized.length % 4)) : "";
+    const binary = window.atob(normalized + padding);
+    const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+    return new TextDecoder().decode(bytes);
+  } catch {
+    return "";
+  }
+}
+
+function extractNodeRemark(link: string) {
+  const trimmed = link.trim();
+  if (!trimmed) return "";
+  try {
+    if (trimmed.startsWith("vmess://")) {
+      const raw = decodeBase64Text(trimmed.replace("vmess://", ""));
+      const data = JSON.parse(raw);
+      return data.ps || "";
+    }
+    const parsed = new URL(trimmed);
+    return decodeURIComponent(parsed.hash.replace(/^#/, ""));
+  } catch {
+    return "";
+  }
+}
+
 // 将所有输入的值清空
 function ClearInput() {
   SelectionNode.value = ""; // 清空选中的节点
@@ -149,12 +189,13 @@ const handleEditNode = (row: any) => {
 };
 const SubmitNodeForm = async (row: any) => {
   const isAdd = dialogMode.value === "add";
-  let links = NodeForm.value.Link.trim()
-    .split(/[\n,]/)
-    .map((item) => item.trim())
-    .filter((item) => item);
+  const links = parsedAddLinks.value;
   if (isAdd && links.length === 0) {
     ElMessage.warning("节点链接不能为空");
+    return;
+  }
+  if (isAdd && links.length > 1 && NodeForm.value.Name?.trim()) {
+    ElMessage.warning("批量添加时请留空节点名称，每条链接会自动读取自己的注释");
     return;
   }
 
@@ -163,6 +204,7 @@ const SubmitNodeForm = async (row: any) => {
       for (const link of links) {
         await AddNodes({
           link,
+          name: links.length === 1 ? NodeForm.value.Name?.trim() : "",
           group:
             RadioGroup.value === "1"
               ? SelectionNodeGroups.value.join(",")
@@ -173,8 +215,8 @@ const SubmitNodeForm = async (row: any) => {
     } else {
       await UpdateNode({
         id: NodeForm.value.ID,
-        name: NodeForm.value.Name, // 新名称
-        link: NodeForm.value.Link, // 新链接
+        name: NodeForm.value.Name?.trim(), // 新名称
+        link: NodeForm.value.Link.trim(), // 新链接
         group:
           RadioGroup.value === "1"
             ? SelectionNodeGroups.value.join(",")
@@ -265,8 +307,7 @@ const AddGroup = async () => {
 };
 // 表格时间格式化
 const Timeformatter = (row: any) => {
-  row.CreatedAt = new Date(row.CreatedAt).toLocaleString(); // 转换为本地时间字符串
-  return row.CreatedAt;
+  return formatBeijingTime(row.CreatedAt);
 };
 // 选择已有节点显示所属分组
 const handleShownodeGroupList = () => {
@@ -564,7 +605,7 @@ onBeforeUnmount(() => {
       v-model="Nodedialog"
       class="form-dialog node-dialog"
       width="680px"
-      :close-on-click-modal="false"
+      :close-on-click-modal="true"
       destroy-on-close
     >
       <template #header>
@@ -581,12 +622,19 @@ onBeforeUnmount(() => {
       </template>
 
       <div class="dialog-form">
-        <label v-if="dialogMode === 'edit'" class="field">
+        <label class="field">
           <span class="field-label">节点名称</span>
           <el-input
             v-model="NodeForm.Name"
-            placeholder="输入便于识别的节点名称"
+            :placeholder="
+              dialogMode === 'add'
+                ? '可选；留空则自动读取链接末尾注释'
+                : '输入便于识别的节点名称'
+            "
           />
+          <span v-if="dialogMode === 'add'" class="field-help">
+            单条链接可手动填写，例如 po0-HKT；批量添加请留空，每条链接会使用自己的注释名。
+          </span>
         </label>
 
         <label class="field">
@@ -601,6 +649,36 @@ onBeforeUnmount(() => {
             >每个链接会被分别创建为一个节点。</span
           >
         </label>
+
+        <div
+          v-if="dialogMode === 'add' && parsedAddLinks.length > 0"
+          class="node-import-preview"
+        >
+          <div class="preview-head">
+            <strong>将创建 {{ parsedAddLinks.length }} 个节点</strong>
+            <span>{{
+              NodeForm.Name && parsedAddLinks.length === 1
+                ? "使用手动节点名"
+                : "留空名称时使用链接注释"
+            }}</span>
+          </div>
+          <div class="preview-list">
+            <span
+              v-for="(link, index) in parsedAddLinks.slice(0, 4)"
+              :key="`${link}-${index}`"
+              class="preview-chip"
+            >
+              {{
+                parsedAddLinks.length === 1 && NodeForm.Name
+                  ? NodeForm.Name
+                  : inferredAddNames[index] || "未识别名称"
+              }}
+            </span>
+            <span v-if="parsedAddLinks.length > 4" class="preview-more">
+              +{{ parsedAddLinks.length - 4 }}
+            </span>
+          </div>
+        </div>
 
         <div class="field">
           <span class="field-label">所属分组</span>
@@ -863,6 +941,52 @@ onBeforeUnmount(() => {
   font-size: 12px;
   color: var(--el-text-color-secondary);
   background: transparent;
+}
+
+.node-import-preview {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  background: var(--el-fill-color-light);
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 8px;
+}
+
+.preview-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.preview-head strong {
+  color: var(--el-text-color-primary);
+  font-size: 13px;
+}
+
+.preview-head span {
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+}
+
+.preview-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.preview-chip,
+.preview-more {
+  max-width: 180px;
+  padding: 5px 9px;
+  overflow: hidden;
+  color: var(--el-color-primary);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: color-mix(in srgb, var(--el-color-primary) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--el-color-primary) 28%, transparent);
+  border-radius: 999px;
 }
 
 .record-count,

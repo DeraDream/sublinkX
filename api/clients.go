@@ -100,6 +100,63 @@ func findSubscriptionByToken(token string) (models.Subcription, bool) {
 	}
 	return models.Subcription{}, false
 }
+
+func subscriptionNodeLinks(n models.Node) []string {
+	link := strings.TrimSpace(n.Link)
+	if link == "" {
+		return nil
+	}
+	if strings.Contains(link, "http://") || strings.Contains(link, "https://") {
+		return []string{link}
+	}
+	if !strings.Contains(link, ",") {
+		return []string{linkWithDisplayName(link, n.Name)}
+	}
+	links := strings.Split(link, ",")
+	result := make([]string, 0, len(links))
+	for _, item := range links {
+		item = strings.TrimSpace(item)
+		if item != "" {
+			result = append(result, item)
+		}
+	}
+	return result
+}
+
+func linkWithDisplayName(link, displayName string) string {
+	displayName = strings.TrimSpace(displayName)
+	if displayName == "" {
+		return link
+	}
+	scheme := strings.ToLower(strings.SplitN(link, "://", 2)[0])
+	switch scheme {
+	case "vmess":
+		vmess, err := node.DecodeVMESSURL(link)
+		if err != nil {
+			log.Println("重写 vmess 节点名称失败:", err)
+			return link
+		}
+		vmess.Ps = displayName
+		if vmess.V == "" {
+			vmess.V = "2"
+		}
+		payload, err := json.Marshal(vmess)
+		if err != nil {
+			log.Println("重写 vmess 节点名称失败:", err)
+			return link
+		}
+		return "vmess://" + node.Base64Encode(string(payload))
+	default:
+		u, err := url.Parse(link)
+		if err != nil {
+			log.Println("重写节点名称失败:", err)
+			return link
+		}
+		u.Fragment = displayName
+		return u.String()
+	}
+}
+
 func GetV2ray(c *gin.Context) {
 	var sub models.Subcription
 	if SunName == "" {
@@ -122,10 +179,11 @@ func GetV2ray(c *gin.Context) {
 	}
 	baselist := ""
 	for _, v := range sub.ActiveNodes() {
+		nodeLinks := subscriptionNodeLinks(v)
 		switch {
 		// 如果包含多条节点
 		case strings.Contains(v.Link, ","):
-			links := strings.Split(v.Link, ",")
+			links := nodeLinks
 			baselist += strings.Join(links, "\n") + "\n"
 			continue
 		//如果是订阅转换
@@ -141,7 +199,7 @@ func GetV2ray(c *gin.Context) {
 			baselist += nodes + "\n"
 		// 默认
 		default:
-			baselist += v.Link + "\n"
+			baselist += strings.Join(nodeLinks, "\n") + "\n"
 		}
 	}
 	c.Set("subname", SunName)
@@ -170,10 +228,11 @@ func GetClash(c *gin.Context) {
 	for _, v := range sub.ActiveNodes() {
 		log.Println("节点信息:", v)
 		log.Println("节点链接:", v.Link)
+		nodeLinks := subscriptionNodeLinks(v)
 		switch {
 		// 如果包含多条节点
 		case strings.Contains(v.Link, ","):
-			links := strings.Split(v.Link, ",")
+			links := nodeLinks
 			urls = append(urls, links...)
 			continue
 		//如果是订阅转换
@@ -190,7 +249,7 @@ func GetClash(c *gin.Context) {
 			urls = append(urls, links...)
 		// 默认
 		default:
-			urls = append(urls, v.Link)
+			urls = append(urls, nodeLinks...)
 		}
 	}
 	log.Println("urls", urls)
@@ -229,10 +288,11 @@ func GetSurge(c *gin.Context) {
 	}
 	urls := []string{}
 	for _, v := range sub.ActiveNodes() {
+		nodeLinks := subscriptionNodeLinks(v)
 		switch {
 		// 如果包含多条节点
 		case strings.Contains(v.Link, ","):
-			links := strings.Split(v.Link, ",")
+			links := nodeLinks
 			urls = append(urls, links...)
 			continue
 		//如果是订阅转换
@@ -249,7 +309,7 @@ func GetSurge(c *gin.Context) {
 			urls = append(urls, links...)
 		// 默认
 		default:
-			urls = append(urls, v.Link)
+			urls = append(urls, nodeLinks...)
 		}
 	}
 

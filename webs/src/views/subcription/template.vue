@@ -2,6 +2,7 @@
 import { computed, nextTick, onMounted, ref } from "vue";
 import YamlEditor from "@/components/YamlEditor/index.vue";
 import { AddTemp, DelTemp, getTemp, UpdateTemp } from "@/api/subcription/temp";
+import { formatBeijingTime } from "@/utils/time";
 
 interface Temp {
   file: string;
@@ -217,6 +218,8 @@ const currentTableData = computed(() => {
   const start = (currentPage.value - 1) * pageSize.value;
   return tableData.value.slice(start, start + pageSize.value);
 });
+
+const formatTemplateTime = (row: Temp) => formatBeijingTime(row.create_date);
 </script>
 
 <template>
@@ -234,7 +237,7 @@ const currentTableData = computed(() => {
       class="template-editor-dialog"
       width="calc(100vw - 64px)"
       top="32px"
-      :close-on-click-modal="false"
+      :close-on-click-modal="true"
       destroy-on-close
     >
       <template #header>
@@ -331,7 +334,13 @@ const currentTableData = computed(() => {
             <span class="primary-cell">{{ scope.row.file }}</span>
           </template>
         </el-table-column>
-        <el-table-column prop="create_date" label="创建时间" min-width="200" sortable />
+        <el-table-column
+          prop="create_date"
+          label="创建时间"
+          min-width="200"
+          sortable
+          :formatter="formatTemplateTime"
+        />
         <el-table-column fixed="right" label="操作" width="190" align="right">
           <template #default="scope">
             <el-button link type="primary" @click="handleExport(scope.row)">导出</el-button>

@@ -270,6 +270,94 @@ html.dark {
   --editor-comment: #64748b;
 }
 
+html.dark {
+  .page-workspace {
+    color: #e5e7eb;
+  }
+
+  .work-surface,
+  .search-container,
+  .template-field,
+  .node-import-preview {
+    background: #111827;
+    border-color: #263244;
+  }
+
+  .el-overlay {
+    background-color: rgb(2 6 23 / 68%);
+  }
+
+  .el-dialog,
+  .el-popper.is-light,
+  .el-select-dropdown {
+    color: #e5e7eb;
+    background: #111827;
+    border-color: #2d3a4f;
+  }
+
+  .el-dialog__footer,
+  .el-table__fixed-right::before,
+  .el-table__fixed::before {
+    background: #0f172a;
+  }
+
+  .el-input__wrapper,
+  .el-select__wrapper,
+  .el-textarea__inner {
+    color: #f8fafc;
+    background: #0f172a;
+    box-shadow: 0 0 0 1px #334155 inset;
+  }
+
+  .el-input__inner,
+  .el-select__placeholder,
+  .el-textarea__inner {
+    color: #f8fafc;
+  }
+
+  .el-input__inner::placeholder,
+  .el-textarea__inner::placeholder {
+    color: #94a3b8;
+  }
+
+  .el-button:not(.el-button--primary):not(.el-button--danger):not(.is-link) {
+    --el-button-bg-color: #182235;
+    --el-button-border-color: #334155;
+    --el-button-text-color: #e2e8f0;
+    --el-button-hover-bg-color: #23324a;
+    --el-button-hover-border-color: #475569;
+    --el-button-hover-text-color: #ffffff;
+    --el-button-active-bg-color: #0f172a;
+  }
+
+  .el-button--primary {
+    --el-button-bg-color: #3b82f6;
+    --el-button-border-color: #3b82f6;
+    --el-button-text-color: #ffffff;
+    --el-button-hover-bg-color: #60a5fa;
+    --el-button-hover-border-color: #60a5fa;
+    --el-button-hover-text-color: #ffffff;
+  }
+
+  .el-button--primary.is-plain {
+    --el-button-bg-color: rgb(59 130 246 / 14%);
+    --el-button-border-color: rgb(96 165 250 / 58%);
+    --el-button-text-color: #93c5fd;
+    --el-button-hover-bg-color: #3b82f6;
+    --el-button-hover-border-color: #60a5fa;
+    --el-button-hover-text-color: #ffffff;
+  }
+
+  .el-button--danger.is-plain {
+    --el-button-bg-color: rgb(248 113 113 / 12%);
+    --el-button-border-color: rgb(248 113 113 / 48%);
+    --el-button-text-color: #fca5a5;
+    --el-button-hover-bg-color: #ef4444;
+    --el-button-hover-border-color: #f87171;
+    --el-button-hover-text-color: #ffffff;
+  }
+}
+
 .el-card {
   border: 1px solid var(--el-border-color-lighter);
   border-radius: 4px;

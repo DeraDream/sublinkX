@@ -10,6 +10,7 @@ import {
 } from "@/api/subcription/subs";
 import { getTemp } from "@/api/subcription/temp";
 import { getNodes } from "@/api/subcription/node";
+import { beijingTimestamp, formatBeijingTime } from "@/utils/time";
 import QrcodeVue from "qrcode.vue";
 import { VueDraggable } from "vue-draggable-plus";
 
@@ -110,6 +111,10 @@ async function gettemps() {
 async function getnodes() {
   const { data } = await getNodes();
   NodesList.value = data;
+}
+
+function formatCreatedAt(row: Sub) {
+  return formatBeijingTime(row.CreatedAt || row.CreateDate);
 }
 
 onMounted(() => {
@@ -495,7 +500,7 @@ const OpenUrl = (url: string) => {
       v-model="dialogVisible"
       class="form-dialog subscription-wizard-dialog"
       width="min(1040px, calc(100vw - 32px))"
-      :close-on-click-modal="false"
+      :close-on-click-modal="true"
       destroy-on-close
     >
       <template #header>
@@ -738,7 +743,7 @@ const OpenUrl = (url: string) => {
             <template v-if="row.Nodes">
               <el-tag v-if="row.Revoked" type="danger" effect="plain">已失效</el-tag>
               <el-tag
-                v-else-if="row.ExpireAt && new Date(row.ExpireAt).getTime() < Date.now()"
+                v-else-if="row.ExpireAt && beijingTimestamp(row.ExpireAt) < Date.now()"
                 type="warning"
                 effect="plain"
               >
@@ -757,7 +762,13 @@ const OpenUrl = (url: string) => {
             <span v-else class="muted-cell">--</span>
           </template>
         </el-table-column>
-        <el-table-column prop="CreatedAt" label="创建时间" min-width="180" sortable />
+        <el-table-column
+          prop="CreatedAt"
+          label="创建时间"
+          min-width="180"
+          sortable
+          :formatter="formatCreatedAt"
+        />
         <el-table-column label="操作" width="280" align="right">
           <template #default="scope">
             <template v-if="scope.row.Nodes">

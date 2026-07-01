@@ -5,6 +5,7 @@ import {
   listHomeAgents,
   setHomeAgentMode,
 } from "@/api/speedtest";
+import { formatBeijingTime } from "@/utils/time";
 
 interface HomeAgent {
   id: number;
@@ -83,7 +84,7 @@ async function handleDelete(agent: any) {
 }
 
 function formatTime(value?: string) {
-  return value ? new Date(value).toLocaleString() : "尚未连接";
+  return value ? formatBeijingTime(value) : "尚未连接";
 }
 
 onMounted(() => {
@@ -130,7 +131,7 @@ onBeforeUnmount(() => {
       class="form-dialog"
       width="680px"
       title="安装家宽测速端"
-      :close-on-click-modal="false"
+      :close-on-click-modal="true"
     >
       <div class="install-guide">
         <p>在飞牛、NAS 或 Linux 家庭设备终端执行以下命令：</p>

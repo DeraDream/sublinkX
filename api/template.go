@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sublink/utils"
 	"sync"
 
 	"github.com/gin-gonic/gin"
@@ -140,7 +141,7 @@ func GetTempS(c *gin.Context) {
 			log.Printf("获取文件信息失败: %s, 错误: %v", file.Name(), err)
 			continue
 		}
-		modTime := info.ModTime().Format("2006-01-02 15:04:05")
+		modTime := utils.FormatBeijingTime(info.ModTime())
 
 		// 使用经过安全验证的完整路径来读取文件内容
 		text, err := os.ReadFile(fullPathToRead)

@@ -19,6 +19,7 @@ import (
 )
 
 func DocodeNodeName(nd *models.Node) (models.Node, error) { // 解码节点名称
+	nd.Name = strings.TrimSpace(nd.Name)
 	if nd.Name == "" {
 		u, err := url.Parse(nd.Link)
 		if err != nil {
@@ -89,8 +90,8 @@ func DocodeNodeName(nd *models.Node) (models.Node, error) { // 解码节点名�
 }
 func NodeUpdadte(c *gin.Context) {
 	// var node models.Node
-	NewName := c.PostForm("name")
-	Newlink := c.PostForm("link")
+	NewName := strings.TrimSpace(c.PostForm("name"))
+	Newlink := strings.TrimSpace(c.PostForm("link"))
 	id := c.PostForm("id")
 	group := c.PostForm("group")        // 分组
 	groups := strings.Split(group, ",") // 分组列表
@@ -324,14 +325,14 @@ func GroupNodeSet(c *gin.Context) {
 // 添加节点
 func NodeAdd(c *gin.Context) {
 	var n models.Node
-	link := c.PostForm("link")
-	name := c.PostForm("name")
+	link := strings.TrimSpace(c.PostForm("link"))
+	name := strings.TrimSpace(c.PostForm("name"))
 	group := c.PostForm("group")
 	n = models.Node{
 		Name: name,
 		Link: link,
 	}
-	if link == "" && !strings.Contains(link, "://") {
+	if link == "" || !strings.Contains(link, "://") {
 		c.JSON(400, gin.H{
 			"msg": "link不能为空或者格式不正确,请检查链接是否包含协议头,例如 http:// 或 https://",
 		})
@@ -388,6 +389,7 @@ func NodeAdd(c *gin.Context) {
 
 	c.JSON(200, gin.H{
 		"code": "00000",
+		"data": n,
 		"msg":  "添加成功",
 	})
 }
