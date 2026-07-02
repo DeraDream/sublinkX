@@ -84,6 +84,32 @@ func GetMenus(c *gin.Context) {
 			},
 		},
 		{
+			Path:      "/node-subs",
+			Component: "Layout",
+			Redirect:  "/node-subs/index",
+			Name:      "nodeSubscriptions",
+			Meta: Meta{
+				Title:  "nodesublist",
+				Icon:   "tree",
+				Hidden: false,
+				Roles:  []string{"ADMIN"},
+			},
+			Children: []Child{
+				{
+					Path:      "index",
+					Component: "subcription/node-subs",
+					Name:      "NodeSubs",
+					Meta: Meta{
+						Title:     "nodesublist",
+						Icon:      "tree",
+						Hidden:    false,
+						Roles:     []string{"ADMIN"},
+						KeepAlive: true,
+					},
+				},
+			},
+		},
+		{
 			Path:      "/nodes",
 			Component: "Layout",
 			Redirect:  "/nodes/index",

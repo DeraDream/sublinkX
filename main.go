@@ -29,7 +29,7 @@ var embeddedFiles embed.FS
 var Template embed.FS
 
 // 版本号
-const version = "4.1"
+const version = "4.2"
 
 func Templateinit() {
 	// 设置template路径
@@ -154,6 +154,7 @@ func Run(port int) {
 	routers.User(r)
 	routers.Mentus(r)
 	routers.Subcription(r)
+	routers.NodeSubscription(r)
 	routers.Nodes(r)
 	routers.Clients(r)
 	routers.Total(r)

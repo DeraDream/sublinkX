@@ -36,6 +36,7 @@ func InitSqlite() {
 	err = db.AutoMigrate(
 		&User{},
 		&Subcription{},
+		&NodeSubscription{},
 		&SubLogs{},
 		&GroupNode{},
 		&Node{},

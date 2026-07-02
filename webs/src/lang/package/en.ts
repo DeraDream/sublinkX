@@ -7,6 +7,7 @@ export default {
     system: "system management",
     nodelist: "Node List",
     sublist: "Subscription List",
+    nodesublist: "Node Subscriptions",
     subcription: "Subscription Management",
     templatelist: "Template List",
     settingsmenu: "Settings",

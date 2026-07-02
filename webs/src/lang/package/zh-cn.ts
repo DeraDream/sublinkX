@@ -7,6 +7,7 @@ export default {
     system: "系统管理",
     nodelist: "节点列表",
     sublist: "订阅列表",
+    nodesublist: "节点订阅分类",
     subcription: "订阅管理",
     templatelist: "模板列表",
     settingsmenu: "系统设置",

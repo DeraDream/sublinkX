@@ -31,6 +31,7 @@ func AuthorToken(c *gin.Context) {
 		"/api/v1/auth/login",
 		"/api/v1/agent/",
 		"/c/",
+		"/n/",
 		"/api/v1/version",
 	}
 	// 如果是首页直接跳过
