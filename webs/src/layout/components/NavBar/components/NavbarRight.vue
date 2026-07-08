@@ -46,7 +46,10 @@
         <span>{{ userStore.user.username }}</span>
       </div>
       <template #dropdown>
-          <el-dropdown-menu>
+        <el-dropdown-menu>
+          <el-dropdown-item @click="openPasswordDialog">
+            {{ $t("navbar.userset") }}
+          </el-dropdown-item>
           <el-dropdown-item @click="logout">
             {{ $t("navbar.logout") }}
           </el-dropdown-item>
@@ -54,16 +57,65 @@
       </template>
     </el-dropdown>
 
+    <el-dialog
+      v-model="passwordDialogVisible"
+      :title="$t('userset.title')"
+      width="420px"
+      class="password-dialog"
+      destroy-on-close
+    >
+      <el-form
+        ref="passwordFormRef"
+        :model="passwordForm"
+        :rules="passwordRules"
+        label-position="top"
+        @submit.prevent
+      >
+        <el-form-item :label="$t('userset.newUsername')" prop="username">
+          <el-input
+            v-model.trim="passwordForm.username"
+            autocomplete="username"
+            :placeholder="$t('userset.newUsername')"
+          />
+        </el-form-item>
+        <el-form-item :label="$t('userset.newPassword')" prop="password">
+          <el-input
+            v-model.trim="passwordForm.password"
+            type="password"
+            show-password
+            autocomplete="new-password"
+            :placeholder="$t('userset.newPassword')"
+          />
+        </el-form-item>
+        <el-form-item label="确认新密码" prop="confirmPassword">
+          <el-input
+            v-model.trim="passwordForm.confirmPassword"
+            type="password"
+            show-password
+            autocomplete="new-password"
+            placeholder="请再次输入新密码"
+            @keyup.enter="submitPasswordChange"
+          />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="passwordDialogVisible = false">取消</el-button>
+        <el-button
+          type="primary"
+          :loading="passwordSubmitting"
+          @click="submitPasswordChange"
+        >
+          确定
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 <script setup lang="ts">
-import {
-  useAppStore,
-  useSettingsStore,
-  useUserStore,
-} from "@/store";
+import { useAppStore, useSettingsStore, useUserStore } from "@/store";
 import { DeviceEnum } from "@/enums/DeviceEnum";
 import { ThemeEnum } from "@/enums/ThemeEnum";
+import { updateUserPassword } from "@/api/user";
 
 const appStore = useAppStore();
 const settingsStore = useSettingsStore();
@@ -76,11 +128,70 @@ const isMobile = computed(() => appStore.device === DeviceEnum.MOBILE);
 const isDark = computed(() => settingsStore.theme === ThemeEnum.DARK);
 
 const { isFullscreen, toggle } = useFullscreen();
+const { t } = useI18n();
+const passwordDialogVisible = ref(false);
+const passwordSubmitting = ref(false);
+const passwordFormRef = ref();
+const passwordForm = reactive({
+  username: "",
+  password: "",
+  confirmPassword: "",
+});
+const passwordRules = {
+  username: [
+    { required: true, message: t("userset.message.xx1"), trigger: "blur" },
+  ],
+  password: [
+    { required: true, message: t("userset.message.xx1"), trigger: "blur" },
+    { min: 6, message: t("userset.message.xx2"), trigger: "blur" },
+  ],
+  confirmPassword: [
+    { required: true, message: "请再次输入新密码", trigger: "blur" },
+    {
+      validator: (
+        _rule: unknown,
+        value: string,
+        callback: (error?: Error) => void
+      ) => {
+        if (value !== passwordForm.password) {
+          callback(new Error("两次输入的密码不一致"));
+          return;
+        }
+        callback();
+      },
+      trigger: "blur",
+    },
+  ],
+};
 
 function toggleTheme() {
-  settingsStore.changeTheme(
-    isDark.value ? ThemeEnum.LIGHT : ThemeEnum.DARK
-  );
+  settingsStore.changeTheme(isDark.value ? ThemeEnum.LIGHT : ThemeEnum.DARK);
+}
+
+function openPasswordDialog() {
+  passwordForm.username = userStore.user.username || "";
+  passwordForm.password = "";
+  passwordForm.confirmPassword = "";
+  passwordDialogVisible.value = true;
+  nextTick(() => passwordFormRef.value?.clearValidate?.());
+}
+
+async function submitPasswordChange() {
+  const valid = await passwordFormRef.value?.validate?.().catch(() => false);
+  if (!valid) return;
+  passwordSubmitting.value = true;
+  try {
+    await updateUserPassword({
+      username: passwordForm.username.trim(),
+      password: passwordForm.password.trim(),
+    });
+    ElMessage.success("密码修改成功，请重新登录");
+    passwordDialogVisible.value = false;
+    await userStore.resetToken();
+    router.push(`/login?redirect=${route.fullPath}`);
+  } finally {
+    passwordSubmitting.value = false;
+  }
 }
 
 /**
@@ -93,11 +204,9 @@ function logout() {
     type: "warning",
     lockScroll: false,
   }).then(() => {
-    userStore
-      .logout()
-      .then(() => {
-        router.push(`/login?redirect=${route.fullPath}`);
-      });
+    userStore.logout().then(() => {
+      router.push(`/login?redirect=${route.fullPath}`);
+    });
   });
 }
 </script>
@@ -125,6 +234,10 @@ function logout() {
 
 .dark .setting-item:hover {
   background: rgb(255 255 255 / 20%);
+}
+
+:deep(.password-dialog) {
+  max-width: calc(100vw - 32px);
 }
 
 @media (max-width: 640px) {
