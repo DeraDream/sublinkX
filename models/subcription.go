@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	// 用于将配置解析为结构体
 	"log"
+	"strconv"
 	"strings" // 用于处理逗号分隔的字符串
 	"time"
 
@@ -67,6 +68,48 @@ func (sub *Subcription) ActiveNodes() []Node {
 	return nodes
 }
 
+func subscriptionNodeOrderValue(nodes []Node) string {
+	values := make([]string, 0, len(nodes))
+	for _, node := range nodes {
+		values = append(values, strconv.Itoa(node.ID))
+	}
+	return strings.Join(values, ",")
+}
+
+func applySubscriptionNodeOrder(nodes []Node, order string) []Node {
+	if strings.TrimSpace(order) == "" || len(nodes) == 0 {
+		return nodes
+	}
+	byID := make(map[string]Node, len(nodes))
+	byName := make(map[string]Node, len(nodes))
+	used := make(map[int]bool, len(nodes))
+	for _, node := range nodes {
+		byID[strconv.Itoa(node.ID)] = node
+		byName[node.Name] = node
+	}
+	reordered := make([]Node, 0, len(nodes))
+	for _, item := range strings.Split(order, ",") {
+		key := strings.TrimSpace(item)
+		if key == "" {
+			continue
+		}
+		node, ok := byID[key]
+		if !ok {
+			node, ok = byName[key]
+		}
+		if ok && !used[node.ID] {
+			reordered = append(reordered, node)
+			used[node.ID] = true
+		}
+	}
+	for _, node := range nodes {
+		if !used[node.ID] {
+			reordered = append(reordered, node)
+		}
+	}
+	return reordered
+}
+
 func (sub *Subcription) IsAvailable(now time.Time) (bool, string) {
 	if sub.Revoked {
 		return false, "订阅链接已失效"
@@ -85,11 +128,7 @@ func (sub *Subcription) Add() error {
 	sub.EnsureToken()
 	// 在创建订阅时，如果 sub.Nodes 已经被前端填充并排序，可以将其名称转换为 NodeOrder 字符串
 	if len(sub.Nodes) > 0 {
-		names := make([]string, len(sub.Nodes))
-		for i, node := range sub.Nodes {
-			names[i] = node.Name
-		}
-		sub.NodeOrder = strings.Join(names, ",")
+		sub.NodeOrder = subscriptionNodeOrderValue(sub.Nodes)
 	}
 
 	// 首先创建 Subcription 记录，不包括多对多关系
@@ -118,11 +157,7 @@ func (sub *Subcription) Update(NewName *Subcription) error {
 
 	// 更新 NodeOrder 字段
 	if len(NewName.Nodes) > 0 {
-		names := make([]string, len(NewName.Nodes))
-		for i, node := range NewName.Nodes {
-			names[i] = node.Name
-		}
-		existingSub.NodeOrder = strings.Join(names, ",")
+		existingSub.NodeOrder = subscriptionNodeOrderValue(NewName.Nodes)
 	} else {
 		existingSub.NodeOrder = "" // 如果没有节点，清空
 	}
@@ -150,21 +185,7 @@ func (sub *Subcription) Find() error {
 	}
 	// 根据 NodeOrder 字段重新排序 Nodes
 	if sub.NodeOrder != "" && len(sub.Nodes) > 0 {
-		orderedNames := strings.Split(sub.NodeOrder, ",")
-		nodeMap := make(map[string]Node)
-		for _, node := range sub.Nodes {
-			log.Println("node:", node)
-			nodeMap[node.Name] = node
-		}
-
-		var reorderedNodes []Node
-		for _, name := range orderedNames {
-			trimmedName := strings.TrimSpace(name)
-			if node, ok := nodeMap[trimmedName]; ok {
-				reorderedNodes = append(reorderedNodes, node)
-			}
-		}
-		sub.Nodes = reorderedNodes
+		sub.Nodes = applySubscriptionNodeOrder(sub.Nodes, sub.NodeOrder)
 	}
 
 	return nil
@@ -185,20 +206,7 @@ func (sub *Subcription) List() ([]Subcription, error) {
 		}
 		// 根据 NodeOrder 字段重新排序每个订阅的 Nodes
 		if subs[i].NodeOrder != "" && len(subs[i].Nodes) > 0 {
-			orderedNames := strings.Split(subs[i].NodeOrder, ",")
-			nodeMap := make(map[string]Node) // 用于快速查找节点对象
-			for _, node := range subs[i].Nodes {
-				nodeMap[node.Name] = node
-			}
-
-			var reorderedNodes []Node
-			for _, name := range orderedNames {
-				trimmedName := strings.TrimSpace(name)
-				if node, ok := nodeMap[trimmedName]; ok {
-					reorderedNodes = append(reorderedNodes, node)
-				}
-			}
-			subs[i].Nodes = reorderedNodes
+			subs[i].Nodes = applySubscriptionNodeOrder(subs[i].Nodes, subs[i].NodeOrder)
 		}
 	}
 	return subs, nil

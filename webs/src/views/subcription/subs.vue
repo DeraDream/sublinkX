@@ -85,7 +85,7 @@ const clashTemplateMode = ref<"local" | "url">("local");
 const surgeTemplateMode = ref<"local" | "url">("local");
 const checkList = ref<string[]>([]);
 
-const value1 = ref<string[]>([]);
+const value1 = ref<number[]>([]);
 const nodeKeyword = ref("");
 
 const iplogsdialog = ref(false);
@@ -144,18 +144,18 @@ const availableNodes = computed(() => {
   const keyword = nodeKeyword.value.trim().toLowerCase();
   return NodesList.value.filter((node) => {
     if (node.Disabled) return false;
-    if (value1.value.includes(node.Name)) return false;
+    if (value1.value.includes(node.ID)) return false;
     if (!keyword) return true;
     return node.Name.toLowerCase().includes(keyword);
   });
 });
 
 const selectedNodes = computed(() =>
-  value1.value.map((name) => {
+  value1.value.map((id) => {
     return (
-      NodesList.value.find((node) => node.Name === name) || {
-        ID: 0,
-        Name: name,
+      NodesList.value.find((node) => node.ID === id) || {
+        ID: id,
+        Name: String(id),
         Link: "",
         Disabled: false,
       }
@@ -163,9 +163,12 @@ const selectedNodes = computed(() =>
   })
 );
 
+const nodeNameById = (id: number) =>
+  NodesList.value.find((node) => node.ID === id)?.Name || String(id);
+
 const selectedNodePreview = computed(() => {
   if (!value1.value.length) return "尚未选择节点";
-  const head = value1.value.slice(0, 4).join(" → ");
+  const head = value1.value.slice(0, 4).map(nodeNameById).join(" → ");
   return value1.value.length > 4 ? `${head} → ...` : head;
 });
 
@@ -231,7 +234,7 @@ const handleEdit = (row: any) => {
     config.surge || defaultTemplate("surge", "./template/surge.conf");
   clashTemplateMode.value = inferTemplateMode(Clash.value);
   surgeTemplateMode.value = inferTemplateMode(Surge.value);
-  value1.value = (row.Nodes || []).map((item: Node) => item.Name);
+  value1.value = (row.Nodes || []).map((item: Node) => item.ID);
   nodeKeyword.value = "";
   dialogVisible.value = true;
 };
@@ -273,18 +276,18 @@ const jumpStep = (step: number) => {
   }
 };
 
-const addNodeToSelection = (name: string) => {
-  if (!value1.value.includes(name)) {
-    value1.value.push(name);
+const addNodeToSelection = (id: number) => {
+  if (!value1.value.includes(id)) {
+    value1.value.push(id);
   }
 };
 
-const removeNodeFromSelection = (name: string) => {
-  value1.value = value1.value.filter((item) => item !== name);
+const removeNodeFromSelection = (id: number) => {
+  value1.value = value1.value.filter((item) => item !== id);
 };
 
 const addAllVisibleNodes = () => {
-  availableNodes.value.forEach((node) => addNodeToSelection(node.Name));
+  availableNodes.value.forEach((node) => addNodeToSelection(node.ID));
 };
 
 const clearSelectedNodes = () => {
@@ -716,7 +719,7 @@ const OpenUrl = (url: string) => {
                 :key="node.ID || node.Name"
                 class="node-option"
                 type="button"
-                @click="addNodeToSelection(node.Name)"
+                @click="addNodeToSelection(node.ID)"
               >
                 <span>{{ node.Name }}</span>
                 <span>加入</span>
@@ -742,17 +745,17 @@ const OpenUrl = (url: string) => {
               class="selected-nodes"
             >
               <div
-                v-for="(nodeName, index) in value1"
-                :key="nodeName"
+                v-for="(nodeId, index) in value1"
+                :key="nodeId"
                 class="draggable-item"
               >
                 <span class="drag-handle">⋮⋮</span>
                 <span class="row-number">{{ index + 1 }}</span>
-                <span class="node-name">{{ nodeName }}</span>
+                <span class="node-name">{{ nodeNameById(nodeId) }}</span>
                 <el-button
                   link
                   type="danger"
-                  @click.stop="removeNodeFromSelection(nodeName)"
+                  @click.stop="removeNodeFromSelection(nodeId)"
                   >移除</el-button
                 >
               </div>

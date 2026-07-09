@@ -43,7 +43,7 @@ const subName = ref("");
 const oldSubName = ref("");
 const expireAt = ref("");
 const accessLimit = ref<number | undefined>();
-const selectedNodes = ref<string[]>([]);
+const selectedNodes = ref<number[]>([]);
 const nodeKeyword = ref("");
 const currentPage = ref(1);
 const pageSize = ref(10);
@@ -61,15 +61,17 @@ const availableNodes = computed(() => {
   const keyword = nodeKeyword.value.trim().toLowerCase();
   return nodesList.value.filter((node) => {
     if (node.Disabled) return false;
-    if (selectedNodes.value.includes(node.Name)) return false;
+    if (selectedNodes.value.includes(node.ID)) return false;
     return !keyword || node.Name.toLowerCase().includes(keyword);
   });
 });
 const selectedPreview = computed(() => {
   if (!selectedNodes.value.length) return "尚未选择节点";
-  const head = selectedNodes.value.slice(0, 4).join(" → ");
+  const head = selectedNodes.value.slice(0, 4).map(nodeNameById).join(" → ");
   return selectedNodes.value.length > 4 ? `${head} → ...` : head;
 });
+const nodeNameById = (id: number) =>
+  nodesList.value.find((node) => node.ID === id)?.Name || String(id);
 const currentTableData = computed(() => {
   const start = (currentPage.value - 1) * pageSize.value;
   return tableData.value.slice(start, start + pageSize.value);
@@ -120,7 +122,7 @@ function handleEdit(row: any) {
     ? new Date(row.ExpireAt).toISOString().slice(0, 19).replace("T", " ")
     : "";
   accessLimit.value = row.AccessLimit || undefined;
-  selectedNodes.value = (row.Nodes || []).map((item: Node) => item.Name);
+  selectedNodes.value = (row.Nodes || []).map((item: Node) => item.ID);
   nodeKeyword.value = "";
   dialogVisible.value = true;
 }
@@ -161,16 +163,16 @@ async function saveSub() {
   if (saved) showClient(saved);
 }
 
-function addNode(name: string) {
-  if (!selectedNodes.value.includes(name)) selectedNodes.value.push(name);
+function addNode(id: number) {
+  if (!selectedNodes.value.includes(id)) selectedNodes.value.push(id);
 }
 
-function removeNode(name: string) {
-  selectedNodes.value = selectedNodes.value.filter((item) => item !== name);
+function removeNode(id: number) {
+  selectedNodes.value = selectedNodes.value.filter((item) => item !== id);
 }
 
 function addAllVisibleNodes() {
-  availableNodes.value.forEach((node) => addNode(node.Name));
+  availableNodes.value.forEach((node) => addNode(node.ID));
 }
 
 function clearSelectedNodes() {
@@ -397,7 +399,7 @@ function isExpired(row: any) {
               v-for="node in availableNodes"
               :key="node.ID || node.Name"
               class="node-option"
-              @click="addNode(node.Name)"
+              @click="addNode(node.ID)"
             >
               <span>{{ node.Name }}</span>
               <small>添加</small>
@@ -423,14 +425,14 @@ function isExpired(row: any) {
           >
             <div class="selected-node-list">
               <div
-                v-for="(nodeName, index) in selectedNodes"
-                :key="nodeName"
+                v-for="(nodeId, index) in selectedNodes"
+                :key="nodeId"
                 class="draggable-item"
               >
                 <span class="drag-handle">⋮⋮</span>
                 <span class="node-index">{{ index + 1 }}</span>
-                <span class="node-name">{{ nodeName }}</span>
-                <el-button link type="danger" @click.stop="removeNode(nodeName)"
+                <span class="node-name">{{ nodeNameById(nodeId) }}</span>
+                <el-button link type="danger" @click.stop="removeNode(nodeId)"
                   >移除</el-button
                 >
               </div>

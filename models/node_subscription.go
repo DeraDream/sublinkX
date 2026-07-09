@@ -1,6 +1,7 @@
 package models
 
 import (
+	"strconv"
 	"strings"
 	"time"
 
@@ -50,35 +51,51 @@ func (sub *NodeSubscription) IsAvailable(now time.Time) (bool, string) {
 }
 
 func (sub *NodeSubscription) applyNodeOrder() {
-	if sub.NodeOrder == "" || len(sub.Nodes) == 0 {
+	if strings.TrimSpace(sub.NodeOrder) == "" || len(sub.Nodes) == 0 {
 		return
 	}
-	orderedNames := strings.Split(sub.NodeOrder, ",")
-	nodeMap := make(map[string]Node, len(sub.Nodes))
+	byID := make(map[string]Node, len(sub.Nodes))
+	byName := make(map[string]Node, len(sub.Nodes))
+	used := make(map[int]bool, len(sub.Nodes))
 	for _, node := range sub.Nodes {
-		nodeMap[node.Name] = node
+		byID[strconv.Itoa(node.ID)] = node
+		byName[node.Name] = node
 	}
 	reorderedNodes := make([]Node, 0, len(sub.Nodes))
-	for _, name := range orderedNames {
-		if node, ok := nodeMap[strings.TrimSpace(name)]; ok {
+	for _, item := range strings.Split(sub.NodeOrder, ",") {
+		key := strings.TrimSpace(item)
+		if key == "" {
+			continue
+		}
+		node, ok := byID[key]
+		if !ok {
+			node, ok = byName[key]
+		}
+		if ok && !used[node.ID] {
+			reorderedNodes = append(reorderedNodes, node)
+			used[node.ID] = true
+		}
+	}
+	for _, node := range sub.Nodes {
+		if !used[node.ID] {
 			reorderedNodes = append(reorderedNodes, node)
 		}
 	}
 	sub.Nodes = reorderedNodes
 }
 
-func namesFromNodes(nodes []Node) string {
-	names := make([]string, 0, len(nodes))
+func nodeIDsFromNodes(nodes []Node) string {
+	values := make([]string, 0, len(nodes))
 	for _, node := range nodes {
-		names = append(names, node.Name)
+		values = append(values, strconv.Itoa(node.ID))
 	}
-	return strings.Join(names, ",")
+	return strings.Join(values, ",")
 }
 
 func (sub *NodeSubscription) Add() error {
 	sub.EnsureToken()
 	if len(sub.Nodes) > 0 {
-		sub.NodeOrder = namesFromNodes(sub.Nodes)
+		sub.NodeOrder = nodeIDsFromNodes(sub.Nodes)
 	}
 	if err := DB.Create(sub).Error; err != nil {
 		return err
@@ -95,7 +112,7 @@ func (sub *NodeSubscription) Update(next *NodeSubscription) error {
 	existing.ExpireAt = next.ExpireAt
 	existing.AccessLimit = next.AccessLimit
 	if len(next.Nodes) > 0 {
-		existing.NodeOrder = namesFromNodes(next.Nodes)
+		existing.NodeOrder = nodeIDsFromNodes(next.Nodes)
 	} else {
 		existing.NodeOrder = ""
 	}

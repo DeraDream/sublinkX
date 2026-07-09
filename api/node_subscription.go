@@ -13,22 +13,6 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func buildNodesFromNames(nodes string) ([]models.Node, error) {
-	var nodesData []models.Node
-	for _, nodeName := range strings.Split(nodes, ",") {
-		nodeName = strings.TrimSpace(nodeName)
-		if nodeName == "" {
-			continue
-		}
-		firstNode := models.Node{Name: nodeName}
-		if err := models.DB.Model(models.Node{}).Where("name = ?", firstNode.Name).First(&firstNode).Error; err != nil {
-			return nil, err
-		}
-		nodesData = append(nodesData, firstNode)
-	}
-	return nodesData, nil
-}
-
 func NodeSubGet(c *gin.Context) {
 	var sub models.NodeSubscription
 	subs, err := sub.List()
@@ -56,7 +40,7 @@ func NodeSubAdd(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"msg": "节点订阅名称或节点不能为空"})
 		return
 	}
-	nodesData, err := buildNodesFromNames(nodes)
+	nodesData, err := buildNodesFromRefs(nodes)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"msg": err.Error()})
 		return
@@ -93,7 +77,7 @@ func NodeSubUpdate(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"msg": "节点订阅名称或节点不能为空"})
 		return
 	}
-	nodesData, err := buildNodesFromNames(nodes)
+	nodesData, err := buildNodesFromRefs(nodes)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"msg": err.Error()})
 		return

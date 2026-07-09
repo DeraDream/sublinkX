@@ -5,7 +5,6 @@ package api
 import (
 	// 导入 json 包，用于解析 config 字符串
 
-	"log"
 	"strconv"
 	"strings"
 	"sublink/models" // 导入 models 包
@@ -49,6 +48,28 @@ func SubGet(c *gin.Context) {
 }
 
 // 添加订阅
+func buildNodesFromRefs(nodes string) ([]models.Node, error) {
+	var nodesData []models.Node
+	for _, item := range strings.Split(nodes, ",") {
+		ref := strings.TrimSpace(item)
+		if ref == "" {
+			continue
+		}
+		var firstNode models.Node
+		if id, err := strconv.Atoi(ref); err == nil && id > 0 {
+			if err := models.DB.First(&firstNode, id).Error; err != nil {
+				return nil, err
+			}
+		} else {
+			if err := models.DB.Model(models.Node{}).Where("name = ?", ref).First(&firstNode).Error; err != nil {
+				return nil, err
+			}
+		}
+		nodesData = append(nodesData, firstNode)
+	}
+	return nodesData, nil
+}
+
 func SubAdd(c *gin.Context) {
 	name := c.PostForm("name")
 	configs := c.PostForm("config") // 这里的 configString 是前端传来的 JSON 字符串
@@ -72,28 +93,14 @@ func SubAdd(c *gin.Context) {
 	}
 
 	// 1. 根据 nodesString 字符串，构建 models.Node 数组
-	var NodesData []models.Node
-
-	for _, nodeName := range strings.Split(nodes, ",") {
-		if strings.TrimSpace(nodeName) == "" {
-			continue
-		}
-		FirstNode := models.Node{
-			Name: nodeName,
-		}
-
-		// 查出node的数据
-		result := models.DB.Model(models.Node{}).Where("name = ?", FirstNode.Name).First(&FirstNode)
-		if result.Error != nil {
-			log.Println(result.Error)
-			c.JSON(400, gin.H{
-				"msg": result.Error,
-			})
-			return
-		}
-		// 插入nodes
-		NodesData = append(NodesData, FirstNode)
+	NodesData, err := buildNodesFromRefs(nodes)
+	if err != nil {
+		c.JSON(400, gin.H{
+			"msg": err.Error(),
+		})
+		return
 	}
+
 	sub := models.Subcription{
 		Name:        name,
 		Config:      configs,     // 这里直接赋值字符串
@@ -142,28 +149,14 @@ func SubUpdate(c *gin.Context) {
 	}
 
 	// 1. 根据 nodesString 字符串，构建 models.Node 数组
-	var NodesData []models.Node
-
-	for _, nodeName := range strings.Split(nodes, ",") {
-		if strings.TrimSpace(nodeName) == "" {
-			continue
-		}
-		FirstNode := models.Node{
-			Name: nodeName,
-		}
-
-		// 查出node的数据
-		result := models.DB.Model(models.Node{}).Where("name = ?", FirstNode.Name).First(&FirstNode)
-		if result.Error != nil {
-			log.Println(result.Error)
-			c.JSON(400, gin.H{
-				"msg": result.Error,
-			})
-			return
-		}
-		// 插入nodes
-		NodesData = append(NodesData, FirstNode)
+	NodesData, err := buildNodesFromRefs(nodes)
+	if err != nil {
+		c.JSON(400, gin.H{
+			"msg": err.Error(),
+		})
+		return
 	}
+
 	OldSub := models.Subcription{
 		Name: OldName,
 	}
