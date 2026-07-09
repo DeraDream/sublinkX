@@ -6,6 +6,7 @@ import {
   setHomeAgentMode,
 } from "@/api/speedtest";
 import { formatBeijingTime } from "@/utils/time";
+import { useDraggableTableRows } from "@/utils/table-drag";
 
 interface HomeAgent {
   id: number;
@@ -22,12 +23,24 @@ interface HomeAgent {
 }
 
 const agents = ref<HomeAgent[]>([]);
+const agentsTable = ref();
 const loading = ref(false);
 const createDialog = ref(false);
 const commandDialog = ref(false);
 const agentName = ref("");
-const installCommand = ref("");
+const installCommands = ref<Record<"linux" | "windows", string>>({
+  linux: "",
+  windows: "",
+});
+const activeInstallPlatform = ref<"linux" | "windows">("linux");
 let refreshTimer: number | undefined;
+
+useDraggableTableRows({
+  tableRef: agentsTable,
+  rows: agents,
+  storageKey: "sublink:speedtest-agents:order",
+  rowKey: (row) => row.id,
+});
 
 async function loadAgents() {
   loading.value = true;
@@ -45,7 +58,11 @@ async function handleCreate() {
     return;
   }
   const { data } = await createHomeAgent({ name: agentName.value.trim() });
-  installCommand.value = data.install_command;
+  installCommands.value = {
+    linux: data.install_command || "",
+    windows: data.install_command_windows || "",
+  };
+  activeInstallPlatform.value = "linux";
   createDialog.value = false;
   commandDialog.value = true;
   agentName.value = "";
@@ -53,7 +70,9 @@ async function handleCreate() {
 }
 
 async function copyCommand() {
-  await navigator.clipboard.writeText(installCommand.value);
+  await navigator.clipboard.writeText(
+    installCommands.value[activeInstallPlatform.value]
+  );
   ElMessage.success("安装命令已复制");
 }
 
@@ -110,7 +129,7 @@ onBeforeUnmount(() => {
           <span class="field-label">测速端名称</span>
           <el-input
             v-model="agentName"
-            placeholder="例如：家里飞牛 NAS"
+            placeholder="例如：家里 NAS / Windows 小主机"
             @keyup.enter="handleCreate"
           />
           <span class="field-help">创建后会生成一次性安装命令。</span>
@@ -134,8 +153,12 @@ onBeforeUnmount(() => {
       :close-on-click-modal="true"
     >
       <div class="install-guide">
-        <p>在飞牛、NAS 或 Linux 家庭设备终端执行以下命令：</p>
-        <pre><code>{{ installCommand }}</code></pre>
+        <p>选择测速端系统，在对应终端中执行安装命令：</p>
+        <el-tabs v-model="activeInstallPlatform">
+          <el-tab-pane label="Linux / NAS" name="linux" />
+          <el-tab-pane label="Windows" name="windows" />
+        </el-tabs>
+        <pre><code>{{ installCommands[activeInstallPlatform] }}</code></pre>
         <el-alert
           title="令牌只在这里显示一次。安装成功后，本页状态会自动变为已连接。"
           type="info"
@@ -157,13 +180,23 @@ onBeforeUnmount(() => {
         <h1>家宽测速端</h1>
         <p>让家庭设备通过真实节点执行延迟和下载速度测试</p>
       </div>
-      <el-button type="primary" @click="createDialog = true"
-        >新增测速端</el-button
-      >
+      <el-button type="primary" @click="createDialog = true">
+        新增测速端
+      </el-button>
     </div>
 
     <section class="work-surface">
-      <el-table v-loading="loading" :data="agents">
+      <el-table
+        ref="agentsTable"
+        v-loading="loading"
+        :data="agents"
+        row-key="id"
+      >
+        <el-table-column width="42" label="">
+          <template #default>
+            <span class="row-drag-handle" title="拖动排序">☰</span>
+          </template>
+        </el-table-column>
         <el-table-column prop="name" label="名称" min-width="180">
           <template #default="{ row }">
             <div class="agent-name">
@@ -193,9 +226,9 @@ onBeforeUnmount(() => {
           </template>
         </el-table-column>
         <el-table-column label="最后在线" min-width="180">
-          <template #default="{ row }">{{
-            formatTime(row.last_seen)
-          }}</template>
+          <template #default="{ row }">
+            {{ formatTime(row.last_seen) }}
+          </template>
         </el-table-column>
         <el-table-column label="待执行" width="90">
           <template #default="{ row }">{{ row.pending_tasks }}</template>
@@ -212,9 +245,9 @@ onBeforeUnmount(() => {
             <el-button link type="primary" @click="changeMode(row)">
               {{ row.persistent_active ? "挂起" : "激活" }}
             </el-button>
-            <el-button link type="danger" @click="handleDelete(row)"
-              >删除</el-button
-            >
+            <el-button link type="danger" @click="handleDelete(row)">
+              删除
+            </el-button>
           </template>
         </el-table-column>
       </el-table>

@@ -12,6 +12,7 @@ import {
 } from "@/api/subcription/node-subscription";
 import { getNodes } from "@/api/subcription/node";
 import { beijingTimestamp, formatBeijingTime } from "@/utils/time";
+import { useDraggableTableRows } from "@/utils/table-drag";
 
 interface Node {
   ID: number;
@@ -53,7 +54,9 @@ const qrDialog = ref(false);
 const qrTitle = ref("");
 const qrcode = ref("");
 
-const dialogTitle = computed(() => (mode.value === "add" ? "添加节点订阅" : "编辑节点订阅"));
+const dialogTitle = computed(() =>
+  mode.value === "add" ? "添加节点订阅" : "编辑节点订阅"
+);
 const availableNodes = computed(() => {
   const keyword = nodeKeyword.value.trim().toLowerCase();
   return nodesList.value.filter((node) => {
@@ -70,6 +73,13 @@ const selectedPreview = computed(() => {
 const currentTableData = computed(() => {
   const start = (currentPage.value - 1) * pageSize.value;
   return tableData.value.slice(start, start + pageSize.value);
+});
+useDraggableTableRows({
+  tableRef: table,
+  rows: tableData,
+  startIndex: () => (currentPage.value - 1) * pageSize.value,
+  storageKey: "sublink:node-subscriptions:order",
+  rowKey: (row) => row.ID,
 });
 
 async function loadSubs() {
@@ -197,7 +207,11 @@ async function selectDel() {
     cancelButtonText: "取消",
     type: "warning",
   });
-  await Promise.all(multipleSelection.value.map((item) => deleteNodeSubscription({ id: item.ID })));
+  await Promise.all(
+    multipleSelection.value.map((item) =>
+      deleteNodeSubscription({ id: item.ID })
+    )
+  );
   await loadSubs();
   ElMessage.success("删除成功");
 }
@@ -237,7 +251,10 @@ function copyUrl(url: string) {
 
 function showClient(row: any) {
   const serverAddress =
-    location.protocol + "//" + location.hostname + (location.port ? ":" + location.port : "");
+    location.protocol +
+    "//" +
+    location.hostname +
+    (location.port ? ":" + location.port : "");
   clientSubName.value = row.Name;
   clientUrl.value = `${serverAddress}/n/?token=${row.Token}`;
   clientDialog.value = true;
@@ -268,7 +285,12 @@ function isExpired(row: any) {
 
 <template>
   <div class="page-workspace">
-    <el-dialog v-model="qrDialog" class="form-dialog qr-dialog" width="400px" :title="qrTitle">
+    <el-dialog
+      v-model="qrDialog"
+      class="form-dialog qr-dialog"
+      width="400px"
+      :title="qrTitle"
+    >
       <div class="qr-content">
         <div class="qr-frame">
           <qrcode-vue :value="qrcode" :size="196" level="H" />
@@ -278,18 +300,29 @@ function isExpired(row: any) {
       <template #footer>
         <div class="dialog-footer">
           <el-button @click="copyUrl(qrcode)">复制地址</el-button>
-          <el-button type="primary" @click="openUrl(qrcode)">打开链接</el-button>
+          <el-button type="primary" @click="openUrl(qrcode)"
+            >打开链接</el-button
+          >
         </div>
       </template>
     </el-dialog>
 
-    <el-dialog v-model="clientDialog" class="form-dialog client-dialog" width="760px" title="节点订阅链接">
+    <el-dialog
+      v-model="clientDialog"
+      class="form-dialog client-dialog"
+      width="760px"
+      title="节点订阅链接"
+    >
       <div class="client-dialog-head">
         <div>
-          <p class="dialog-intro">该地址只下发节点原始订阅，不套用 Clash / Surge 模板。</p>
+          <p class="dialog-intro">
+            该地址只下发节点原始订阅，不套用 Clash / Surge 模板。
+          </p>
           <strong>{{ clientSubName }}</strong>
         </div>
-        <el-button type="primary" plain @click="copyUrl(clientUrl)">复制订阅链接</el-button>
+        <el-button type="primary" plain @click="copyUrl(clientUrl)"
+          >复制订阅链接</el-button
+        >
       </div>
       <article class="client-card">
         <div class="client-card-title">
@@ -300,8 +333,12 @@ function isExpired(row: any) {
         <el-input :model-value="clientUrl" readonly class="client-url-input" />
         <div class="client-actions">
           <el-button @click="copyUrl(clientUrl)">复制链接</el-button>
-          <el-button @click="showQrcode(clientUrl, '节点订阅')">二维码</el-button>
-          <el-button link type="primary" @click="openUrl(clientUrl)">打开</el-button>
+          <el-button @click="showQrcode(clientUrl, '节点订阅')"
+            >二维码</el-button
+          >
+          <el-button link type="primary" @click="openUrl(clientUrl)"
+            >打开</el-button
+          >
         </div>
       </article>
     </el-dialog>
@@ -337,7 +374,12 @@ function isExpired(row: any) {
         </label>
         <label class="field">
           <span class="field-label">访问次数限制</span>
-          <el-input-number v-model="accessLimit" :min="0" placeholder="0 表示不限" class="field-control" />
+          <el-input-number
+            v-model="accessLimit"
+            :min="0"
+            placeholder="0 表示不限"
+            class="field-control"
+          />
         </label>
       </div>
 
@@ -345,7 +387,9 @@ function isExpired(row: any) {
         <div class="node-panel">
           <div class="node-panel-head">
             <strong>可选节点</strong>
-            <el-button link type="primary" @click="addAllVisibleNodes">添加当前列表</el-button>
+            <el-button link type="primary" @click="addAllVisibleNodes"
+              >添加当前列表</el-button
+            >
           </div>
           <el-input v-model="nodeKeyword" placeholder="搜索节点" clearable />
           <div class="node-list">
@@ -358,25 +402,41 @@ function isExpired(row: any) {
               <span>{{ node.Name }}</span>
               <small>添加</small>
             </button>
-            <div v-if="availableNodes.length === 0" class="empty-hint">没有可添加的节点</div>
+            <div v-if="availableNodes.length === 0" class="empty-hint">
+              没有可添加的节点
+            </div>
           </div>
         </div>
 
         <div class="node-panel">
           <div class="node-panel-head">
             <strong>已选节点</strong>
-            <el-button link type="danger" @click="clearSelectedNodes">清空</el-button>
+            <el-button link type="danger" @click="clearSelectedNodes"
+              >清空</el-button
+            >
           </div>
           <p class="selected-preview">{{ selectedPreview }}</p>
-          <vue-draggable v-model="selectedNodes" target=".selected-node-list" :animation="160">
+          <vue-draggable
+            v-model="selectedNodes"
+            target=".selected-node-list"
+            :animation="160"
+          >
             <div class="selected-node-list">
-              <div v-for="(nodeName, index) in selectedNodes" :key="nodeName" class="draggable-item">
+              <div
+                v-for="(nodeName, index) in selectedNodes"
+                :key="nodeName"
+                class="draggable-item"
+              >
                 <span class="drag-handle">⋮⋮</span>
                 <span class="node-index">{{ index + 1 }}</span>
                 <span class="node-name">{{ nodeName }}</span>
-                <el-button link type="danger" @click.stop="removeNode(nodeName)">移除</el-button>
+                <el-button link type="danger" @click.stop="removeNode(nodeName)"
+                  >移除</el-button
+                >
               </div>
-              <div v-if="selectedNodes.length === 0" class="empty-hint">从左侧添加节点后，可拖拽调整顺序</div>
+              <div v-if="selectedNodes.length === 0" class="empty-hint">
+                从左侧添加节点后，可拖拽调整顺序
+              </div>
             </div>
           </vue-draggable>
         </div>
@@ -409,7 +469,16 @@ function isExpired(row: any) {
         @selection-change="handleSelectionChange"
       >
         <el-table-column type="selection" fixed width="48" />
-        <el-table-column prop="Name" label="节点订阅名称 / 节点" min-width="220">
+        <el-table-column width="42" label="">
+          <template #default>
+            <span class="row-drag-handle" title="拖动排序">☰</span>
+          </template>
+        </el-table-column>
+        <el-table-column
+          prop="Name"
+          label="节点订阅名称 / 节点"
+          min-width="220"
+        >
           <template #default="{ row }">
             <span class="primary-cell">{{ row.Name }}</span>
             <p class="node-summary">{{ nodeNames(row) }}</p>
@@ -417,28 +486,50 @@ function isExpired(row: any) {
         </el-table-column>
         <el-table-column label="订阅链接" min-width="150">
           <template #default="{ row }">
-            <el-button link type="primary" @click="showClient(row)">查看链接</el-button>
+            <el-button link type="primary" @click="showClient(row)"
+              >查看链接</el-button
+            >
           </template>
         </el-table-column>
         <el-table-column label="状态" width="110">
           <template #default="{ row }">
-            <el-tag v-if="row.Revoked" type="danger" effect="plain">已失效</el-tag>
-            <el-tag v-else-if="isExpired(row)" type="warning" effect="plain">已过期</el-tag>
+            <el-tag v-if="row.Revoked" type="danger" effect="plain"
+              >已失效</el-tag
+            >
+            <el-tag v-else-if="isExpired(row)" type="warning" effect="plain"
+              >已过期</el-tag
+            >
             <el-tag v-else type="success" effect="plain">有效</el-tag>
           </template>
         </el-table-column>
         <el-table-column label="访问" width="110">
-          <template #default="{ row }">{{ row.AccessCount || 0 }}/{{ row.AccessLimit || "不限" }}</template>
+          <template #default="{ row }"
+            >{{ row.AccessCount || 0 }}/{{
+              row.AccessLimit || "不限"
+            }}</template
+          >
         </el-table-column>
-        <el-table-column prop="CreatedAt" label="创建时间" min-width="180" sortable :formatter="formatCreatedAt" />
+        <el-table-column
+          prop="CreatedAt"
+          label="创建时间"
+          min-width="180"
+          sortable
+          :formatter="formatCreatedAt"
+        />
         <el-table-column label="操作" width="260" align="right">
           <template #default="{ row }">
-            <el-button link @click="handleResetToken(row)">重置 token</el-button>
+            <el-button link @click="handleResetToken(row)"
+              >重置 token</el-button
+            >
             <el-button link @click="handleToggleRevoked(row)">
               {{ row.Revoked ? "恢复" : "失效" }}
             </el-button>
-            <el-button link type="primary" @click="handleEdit(row)">编辑</el-button>
-            <el-button link type="danger" @click="handleDelete(row)">删除</el-button>
+            <el-button link type="primary" @click="handleEdit(row)"
+              >编辑</el-button
+            >
+            <el-button link type="danger" @click="handleDelete(row)"
+              >删除</el-button
+            >
           </template>
         </el-table-column>
       </el-table>

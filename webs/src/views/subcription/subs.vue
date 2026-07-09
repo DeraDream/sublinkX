@@ -11,6 +11,7 @@ import {
 import { getTemp } from "@/api/subcription/temp";
 import { getNodes } from "@/api/subcription/node";
 import { beijingTimestamp, formatBeijingTime } from "@/utils/time";
+import { useDraggableTableRows } from "@/utils/table-drag";
 import QrcodeVue from "qrcode.vue";
 import { VueDraggable } from "vue-draggable-plus";
 
@@ -70,7 +71,9 @@ const multipleSelection = ref<Sub[]>([]);
 const dialogVisible = ref(false);
 const subMode = ref<"add" | "edit">("add");
 const wizardStep = ref(0);
-const SubTitle = computed(() => (subMode.value === "add" ? "添加订阅" : "编辑订阅"));
+const SubTitle = computed(() =>
+  subMode.value === "add" ? "添加订阅" : "编辑订阅"
+);
 const Subname = ref("");
 const oldSubname = ref("");
 const expireAt = ref("");
@@ -129,6 +132,13 @@ const currentTableData = computed(() => {
   const start = (currentPage.value - 1) * pageSize.value;
   return tableData.value.slice(start, start + pageSize.value);
 });
+useDraggableTableRows({
+  tableRef: table,
+  rows: tableData,
+  startIndex: () => (currentPage.value - 1) * pageSize.value,
+  storageKey: "sublink:subscriptions:order",
+  rowKey: (row) => row.ID,
+});
 
 const availableNodes = computed(() => {
   const keyword = nodeKeyword.value.trim().toLowerCase();
@@ -142,12 +152,14 @@ const availableNodes = computed(() => {
 
 const selectedNodes = computed(() =>
   value1.value.map((name) => {
-    return NodesList.value.find((node) => node.Name === name) || {
-      ID: 0,
-      Name: name,
-      Link: "",
-      Disabled: false,
-    };
+    return (
+      NodesList.value.find((node) => node.Name === name) || {
+        ID: 0,
+        Name: name,
+        Link: "",
+        Disabled: false,
+      }
+    );
   })
 );
 
@@ -158,7 +170,9 @@ const selectedNodePreview = computed(() => {
 });
 
 const defaultTemplate = (keyword: string, fallback: string) => {
-  const hit = templist.value.find((item) => item.file.toLowerCase().includes(keyword));
+  const hit = templist.value.find((item) =>
+    item.file.toLowerCase().includes(keyword)
+  );
   return hit ? `./template/${hit.file}` : fallback;
 };
 
@@ -173,7 +187,8 @@ const parseConfig = (value: Config | string): Config => {
   return value || { clash: "", surge: "", udp: false, cert: false };
 };
 
-const inferTemplateMode = (value: string) => (/^https?:\/\//i.test(value) ? "url" : "local");
+const inferTemplateMode = (value: string) =>
+  /^https?:\/\//i.test(value) ? "url" : "local";
 
 const resetWizardForm = () => {
   wizardStep.value = 0;
@@ -208,9 +223,12 @@ const handleEdit = (row: any) => {
   accessLimit.value = row.AccessLimit || undefined;
   checkList.value = [];
   if (config.udp === true || config.udp === "true") checkList.value.push("udp");
-  if (config.cert === true || config.cert === "true") checkList.value.push("cert");
-  Clash.value = config.clash || defaultTemplate("clash", "./template/clash.yaml");
-  Surge.value = config.surge || defaultTemplate("surge", "./template/surge.conf");
+  if (config.cert === true || config.cert === "true")
+    checkList.value.push("cert");
+  Clash.value =
+    config.clash || defaultTemplate("clash", "./template/clash.yaml");
+  Surge.value =
+    config.surge || defaultTemplate("surge", "./template/surge.conf");
   clashTemplateMode.value = inferTemplateMode(Clash.value);
   surgeTemplateMode.value = inferTemplateMode(Surge.value);
   value1.value = (row.Nodes || []).map((item: Node) => item.Name);
@@ -380,7 +398,9 @@ const selectDel = () => {
     cancelButtonText: "取消",
     type: "warning",
   }).then(async () => {
-    await Promise.all(multipleSelection.value.map((item) => DelSub({ id: item.ID })));
+    await Promise.all(
+      multipleSelection.value.map((item) => DelSub({ id: item.ID }))
+    );
     await getsubs();
     ElMessage.success("删除成功");
   });
@@ -410,13 +430,17 @@ const copyInfo = (row: any) => {
 
 const handleClient = (row: any) => {
   const serverAddress =
-    location.protocol + "//" + location.hostname + (location.port ? ":" + location.port : "");
+    location.protocol +
+    "//" +
+    location.hostname +
+    (location.port ? ":" + location.port : "");
   ClientDiaLog.value = true;
   ClientSubName.value = row.Name;
   ClientUrls.value = {};
   ClientUrl.value = `${serverAddress}/c/?token=${row.Token}`;
   ClientList.forEach((item: string) => {
-    ClientUrls.value[item] = `${serverAddress}/c/?token=${row.Token}&client=${item}`;
+    ClientUrls.value[item] =
+      `${serverAddress}/c/?token=${row.Token}&client=${item}`;
   });
 };
 
@@ -433,7 +457,12 @@ const OpenUrl = (url: string) => {
 
 <template>
   <div class="page-workspace">
-    <el-dialog v-model="Qrdialog" class="form-dialog qr-dialog" width="400px" :title="QrTitle">
+    <el-dialog
+      v-model="Qrdialog"
+      class="form-dialog qr-dialog"
+      width="400px"
+      :title="QrTitle"
+    >
       <div class="qr-content">
         <div class="qr-frame">
           <qrcode-vue :value="qrcode" :size="196" level="H" />
@@ -443,18 +472,27 @@ const OpenUrl = (url: string) => {
       <template #footer>
         <div class="dialog-footer">
           <el-button @click="copyUrl(qrcode)">复制地址</el-button>
-          <el-button type="primary" @click="OpenUrl(qrcode)">打开链接</el-button>
+          <el-button type="primary" @click="OpenUrl(qrcode)"
+            >打开链接</el-button
+          >
         </div>
       </template>
     </el-dialog>
 
-    <el-dialog v-model="ClientDiaLog" class="form-dialog client-dialog" width="760px" title="订阅链接">
+    <el-dialog
+      v-model="ClientDiaLog"
+      class="form-dialog client-dialog"
+      width="760px"
+      title="订阅链接"
+    >
       <div class="client-dialog-head">
         <div>
           <p class="dialog-intro">直接复制完整订阅地址，二维码作为备用入口。</p>
           <strong>{{ ClientSubName }}</strong>
         </div>
-        <el-button type="primary" plain @click="copyUrl(ClientUrl)">复制自动识别</el-button>
+        <el-button type="primary" plain @click="copyUrl(ClientUrl)"
+          >复制自动识别</el-button
+        >
       </div>
       <div class="client-card-list">
         <article class="client-card">
@@ -463,15 +501,27 @@ const OpenUrl = (url: string) => {
             <el-tag size="small" effect="plain">推荐</el-tag>
           </div>
           <p>客户端根据请求头自动判断订阅格式。</p>
-          <el-input :model-value="ClientUrl" readonly class="client-url-input" />
+          <el-input
+            :model-value="ClientUrl"
+            readonly
+            class="client-url-input"
+          />
           <div class="client-actions">
             <el-button @click="copyUrl(ClientUrl)">复制链接</el-button>
-            <el-button @click="handleQrcode(ClientUrl, '自动识别客户端')">二维码</el-button>
-            <el-button link type="primary" @click="OpenUrl(ClientUrl)">打开</el-button>
+            <el-button @click="handleQrcode(ClientUrl, '自动识别客户端')"
+              >二维码</el-button
+            >
+            <el-button link type="primary" @click="OpenUrl(ClientUrl)"
+              >打开</el-button
+            >
           </div>
         </article>
 
-        <article v-for="(item, index) in ClientUrls" :key="index" class="client-card">
+        <article
+          v-for="(item, index) in ClientUrls"
+          :key="index"
+          class="client-card"
+        >
           <div class="client-card-title">
             <span>{{ index }}</span>
             <el-tag size="small" effect="plain">{{ index }}</el-tag>
@@ -480,14 +530,23 @@ const OpenUrl = (url: string) => {
           <el-input :model-value="item" readonly class="client-url-input" />
           <div class="client-actions">
             <el-button @click="copyUrl(item)">复制链接</el-button>
-            <el-button @click="handleQrcode(item, String(index))">二维码</el-button>
-            <el-button link type="primary" @click="OpenUrl(item)">打开</el-button>
+            <el-button @click="handleQrcode(item, String(index))"
+              >二维码</el-button
+            >
+            <el-button link type="primary" @click="OpenUrl(item)"
+              >打开</el-button
+            >
           </div>
         </article>
       </div>
     </el-dialog>
 
-    <el-dialog v-model="iplogsdialog" class="data-dialog" title="访问记录" width="min(880px, calc(100vw - 32px))">
+    <el-dialog
+      v-model="iplogsdialog"
+      class="data-dialog"
+      title="访问记录"
+      width="min(880px, calc(100vw - 32px))"
+    >
       <el-table :data="IplogsList" style="width: 100%">
         <el-table-column prop="IP" label="IP" />
         <el-table-column prop="Count" label="总访问次数" />
@@ -510,7 +569,12 @@ const OpenUrl = (url: string) => {
         </div>
       </template>
 
-      <el-steps :active="wizardStep" finish-status="success" class="wizard-steps" simple>
+      <el-steps
+        :active="wizardStep"
+        finish-status="success"
+        class="wizard-steps"
+        simple
+      >
         <el-step title="基本信息" @click="jumpStep(0)" />
         <el-step title="输出模板" @click="jumpStep(1)" />
         <el-step title="选择节点" @click="jumpStep(2)" />
@@ -559,12 +623,20 @@ const OpenUrl = (url: string) => {
           <article class="template-card">
             <div class="template-card-head">
               <strong>Clash</strong>
-              <el-radio-group v-model="clashTemplateMode" class="flat-segmented" size="small">
+              <el-radio-group
+                v-model="clashTemplateMode"
+                class="flat-segmented"
+                size="small"
+              >
                 <el-radio-button value="local">本地模板</el-radio-button>
                 <el-radio-button value="url">URL</el-radio-button>
               </el-radio-group>
             </div>
-            <el-select v-if="clashTemplateMode === 'local'" v-model="Clash" placeholder="选择 Clash 模板">
+            <el-select
+              v-if="clashTemplateMode === 'local'"
+              v-model="Clash"
+              placeholder="选择 Clash 模板"
+            >
               <el-option
                 v-for="template in templist"
                 :key="template.file"
@@ -572,18 +644,30 @@ const OpenUrl = (url: string) => {
                 :value="'./template/' + template.file"
               />
             </el-select>
-            <el-input v-else v-model="Clash" placeholder="输入 Clash 模板 URL" />
+            <el-input
+              v-else
+              v-model="Clash"
+              placeholder="输入 Clash 模板 URL"
+            />
           </article>
 
           <article class="template-card">
             <div class="template-card-head">
               <strong>Surge</strong>
-              <el-radio-group v-model="surgeTemplateMode" class="flat-segmented" size="small">
+              <el-radio-group
+                v-model="surgeTemplateMode"
+                class="flat-segmented"
+                size="small"
+              >
                 <el-radio-button value="local">本地模板</el-radio-button>
                 <el-radio-button value="url">URL</el-radio-button>
               </el-radio-group>
             </div>
-            <el-select v-if="surgeTemplateMode === 'local'" v-model="Surge" placeholder="选择 Surge 模板">
+            <el-select
+              v-if="surgeTemplateMode === 'local'"
+              v-model="Surge"
+              placeholder="选择 Surge 模板"
+            >
               <el-option
                 v-for="template in templist"
                 :key="template.file"
@@ -591,7 +675,11 @@ const OpenUrl = (url: string) => {
                 :value="'./template/' + template.file"
               />
             </el-select>
-            <el-input v-else v-model="Surge" placeholder="输入 Surge 模板 URL" />
+            <el-input
+              v-else
+              v-model="Surge"
+              placeholder="输入 Surge 模板 URL"
+            />
           </article>
         </div>
         <div class="field">
@@ -612,9 +700,16 @@ const OpenUrl = (url: string) => {
           <section class="node-column">
             <div class="node-column-head">
               <strong>可选节点</strong>
-              <el-button link type="primary" @click="addAllVisibleNodes">加入当前列表</el-button>
+              <el-button link type="primary" @click="addAllVisibleNodes"
+                >加入当前列表</el-button
+              >
             </div>
-            <el-input v-model="nodeKeyword" clearable placeholder="搜索节点" class="node-search" />
+            <el-input
+              v-model="nodeKeyword"
+              clearable
+              placeholder="搜索节点"
+              class="node-search"
+            />
             <div class="node-list">
               <button
                 v-for="node in availableNodes"
@@ -626,14 +721,18 @@ const OpenUrl = (url: string) => {
                 <span>{{ node.Name }}</span>
                 <span>加入</span>
               </button>
-              <div v-if="!availableNodes.length" class="node-empty">没有可加入的节点</div>
+              <div v-if="!availableNodes.length" class="node-empty">
+                没有可加入的节点
+              </div>
             </div>
           </section>
 
           <section class="node-column selected-column">
             <div class="node-column-head">
               <strong>已选节点 {{ value1.length }} 个</strong>
-              <el-button link type="danger" @click="clearSelectedNodes">清空</el-button>
+              <el-button link type="danger" @click="clearSelectedNodes"
+                >清空</el-button
+              >
             </div>
             <VueDraggable
               v-if="value1.length"
@@ -642,11 +741,20 @@ const OpenUrl = (url: string) => {
               ghost-class="ghost"
               class="selected-nodes"
             >
-              <div v-for="(nodeName, index) in value1" :key="nodeName" class="draggable-item">
+              <div
+                v-for="(nodeName, index) in value1"
+                :key="nodeName"
+                class="draggable-item"
+              >
                 <span class="drag-handle">⋮⋮</span>
                 <span class="row-number">{{ index + 1 }}</span>
                 <span class="node-name">{{ nodeName }}</span>
-                <el-button link type="danger" @click.stop="removeNodeFromSelection(nodeName)">移除</el-button>
+                <el-button
+                  link
+                  type="danger"
+                  @click.stop="removeNodeFromSelection(nodeName)"
+                  >移除</el-button
+                >
               </div>
             </VueDraggable>
             <div v-else class="empty-selection">尚未选择节点</div>
@@ -670,7 +778,10 @@ const OpenUrl = (url: string) => {
           </article>
           <article class="summary-card">
             <span>访问限制</span>
-            <strong>{{ accessLimit || 0 }} {{ accessLimit ? "次" : "为不限" }}</strong>
+            <strong
+              >{{ accessLimit || 0 }}
+              {{ accessLimit ? "次" : "为不限" }}</strong
+            >
           </article>
           <article class="summary-card">
             <span>节点数量</span>
@@ -684,7 +795,11 @@ const OpenUrl = (url: string) => {
         </div>
         <div class="summary-block">
           <strong>连接选项</strong>
-          <p>{{ checkList.includes("udp") ? "启用 UDP" : "未启用 UDP" }}，{{ checkList.includes("cert") ? "跳过证书验证" : "不跳过证书验证" }}</p>
+          <p>
+            {{ checkList.includes("udp") ? "启用 UDP" : "未启用 UDP" }}，{{
+              checkList.includes("cert") ? "跳过证书验证" : "不跳过证书验证"
+            }}
+          </p>
         </div>
         <div class="summary-block">
           <strong>节点顺序</strong>
@@ -696,9 +811,15 @@ const OpenUrl = (url: string) => {
         <div class="wizard-footer">
           <el-button @click="dialogVisible = false">取消</el-button>
           <div>
-            <el-button v-if="wizardStep > 0" @click="prevStep">上一步</el-button>
-            <el-button v-if="wizardStep < 3" type="primary" @click="nextStep">下一步</el-button>
-            <el-button v-else type="primary" @click="addSubs">保存订阅</el-button>
+            <el-button v-if="wizardStep > 0" @click="prevStep"
+              >上一步</el-button
+            >
+            <el-button v-if="wizardStep < 3" type="primary" @click="nextStep"
+              >下一步</el-button
+            >
+            <el-button v-else type="primary" @click="addSubs"
+              >保存订阅</el-button
+            >
           </div>
         </div>
       </template>
@@ -725,6 +846,11 @@ const OpenUrl = (url: string) => {
         @selection-change="handleSelectionChange"
       >
         <el-table-column type="selection" fixed width="48" />
+        <el-table-column width="42" label="">
+          <template #default>
+            <span class="row-drag-handle" title="拖动排序">☰</span>
+          </template>
+        </el-table-column>
         <el-table-column prop="Name" label="订阅名称 / 节点" min-width="220">
           <template #default="{ row }">
             <span class="primary-cell">{{ row.Name }}</span>
@@ -732,7 +858,12 @@ const OpenUrl = (url: string) => {
         </el-table-column>
         <el-table-column prop="Link" label="客户端" min-width="160">
           <template #default="{ row }">
-            <el-button v-if="row.Nodes" link type="primary" @click="handleClient(row)">
+            <el-button
+              v-if="row.Nodes"
+              link
+              type="primary"
+              @click="handleClient(row)"
+            >
               查看客户端
             </el-button>
             <span v-else class="muted-cell">节点</span>
@@ -741,9 +872,13 @@ const OpenUrl = (url: string) => {
         <el-table-column label="状态" width="110">
           <template #default="{ row }">
             <template v-if="row.Nodes">
-              <el-tag v-if="row.Revoked" type="danger" effect="plain">已失效</el-tag>
+              <el-tag v-if="row.Revoked" type="danger" effect="plain"
+                >已失效</el-tag
+              >
               <el-tag
-                v-else-if="row.ExpireAt && beijingTimestamp(row.ExpireAt) < Date.now()"
+                v-else-if="
+                  row.ExpireAt && beijingTimestamp(row.ExpireAt) < Date.now()
+                "
                 type="warning"
                 effect="plain"
               >
@@ -773,12 +908,18 @@ const OpenUrl = (url: string) => {
           <template #default="scope">
             <template v-if="scope.row.Nodes">
               <el-button link @click="handleIplogs(scope.row)">记录</el-button>
-              <el-button link @click="handleResetToken(scope.row)">重置 token</el-button>
+              <el-button link @click="handleResetToken(scope.row)"
+                >重置 token</el-button
+              >
               <el-button link @click="handleToggleRevoked(scope.row)">
                 {{ scope.row.Revoked ? "恢复" : "失效" }}
               </el-button>
-              <el-button link type="primary" @click="handleEdit(scope.row)">编辑</el-button>
-              <el-button link type="danger" @click="handleDel(scope.row)">删除</el-button>
+              <el-button link type="primary" @click="handleEdit(scope.row)"
+                >编辑</el-button
+              >
+              <el-button link type="danger" @click="handleDel(scope.row)"
+                >删除</el-button
+              >
             </template>
             <el-button v-else link type="primary" @click="copyInfo(scope.row)">
               复制

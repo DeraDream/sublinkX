@@ -124,12 +124,15 @@ func runCommand(args []string) error {
 }
 
 func installCommand(args []string) error {
-	if runtime.GOOS != "linux" {
+	if runtime.GOOS != "linux" && runtime.GOOS != "windows" {
 		return errors.New("自动安装目前仅支持 Linux；Windows 请使用 agent run")
 	}
 	cfg, err := parseFlags("agent install", args)
 	if err != nil {
 		return err
+	}
+	if runtime.GOOS == "windows" {
+		return installWindowsService(cfg)
 	}
 	configDir := "/etc/sublink-agent"
 	if err := os.MkdirAll(configDir, 0750); err != nil {
@@ -189,6 +192,69 @@ WantedBy=multi-user.target
 		return fmt.Errorf("启动服务失败: %s", strings.TrimSpace(string(output)))
 	}
 	fmt.Println("sublink-agent 已安装并启动")
+	return nil
+}
+
+func installWindowsService(cfg Config) error {
+	configDir := filepath.Join(os.Getenv("ProgramData"), "sublink-agent")
+	if configDir == "sublink-agent" {
+		configDir = filepath.Join(os.TempDir(), "sublink-agent")
+	}
+	if err := os.MkdirAll(configDir, 0750); err != nil {
+		return err
+	}
+	configPath := filepath.Join(configDir, "config.yaml")
+	data, _ := yaml.Marshal(cfg)
+	if err := os.WriteFile(configPath, data, 0600); err != nil {
+		return err
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		return err
+	}
+	target := filepath.Join(configDir, "sublink-agent.exe")
+	if !strings.EqualFold(filepath.Clean(exe), filepath.Clean(target)) {
+		input, err := os.Open(exe)
+		if err != nil {
+			return err
+		}
+		defer input.Close()
+		output, err := os.OpenFile(target, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0755)
+		if err != nil {
+			return err
+		}
+		if _, err := io.Copy(output, input); err != nil {
+			output.Close()
+			return err
+		}
+		if err := output.Close(); err != nil {
+			return err
+		}
+	}
+	binPath := fmt.Sprintf(`"%s" agent run --config "%s"`, target, configPath)
+	serviceName := "sublink-agent"
+	if output, err := exec.Command("sc.exe", "query", serviceName).CombinedOutput(); err == nil {
+		if output, err = exec.Command("sc.exe", "stop", serviceName).CombinedOutput(); err != nil {
+			text := strings.TrimSpace(string(output))
+			if !strings.Contains(text, "1062") {
+				return fmt.Errorf("stop Windows service failed: %s", text)
+			}
+		}
+		if output, err = exec.Command("sc.exe", "config", serviceName, "binPath=", binPath, "start=", "auto").CombinedOutput(); err != nil {
+			return fmt.Errorf("update Windows service failed: %s", strings.TrimSpace(string(output)))
+		}
+	} else {
+		if output, err := exec.Command("sc.exe", "create", serviceName, "binPath=", binPath, "start=", "auto", "DisplayName=", "sublinkX Home Speed Test Agent").CombinedOutput(); err != nil {
+			return fmt.Errorf("create Windows service failed: %s", strings.TrimSpace(string(output)))
+		}
+	}
+	if output, err := exec.Command("sc.exe", "start", serviceName).CombinedOutput(); err != nil {
+		text := strings.TrimSpace(string(output))
+		if !strings.Contains(text, "1056") {
+			return fmt.Errorf("start Windows service failed: %s", text)
+		}
+	}
+	fmt.Println("sublink-agent Windows service installed and started")
 	return nil
 }
 

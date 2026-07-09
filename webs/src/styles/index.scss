@@ -593,6 +593,26 @@ html.dark .el-dialog {
   height: 48px;
 }
 
+.row-drag-handle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  color: var(--el-text-color-placeholder);
+  cursor: grab;
+  user-select: none;
+}
+
+.row-drag-handle:active {
+  cursor: grabbing;
+}
+
+.table-row-ghost {
+  opacity: 0.45;
+  background: var(--el-color-primary-light-9) !important;
+}
+
 html.dark .el-table {
   --el-table-header-bg-color: #151923;
   --el-table-row-hover-bg-color: #1a202b;

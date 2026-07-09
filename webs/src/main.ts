@@ -4,6 +4,7 @@ import router from "@/router";
 import { setupStore } from "@/store";
 import { setupDirective } from "@/directive";
 import { setupElIcons, setupI18n, setupPermission } from "@/plugins";
+import { setupDialogKeyboardShortcuts } from "@/utils/dialog-keyboard";
 
 // 本地SVG图标
 import "virtual:svg-icons-register";
@@ -25,5 +26,6 @@ setupElIcons(app);
 setupI18n(app);
 // 注册动态路由
 setupPermission();
+setupDialogKeyboardShortcuts();
 app.use(router);
 app.mount("#app");

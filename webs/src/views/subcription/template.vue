@@ -3,6 +3,7 @@ import { computed, nextTick, onMounted, ref } from "vue";
 import YamlEditor from "@/components/YamlEditor/index.vue";
 import { AddTemp, DelTemp, getTemp, UpdateTemp } from "@/api/subcription/temp";
 import { formatBeijingTime } from "@/utils/time";
+import { useDraggableTableRows } from "@/utils/table-drag";
 
 interface Temp {
   file: string;
@@ -218,6 +219,13 @@ const currentTableData = computed(() => {
   const start = (currentPage.value - 1) * pageSize.value;
   return tableData.value.slice(start, start + pageSize.value);
 });
+useDraggableTableRows({
+  tableRef: table,
+  rows: tableData,
+  startIndex: () => (currentPage.value - 1) * pageSize.value,
+  storageKey: "sublink:templates:order",
+  rowKey: (row) => row.file,
+});
 
 const formatTemplateTime = (row: Temp) => formatBeijingTime(row.create_date);
 </script>
@@ -288,7 +296,9 @@ const formatTemplateTime = (row: Temp) => formatBeijingTime(row.create_date);
             <span>实时预览</span>
             <span class="panel-hint">同步显示当前内容</span>
           </div>
-          <pre class="yaml-preview"><code>{{ TempText || "# 暂无内容" }}</code></pre>
+          <pre
+            class="yaml-preview"
+          ><code>{{ TempText || "# 暂无内容" }}</code></pre>
         </section>
       </div>
 
@@ -320,7 +330,9 @@ const formatTemplateTime = (row: Temp) => formatBeijingTime(row.create_date);
     >
       <div class="table-toolbar">
         <span class="record-count">共 {{ tableData.length }} 个模板</span>
-        <span class="drop-hint">可把 .yaml / .yml / .conf 文件拖到这里导入预览</span>
+        <span class="drop-hint"
+          >可把 .yaml / .yml / .conf 文件拖到这里导入预览</span
+        >
       </div>
 
       <el-table
@@ -329,6 +341,11 @@ const formatTemplateTime = (row: Temp) => formatBeijingTime(row.create_date);
         @selection-change="handleSelectionChange"
       >
         <el-table-column type="selection" fixed width="48" />
+        <el-table-column width="42" label="">
+          <template #default>
+            <span class="row-drag-handle" title="拖动排序">☰</span>
+          </template>
+        </el-table-column>
         <el-table-column prop="file" label="模板文件名" min-width="320">
           <template #default="scope">
             <span class="primary-cell">{{ scope.row.file }}</span>
@@ -343,9 +360,15 @@ const formatTemplateTime = (row: Temp) => formatBeijingTime(row.create_date);
         />
         <el-table-column fixed="right" label="操作" width="190" align="right">
           <template #default="scope">
-            <el-button link type="primary" @click="handleExport(scope.row)">导出</el-button>
-            <el-button link type="primary" @click="handleEdit(scope.row)">编辑</el-button>
-            <el-button link type="danger" @click="handleDel(scope.row)">删除</el-button>
+            <el-button link type="primary" @click="handleExport(scope.row)"
+              >导出</el-button
+            >
+            <el-button link type="primary" @click="handleEdit(scope.row)"
+              >编辑</el-button
+            >
+            <el-button link type="danger" @click="handleDel(scope.row)"
+              >删除</el-button
+            >
           </template>
         </el-table-column>
       </el-table>
@@ -410,7 +433,11 @@ const formatTemplateTime = (row: Temp) => formatBeijingTime(row.create_date);
 
 .template-drop-surface.is-dragging {
   border-color: var(--el-color-primary);
-  background: color-mix(in srgb, var(--el-color-primary) 7%, var(--el-bg-color));
+  background: color-mix(
+    in srgb,
+    var(--el-color-primary) 7%,
+    var(--el-bg-color)
+  );
 }
 
 .drop-overlay {

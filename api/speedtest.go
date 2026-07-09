@@ -58,7 +58,18 @@ func installCommand(baseURL, token string) string {
 	)
 }
 
-func upgradeCommand() string {
+func installCommandWindows(baseURL, token string) string {
+	return fmt.Sprintf(
+		`powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop'; $dir=Join-Path $env:ProgramData 'sublink-agent'; New-Item -ItemType Directory -Force $dir | Out-Null; $exe=Join-Path $dir 'sublink-agent.exe'; Invoke-WebRequest -Uri 'https://github.com/DeraDream/sublinkX/releases/latest/download/sublink_windows_amd64.exe' -OutFile $exe; & $exe agent install --server '%s' --token '%s'"`,
+		baseURL,
+		token,
+	)
+}
+
+func upgradeCommand(platform string) string {
+	if strings.HasPrefix(strings.ToLower(platform), "windows/") {
+		return `powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop'; $dir=Join-Path $env:ProgramData 'sublink-agent'; $exe=Join-Path $dir 'sublink-agent.exe'; $new=Join-Path $dir 'sublink-agent.new.exe'; Invoke-WebRequest -Uri 'https://github.com/DeraDream/sublinkX/releases/latest/download/sublink_windows_amd64.exe' -OutFile $new; sc.exe stop sublink-agent; Start-Sleep -Seconds 2; Move-Item -Force $new $exe; sc.exe start sublink-agent"`
+	}
 	return `sudo env http_proxy="${http_proxy:-}" https_proxy="${https_proxy:-}" HTTP_PROXY="${HTTP_PROXY:-}" HTTPS_PROXY="${HTTPS_PROXY:-}" ALL_PROXY="${ALL_PROXY:-}" curl -fL --retry 3 --connect-timeout 15 "https://github.com/DeraDream/sublinkX/releases/latest/download/sublink_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')" -o /var/tmp/sublink-agent.new && sudo chmod 755 /var/tmp/sublink-agent.new && sudo /var/tmp/sublink-agent.new -version && sudo systemctl stop sublink-agent && sudo mv /var/tmp/sublink-agent.new /usr/local/bin/sublink-agent && sudo /usr/local/bin/sublink-agent agent install --config /etc/sublink-agent/config.yaml && sudo systemctl status sublink-agent --no-pager`
 }
 
@@ -108,6 +119,7 @@ func CreateHomeAgent(c *gin.Context) {
 			"agent":           agent,
 			"token":           token,
 			"install_command": installCommand(publicBaseURL(c), token),
+			"install_command_windows": installCommandWindows(publicBaseURL(c), token),
 		},
 		"msg": "创建成功",
 	})
@@ -142,7 +154,7 @@ func ListHomeAgents(c *gin.Context) {
 		updateAvailable := agentNeedsUpgrade(agent.AgentVersion)
 		command := ""
 		if updateAvailable {
-			command = upgradeCommand()
+			command = upgradeCommand(agent.Platform)
 		}
 		out = append(out, agentView{
 			HomeAgent: agent, Online: online, State: state, Pending: pending,

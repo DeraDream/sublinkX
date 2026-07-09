@@ -16,6 +16,7 @@ import {
   listSpeedTasks,
 } from "@/api/speedtest";
 import { formatBeijingTime } from "@/utils/time";
+import { useDraggableTableRows } from "@/utils/table-drag";
 
 interface GroupNode {
   ID: number;
@@ -62,6 +63,12 @@ const tableRefs = ref<{ [key: string]: any }>({}); // Stores references to each 
 // const NodeNewNameInput = ref("")
 const NodeGroupInput = ref("");
 const tableData = ref<Node[]>([]);
+useDraggableTableRows({
+  tableRef: multipleTable,
+  rows: tableData,
+  storageKey: "sublink:nodes:order",
+  rowKey: (row) => row.ID,
+});
 // 分组列表临时存放数据
 const tableDataTemp = ref<Node[]>([]);
 // 分组列表临时存放数据
@@ -633,7 +640,8 @@ onBeforeUnmount(() => {
             "
           />
           <span v-if="dialogMode === 'add'" class="field-help">
-            单条链接可手动填写，例如 po0-HKT；批量添加请留空，每条链接会使用自己的注释名。
+            单条链接可手动填写，例如
+            po0-HKT；批量添加请留空，每条链接会使用自己的注释名。
           </span>
         </label>
 
@@ -756,10 +764,18 @@ onBeforeUnmount(() => {
         @selection-change="handleSelectionChange"
       >
         <el-table-column type="selection" width="48" />
+        <el-table-column width="42" label="">
+          <template #default>
+            <span class="row-drag-handle" title="拖动排序">☰</span>
+          </template>
+        </el-table-column>
         <el-table-column type="index" width="56" label="#" />
         <el-table-column prop="Name" label="节点名称" min-width="130" sortable>
           <template #default="{ row }">
-            <span class="primary-cell" :class="{ 'is-disabled-node': row.Disabled }">
+            <span
+              class="primary-cell"
+              :class="{ 'is-disabled-node': row.Disabled }"
+            >
               {{ row.Name }}
             </span>
             <el-tag v-if="row.Disabled" size="small" type="info" effect="plain">
@@ -905,7 +921,12 @@ onBeforeUnmount(() => {
             @click="runSpeedTest('speed')"
             >测试下载速度</el-button
           >
-          <el-button v-if="speedLoading" type="danger" plain @click="stopSpeedTest">
+          <el-button
+            v-if="speedLoading"
+            type="danger"
+            plain
+            @click="stopSpeedTest"
+          >
             结束测速
           </el-button>
         </div>
