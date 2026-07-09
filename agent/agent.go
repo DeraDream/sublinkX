@@ -28,7 +28,7 @@ import (
 )
 
 const (
-	Version        = "0.5.0"
+	Version        = "0.5.1"
 	singBoxVersion = "1.13.13"
 )
 
@@ -371,13 +371,26 @@ func sleepContext(ctx context.Context, delay time.Duration) bool {
 
 func executeTask(ctx context.Context, id uint, testType, nodeLink string) taskReport {
 	report := taskReport{TaskID: id}
+	if testType == "latency" {
+		latency, err := measureNodeEntryLatency(ctx, nodeLink)
+		report.LatencyMs = latency
+		if err != nil {
+			report.Error = err.Error()
+			return report
+		}
+		report.Success = true
+		return report
+	}
+	if testType != "speed" {
+		report.Error = "unknown task type: " + testType
+		return report
+	}
 	singBox, err := ensureSingBox(ctx)
 	if err != nil {
 		report.Error = err.Error()
 		return report
 	}
-	result, err := runSingBoxTest(ctx, singBox, nodeLink, testType == "speed")
-	report.LatencyMs = result.LatencyMs
+	result, err := runSingBoxTest(ctx, singBox, nodeLink, true)
 	report.DownloadMbps = result.DownloadMbps
 	report.TestBytes = result.TestBytes
 	report.EgressIP = result.EgressIP
@@ -886,7 +899,10 @@ func downloadSingBox(ctx context.Context, target string) (string, error) {
 		singBoxVersion,
 		assetName,
 	)
+	downloadURL = proxiedSingBoxDownloadURL(downloadURL)
+	fmt.Println("downloading sing-box:", downloadURL)
 	dlReq, _ := http.NewRequestWithContext(ctx, http.MethodGet, downloadURL, nil)
+	dlReq.Header.Set("User-Agent", "sublink-agent/"+Version)
 	dlResp, err := http.DefaultClient.Do(dlReq)
 	if err != nil {
 		return "", err
@@ -957,6 +973,22 @@ func downloadSingBox(ctx context.Context, target string) (string, error) {
 		}
 	}
 	return "", errors.New("下载包中没有找到 sing-box 可执行文件")
+}
+
+func proxiedSingBoxDownloadURL(originalURL string) string {
+	if custom := strings.TrimSpace(os.Getenv("SING_BOX_DOWNLOAD_URL")); custom != "" {
+		custom = strings.ReplaceAll(custom, "{url}", originalURL)
+		custom = strings.ReplaceAll(custom, "{version}", singBoxVersion)
+		return custom
+	}
+	proxy := strings.TrimSpace(os.Getenv("SING_BOX_DOWNLOAD_PROXY"))
+	if proxy == "" && os.Getenv("SING_BOX_DISABLE_GHFAST") != "1" {
+		proxy = "https://ghfast.top"
+	}
+	if proxy == "" {
+		return originalURL
+	}
+	return strings.TrimRight(proxy, "/") + "/" + originalURL
 }
 
 func writeExecutable(target string, input io.Reader) (string, error) {
