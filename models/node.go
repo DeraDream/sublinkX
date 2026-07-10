@@ -104,7 +104,7 @@ func (gn *GroupNode) Del() error {
 
 func GetGroupNodeList() ([]GroupNode, error) {
 	var gns []GroupNode
-	result := DB.Model(gns).Preload("Nodes").Find(&gns)
+	result := DB.Model(gns).Select("id", "name").Order("name asc").Find(&gns)
 	if result.Error != nil {
 		return nil, errors.New("没有任何分组")
 	}
@@ -257,9 +257,47 @@ func (n *Node) UpdateGroup(gns []GroupNode) error {
 
 func GetNodeList() ([]Node, error) {
 	var ns []Node
-	result := DB.Model(ns).Preload("GroupNodes").Find(&ns)
+	result := DB.Model(ns).Preload("GroupNodes", func(db *gorm.DB) *gorm.DB {
+		return db.Select("group_nodes.id", "group_nodes.name")
+	}).Order("nodes.id desc").Find(&ns)
 	if result.Error != nil {
 		return nil, result.Error
 	}
 	return ns, result.Error
+}
+
+func GetNodeListPage(page, pageSize int, group string) ([]Node, int64, error) {
+	var ns []Node
+	var total int64
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 {
+		pageSize = 20
+	}
+	if pageSize > 100 {
+		pageSize = 100
+	}
+
+	query := DB.Model(&Node{})
+	if group != "" && group != "全部" {
+		query = query.
+			Joins("JOIN group_node_nodes ON group_node_nodes.node_id = nodes.id").
+			Joins("JOIN group_nodes ON group_nodes.id = group_node_nodes.group_node_id").
+			Where("group_nodes.name = ?", group)
+	}
+
+	if err := query.Distinct("nodes.id").Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	err := query.
+		Distinct("nodes.*").
+		Preload("GroupNodes", func(db *gorm.DB) *gorm.DB {
+			return db.Select("group_nodes.id", "group_nodes.name")
+		}).
+		Order("nodes.id desc").
+		Limit(pageSize).
+		Offset((page - 1) * pageSize).
+		Find(&ns).Error
+	return ns, total, err
 }

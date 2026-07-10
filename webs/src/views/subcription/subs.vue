@@ -112,7 +112,7 @@ async function gettemps() {
 }
 
 async function getnodes() {
-  const { data } = await getNodes();
+  const { data } = await getNodes({ all: "1" });
   NodesList.value = data;
 }
 

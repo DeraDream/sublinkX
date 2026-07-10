@@ -1,8 +1,9 @@
 import request from "@/utils/request";
-export function getNodes(){
+export function getNodes(params?: any){
   return request({
     url: "/api/v1/nodes/get",
     method: "get",
+    params,
   });
 }
 

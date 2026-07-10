@@ -49,6 +49,10 @@ const NodeGroupInput = ref("");
 const tableData = shallowRef<Node[]>([]);
 const currentPage = ref(1);
 const pageSize = ref(20);
+const totalNodes = ref(0);
+const totalAllNodes = ref(0);
+const tableLoading = ref(false);
+let latestNodeRequest = 0;
 useDraggableTableRows({
   tableRef: multipleTable,
   rows: tableData,
@@ -56,8 +60,6 @@ useDraggableTableRows({
   storageKey: "sublink:nodes:order",
   rowKey: (row) => row.ID,
 });
-// 分组列表临时存放数据
-const tableDataTemp = shallowRef<Node[]>([]);
 // 分组列表临时存放数据
 const activeName = ref("全部");
 const Nodedialog = ref(false); // 弹窗是否可见
@@ -69,7 +71,6 @@ const NodeForm = ref<NodeInfo>({
   GroupName: [],
 });
 const allGroupNames = ref<string[]>([]); // 所有分组名称
-const allNodes = ref<string[]>([]); // 所有节点
 const nodelistShow = ref(false); // 节点列表
 const SelectionNodeGroups = ref<string[]>([]); // 选中的分组
 const SelectionNode = ref(""); // 选中的节点
@@ -85,10 +86,7 @@ const parsedAddLinks = computed(() =>
 const inferredAddNames = computed(() =>
   parsedAddLinks.value.map((link) => extractNodeRemark(link))
 );
-const pagedTableData = computed(() => {
-  const start = (currentPage.value - 1) * pageSize.value;
-  return tableData.value.slice(start, start + pageSize.value);
-});
+const pagedTableData = computed(() => tableData.value);
 
 function decodeBase64Text(text: string) {
   try {
@@ -136,10 +134,31 @@ function ClearInput() {
   Groupdialog.value = false; // 关闭分组绑定弹窗
 }
 async function getnodes() {
-  const { data } = await getNodes();
-  tableDataTemp.value = Array.isArray(data) ? data : [];
-  applyActiveGroupFilter();
-  allNodes.value = tableDataTemp.value.map((item) => item.Name);
+  const requestId = ++latestNodeRequest;
+  tableLoading.value = true;
+  try {
+    const { data } = await getNodes({
+      page: currentPage.value,
+      page_size: pageSize.value,
+      group: activeName.value === "全部" ? "" : activeName.value,
+    });
+    if (requestId !== latestNodeRequest) return;
+    if (Array.isArray(data)) {
+      tableData.value = data;
+      totalNodes.value = data.length;
+      return;
+    }
+    tableData.value = Array.isArray(data?.items) ? data.items : [];
+    totalNodes.value = Number(data?.total || 0);
+    if (activeName.value === "全部") {
+      totalAllNodes.value = totalNodes.value;
+    }
+    clampCurrentPage();
+  } finally {
+    if (requestId === latestNodeRequest) {
+      tableLoading.value = false;
+    }
+  }
 }
 async function GetGroups() {
   const { data } = await GetGroup();
@@ -150,24 +169,21 @@ async function GetGroups() {
 
 async function refreshNodePageData() {
   await Promise.all([getnodes(), GetGroups()]);
-  clampCurrentPage();
-}
-
-function applyActiveGroupFilter() {
-  if (activeName.value === "全部") {
-    tableData.value = tableDataTemp.value;
-    return;
-  }
-  tableData.value = tableDataTemp.value.filter((item) => {
-    return item.GroupNodes?.some((group) => group.Name === activeName.value);
-  });
 }
 
 function clampCurrentPage() {
-  const maxPage = Math.max(1, Math.ceil(tableData.value.length / pageSize.value));
+  const maxPage = Math.max(1, Math.ceil(totalNodes.value / pageSize.value));
   if (currentPage.value > maxPage) {
     currentPage.value = maxPage;
   }
+}
+
+async function refreshFirstPage() {
+  if (currentPage.value !== 1) {
+    currentPage.value = 1;
+    return;
+  }
+  await refreshNodePageData();
 }
 
 const handleAddNode = () => {
@@ -312,10 +328,9 @@ const Timeformatter = (row: any) => {
 // 选择已有节点显示所属分组
 const handleShownodeGroupList = () => {
   // 显示这个节点关联的分组
-  const nodeData = allNodes.value.find((node) => node === SelectionNode.value);
   SelectionNodeGroups.value = [];
   tableData.value.forEach((item) => {
-    if (item.Name === nodeData && (item.GroupNodes?.length ?? 0) > 0) {
+    if (item.Name === SelectionNode.value && (item.GroupNodes?.length ?? 0) > 0) {
       // console.log(`节点 ${nodeData} 的分组:`, item.GroupNodes);
       item.GroupNodes?.forEach((item) => {
         SelectionNodeGroups.value.push(item.Name); // 将分组名称添加到 SelectionNodeGroups 中
@@ -397,15 +412,10 @@ const selectDel = async () => {
       }
     );
 
-    const IDs: number[] = [];
-
     for (const item of multipleSelection.value) {
       await DelNode({ id: item.ID });
-      IDs.push(item.ID); // 收集所有已删除的节点ID
     }
     ElMessage.success("批量删除成功");
-    // 从 tableData 中删除已删除的节点
-    tableData.value = tableData.value.filter((item) => !IDs.includes(item.ID));
   } catch (error) {
     if (error !== "cancel") {
       console.error("批量删除失败:", error);
@@ -473,12 +483,15 @@ const handleSelectionChange = (val: Node[]) => {
 };
 
 watch(activeName, () => {
-  currentPage.value = 1;
-  applyActiveGroupFilter();
+  refreshFirstPage();
 });
 
 watch(pageSize, () => {
-  currentPage.value = 1;
+  refreshFirstPage();
+});
+
+watch(currentPage, () => {
+  getnodes();
 });
 </script>
 
@@ -621,7 +634,7 @@ watch(pageSize, () => {
     <section class="work-surface">
       <div class="node-filters">
         <el-tabs v-model="activeName">
-          <el-tab-pane :label="`全部 ${allNodes.length}`" name="全部" />
+          <el-tab-pane :label="`全部 ${totalAllNodes}`" name="全部" />
           <el-tab-pane
             v-for="item in allGroupNames"
             :key="item"
@@ -633,6 +646,7 @@ watch(pageSize, () => {
 
       <el-table
         ref="multipleTable"
+        v-loading="tableLoading"
         :data="pagedTableData"
         tooltip-effect="dark"
         row-key="ID"
@@ -709,13 +723,13 @@ watch(pageSize, () => {
           <el-button type="danger" plain @click="selectDel">删除选中</el-button>
         </div>
         <div class="table-pagination">
-          <span class="record-count">共 {{ tableData.length }} 个节点</span>
+          <span class="record-count">共 {{ totalNodes }} 个节点</span>
           <el-pagination
             v-model:current-page="currentPage"
             v-model:page-size="pageSize"
             layout="sizes, prev, pager, next"
             :page-sizes="[10, 20, 50, 100]"
-            :total="tableData.length"
+            :total="totalNodes"
             background
             small
           />

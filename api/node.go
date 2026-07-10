@@ -147,8 +147,27 @@ func NodeUpdadte(c *gin.Context) {
 
 // 获取节点列表
 func NodeGet(c *gin.Context) {
-	var ns []models.Node
-	ns, err := models.GetNodeList()
+	if c.Query("all") == "1" {
+		var ns []models.Node
+		ns, err := models.GetNodeList()
+		if err != nil {
+			c.JSON(500, gin.H{
+				"msg": "node list error",
+			})
+			return
+		}
+		c.JSON(200, gin.H{
+			"code": "00000",
+			"data": ns,
+			"msg":  "node get",
+		})
+		return
+	}
+
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
+	group := strings.TrimSpace(c.Query("group"))
+	ns, total, err := models.GetNodeListPage(page, pageSize, group)
 	if err != nil {
 		c.JSON(500, gin.H{
 			"msg": "node list error",
@@ -157,8 +176,13 @@ func NodeGet(c *gin.Context) {
 	}
 	c.JSON(200, gin.H{
 		"code": "00000",
-		"data": ns,
-		"msg":  "node get",
+		"data": gin.H{
+			"items":     ns,
+			"total":     total,
+			"page":      page,
+			"page_size": pageSize,
+		},
+		"msg": "node get",
 	})
 }
 

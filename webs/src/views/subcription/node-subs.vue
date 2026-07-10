@@ -90,7 +90,7 @@ async function loadSubs() {
 }
 
 async function loadNodes() {
-  const { data } = await getNodes();
+  const { data } = await getNodes({ all: "1" });
   nodesList.value = data || [];
 }
 
