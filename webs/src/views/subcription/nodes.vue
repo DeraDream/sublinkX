@@ -10,7 +10,6 @@ import {
   setNodeDisabled,
 } from "@/api/subcription/node";
 import { formatBeijingTime } from "@/utils/time";
-import { useDraggableTableRows } from "@/utils/table-drag";
 
 interface GroupNode {
   ID: number;
@@ -52,16 +51,7 @@ const pageSize = ref(20);
 const totalNodes = ref(0);
 const totalAllNodes = ref(0);
 const tableLoading = ref(false);
-const dragSortingEnabled = ref(false);
 let latestNodeRequest = 0;
-useDraggableTableRows({
-  tableRef: multipleTable,
-  rows: tableData,
-  enabled: dragSortingEnabled,
-  startIndex: () => (currentPage.value - 1) * pageSize.value,
-  storageKey: "sublink:nodes:order",
-  rowKey: (row) => row.ID,
-});
 // 分组列表临时存放数据
 const activeName = ref("全部");
 const Nodedialog = ref(false); // 弹窗是否可见
@@ -89,12 +79,6 @@ const inferredAddNames = computed(() =>
   parsedAddLinks.value.map((link) => extractNodeRemark(link))
 );
 const pagedTableData = computed(() => tableData.value);
-
-function activateDragSorting() {
-  if (!dragSortingEnabled.value) {
-    dragSortingEnabled.value = true;
-  }
-}
 
 function decodeBase64Text(text: string) {
   try {
@@ -662,19 +646,6 @@ watch(currentPage, () => {
         @selection-change="handleSelectionChange"
       >
         <el-table-column type="selection" width="48" />
-        <el-table-column width="42" label="">
-          <template #default>
-            <span
-              class="row-drag-handle"
-              title="拖动排序"
-              @pointerenter="activateDragSorting"
-              @pointerdown="activateDragSorting"
-              @touchstart.passive="activateDragSorting"
-            >
-              ☰
-            </span>
-          </template>
-        </el-table-column>
         <el-table-column type="index" width="56" label="#" />
         <el-table-column prop="Name" label="节点名称" min-width="130" sortable>
           <template #default="{ row }">
