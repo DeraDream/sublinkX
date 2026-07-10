@@ -279,11 +279,12 @@ func GetNodeListPage(page, pageSize int, group string) ([]Node, int64, error) {
 		pageSize = 100
 	}
 
-	query := DB.Model(&Node{})
+	query := DB.Model(&Node{}).Where("nodes.deleted_at IS NULL")
 	if group != "" && group != "全部" {
 		query = query.
 			Joins("JOIN group_node_nodes ON group_node_nodes.node_id = nodes.id").
 			Joins("JOIN group_nodes ON group_nodes.id = group_node_nodes.group_node_id").
+			Where("group_nodes.deleted_at IS NULL").
 			Where("group_nodes.name = ?", group)
 	}
 
@@ -292,12 +293,41 @@ func GetNodeListPage(page, pageSize int, group string) ([]Node, int64, error) {
 	}
 	err := query.
 		Distinct("nodes.*").
-		Preload("GroupNodes", func(db *gorm.DB) *gorm.DB {
-			return db.Select("group_nodes.id", "group_nodes.name")
-		}).
 		Order("nodes.id desc").
 		Limit(pageSize).
 		Offset((page - 1) * pageSize).
 		Find(&ns).Error
-	return ns, total, err
+	if err != nil || len(ns) == 0 {
+		return ns, total, err
+	}
+
+	ids := make([]int, 0, len(ns))
+	byID := make(map[int]*Node, len(ns))
+	for i := range ns {
+		ids = append(ids, ns[i].ID)
+		byID[ns[i].ID] = &ns[i]
+	}
+	var groups []struct {
+		NodeID    int
+		GroupID   int
+		GroupName string
+	}
+	if err := DB.Table("group_node_nodes").
+		Select("group_node_nodes.node_id, group_nodes.id AS group_id, group_nodes.name AS group_name").
+		Joins("JOIN group_nodes ON group_nodes.id = group_node_nodes.group_node_id").
+		Where("group_nodes.deleted_at IS NULL").
+		Where("group_node_nodes.node_id IN ?", ids).
+		Order("group_nodes.name asc").
+		Scan(&groups).Error; err != nil {
+		return nil, 0, err
+	}
+	for _, item := range groups {
+		if node, ok := byID[item.NodeID]; ok {
+			node.GroupNodes = append(node.GroupNodes, GroupNode{
+				ID:   item.GroupID,
+				Name: item.GroupName,
+			})
+		}
+	}
+	return ns, total, nil
 }

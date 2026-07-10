@@ -10,7 +10,6 @@ import {
   setNodeDisabled,
 } from "@/api/subcription/node";
 import { formatBeijingTime } from "@/utils/time";
-import { useDraggableTableRows } from "@/utils/table-drag";
 
 interface GroupNode {
   ID: number;
@@ -53,13 +52,6 @@ const totalNodes = ref(0);
 const totalAllNodes = ref(0);
 const tableLoading = ref(false);
 let latestNodeRequest = 0;
-useDraggableTableRows({
-  tableRef: multipleTable,
-  rows: tableData,
-  startIndex: () => (currentPage.value - 1) * pageSize.value,
-  storageKey: "sublink:nodes:order",
-  rowKey: (row) => row.ID,
-});
 // 分组列表临时存放数据
 const activeName = ref("全部");
 const Nodedialog = ref(false); // 弹窗是否可见
@@ -646,19 +638,14 @@ watch(currentPage, () => {
 
       <el-table
         ref="multipleTable"
-        v-loading="tableLoading"
         :data="pagedTableData"
+        :empty-text="tableLoading ? '加载中...' : '暂无数据'"
         tooltip-effect="dark"
         row-key="ID"
         :tree-props="{ children: 'Nodes' }"
         @selection-change="handleSelectionChange"
       >
         <el-table-column type="selection" width="48" />
-        <el-table-column width="42" label="">
-          <template #default>
-            <span class="row-drag-handle" title="拖动排序">☰</span>
-          </template>
-        </el-table-column>
         <el-table-column type="index" width="56" label="#" />
         <el-table-column prop="Name" label="节点名称" min-width="130" sortable>
           <template #default="{ row }">
