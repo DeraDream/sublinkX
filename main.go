@@ -8,7 +8,8 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"sublink/agent"
+	"strings"
+
 	"sublink/middlewares"
 	"sublink/models"
 	"sublink/routers"
@@ -29,7 +30,7 @@ var embeddedFiles embed.FS
 var Template embed.FS
 
 // 版本号
-const version = "4.7"
+const version = "4.8"
 
 func Templateinit() {
 	// 设置template路径
@@ -75,12 +76,6 @@ func main() {
 	utils.InitBeijingTimezone()
 	if len(os.Args) > 1 && (os.Args[1] == "-version" || os.Args[1] == "--version") {
 		fmt.Println(version)
-		return
-	}
-	if len(os.Args) > 1 && os.Args[1] == "agent" {
-		if err := agent.Main(os.Args[2:]); err != nil {
-			log.Fatal(err)
-		}
 		return
 	}
 	// 初始化配置
@@ -134,6 +129,12 @@ func Run(port int) {
 	Templateinit()
 	// 安装中间件
 	r.Use(middlewares.AuthorToken) // jwt验证token
+	r.Use(func(c *gin.Context) {
+		if strings.HasPrefix(c.Request.URL.Path, "/static/") {
+			c.Header("Cache-Control", "public, max-age=31536000, immutable")
+		}
+		c.Next()
+	})
 	// 设置静态资源路径
 	staticFiles, err := fs.Sub(embeddedFiles, "static")
 	if err != nil {
@@ -160,7 +161,6 @@ func Run(port int) {
 	routers.Total(r)
 	routers.Templates(r)
 	routers.Telegram(r)
-	routers.SpeedTest(r)
 	routers.Version(r, version)
 	// 启动服务
 	r.Run(fmt.Sprintf("0.0.0.0:%d", port))

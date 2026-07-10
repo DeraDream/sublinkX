@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, nextTick, computed } from "vue";
+import { ref, shallowRef, onMounted, nextTick, computed } from "vue";
 import {
   getNodes,
   AddNodes,
@@ -9,12 +9,6 @@ import {
   SetGroup,
   setNodeDisabled,
 } from "@/api/subcription/node";
-import {
-  cancelSpeedTasks,
-  createSpeedTask,
-  listHomeAgents,
-  listSpeedTasks,
-} from "@/api/speedtest";
 import { formatBeijingTime } from "@/utils/time";
 import { useDraggableTableRows } from "@/utils/table-drag";
 
@@ -29,12 +23,6 @@ interface Node {
   Link: string;
   Disabled?: boolean;
   CreateDate: string;
-  ControlEntryLatencyMs?: number;
-  ControlProxyLatencyMs?: number;
-  ControlExitLatencyMs?: number;
-  ControlLatencyStatus?: "running" | "success" | "failed";
-  ControlLatencyError?: string;
-  ControlLatencyAt?: string;
   GroupNodes?: GroupNode[]; // 分组信息
 }
 interface NodeInfo {
@@ -45,11 +33,7 @@ interface NodeInfo {
   GroupName?: string[]; // 分组名称
 }
 onMounted(async () => {
-  // 页面开始执行函数
-  getnodes();
-  GetGroups();
-  loadSpeedAgents();
-  loadSpeedResults();
+  await refreshNodePageData();
 });
 const dialogMode = ref<"add" | "edit">("add");
 
@@ -62,15 +46,18 @@ const tableRefs = ref<{ [key: string]: any }>({}); // Stores references to each 
 // const NodeNewLinkInput = ref("")
 // const NodeNewNameInput = ref("")
 const NodeGroupInput = ref("");
-const tableData = ref<Node[]>([]);
+const tableData = shallowRef<Node[]>([]);
+const currentPage = ref(1);
+const pageSize = ref(20);
 useDraggableTableRows({
   tableRef: multipleTable,
   rows: tableData,
+  startIndex: () => (currentPage.value - 1) * pageSize.value,
   storageKey: "sublink:nodes:order",
   rowKey: (row) => row.ID,
 });
 // 分组列表临时存放数据
-const tableDataTemp = ref<Node[]>([]);
+const tableDataTemp = shallowRef<Node[]>([]);
 // 分组列表临时存放数据
 const activeName = ref("全部");
 const Nodedialog = ref(false); // 弹窗是否可见
@@ -86,11 +73,6 @@ const allNodes = ref<string[]>([]); // 所有节点
 const nodelistShow = ref(false); // 节点列表
 const SelectionNodeGroups = ref<string[]>([]); // 选中的分组
 const SelectionNode = ref(""); // 选中的节点
-const speedLoading = ref(false);
-const speedAgents = ref<any[]>([]);
-const selectedAgentId = ref<number>();
-const speedResultMap = ref<Record<number, { latency?: any; speed?: any }>>({});
-let speedRunCancelled = false;
 
 // const SelectionNodes = ref([]); // 选中的节点
 const RadioGroup = ref("1"); // 分组单选框
@@ -103,6 +85,10 @@ const parsedAddLinks = computed(() =>
 const inferredAddNames = computed(() =>
   parsedAddLinks.value.map((link) => extractNodeRemark(link))
 );
+const pagedTableData = computed(() => {
+  const start = (currentPage.value - 1) * pageSize.value;
+  return tableData.value.slice(start, start + pageSize.value);
+});
 
 function decodeBase64Text(text: string) {
   try {
@@ -151,19 +137,37 @@ function ClearInput() {
 }
 async function getnodes() {
   const { data } = await getNodes();
-  if (data.length > 0) tableDataTemp.value = tableData.value = data;
-  allNodes.value = []; // 清空 allNodes 数组
-  data.forEach((item: any) => {
-    allNodes.value.push(item.Name); // 将所有节点添加到 allNodes 中
-  });
+  tableDataTemp.value = Array.isArray(data) ? data : [];
+  applyActiveGroupFilter();
+  allNodes.value = tableDataTemp.value.map((item) => item.Name);
 }
 async function GetGroups() {
   const { data } = await GetGroup();
-  if (Array.isArray(data) && data.length > 0) {
-    allGroupNames.value = data; // 将所有分组名称添加到 allGroupNames 中
-  }
+  allGroupNames.value = Array.isArray(data) ? data : [];
   RadioGroup.value = allGroupNames.value.length > 0 ? "1" : "2"; // 自动选择单选框值
   // console.log("单选框",RadioGroup.value);
+}
+
+async function refreshNodePageData() {
+  await Promise.all([getnodes(), GetGroups()]);
+  clampCurrentPage();
+}
+
+function applyActiveGroupFilter() {
+  if (activeName.value === "全部") {
+    tableData.value = tableDataTemp.value;
+    return;
+  }
+  tableData.value = tableDataTemp.value.filter((item) => {
+    return item.GroupNodes?.some((group) => group.Name === activeName.value);
+  });
+}
+
+function clampCurrentPage() {
+  const maxPage = Math.max(1, Math.ceil(tableData.value.length / pageSize.value));
+  if (currentPage.value > maxPage) {
+    currentPage.value = maxPage;
+  }
 }
 
 const handleAddNode = () => {
@@ -234,8 +238,7 @@ const SubmitNodeForm = async (row: any) => {
   } catch (err) {
     ElMessage.error(`${isAdd ? "添加" : "更新"}失败`);
   }
-  getnodes();
-  GetGroups();
+  await refreshNodePageData();
   ClearInput();
 };
 
@@ -273,16 +276,7 @@ const SubmitNodeForm = async (row: any) => {
 //   ClearInput(); // 清空所有输入
 // }
 const AddGroup = async () => {
-  console.log(SelectionNode.value);
-
   try {
-    // 检查是否选择了已有分组或输入了新分组名
-    console.log(
-      RadioGroup.value,
-      SelectionNodeGroups.value,
-      NodeGroupInput.value
-    );
-
     if (RadioGroup.value === "1" && SelectionNodeGroups.value.length === 0) {
       ElMessage.warning("你还没有选择分组");
       return;
@@ -308,8 +302,7 @@ const AddGroup = async () => {
     console.error("添加分组失败:", error);
     // ElMessage.error('添加分组失败');
   }
-  getnodes(); // 刷新节点列表
-  GetGroups(); // 刷新分组列表
+  await refreshNodePageData(); // 刷新节点和分组
   ClearInput(); // 清空所有输入
 };
 // 表格时间格式化
@@ -385,8 +378,7 @@ const handleDel = async (row: any) => {
     }
   }
   // 刷新节点列表
-  await GetGroups(); // 刷新分组列表
-  await getnodes(); // 刷新节点列表
+  await refreshNodePageData(); // 刷新节点和分组
   ClearInput(); // 清空所有输入
 };
 const selectDel = async () => {
@@ -421,16 +413,15 @@ const selectDel = async () => {
     }
   }
   // 刷新节点列表
-  await GetGroups(); // 刷新分组列表
-  await getnodes();
+  await refreshNodePageData();
 };
 // 全选
 const selectAll = () => {
   nextTick(() => {
-    const table = multipleTable.value;
+      const table = multipleTable.value;
     if (table) {
       // 否则全选
-      tableData.value.forEach((row) => {
+      pagedTableData.value.forEach((row) => {
         table.toggleRowSelection(row, true);
       });
     }
@@ -475,134 +466,19 @@ const toggleNodeDisabled = async (row: any) => {
     disabled: !row.Disabled,
   });
   ElMessage.success(row.Disabled ? "节点已恢复" : "节点已禁用");
-  await getnodes();
-};
-async function loadSpeedAgents() {
-  const { data } = await listHomeAgents();
-  speedAgents.value = (data || []).filter((item: any) => item.online);
-  if (!selectedAgentId.value && speedAgents.value.length > 0) {
-    selectedAgentId.value = speedAgents.value[0].id;
-  }
-}
-
-async function loadSpeedResults() {
-  const { data } = await listSpeedTasks();
-  const latest: Record<number, { latency?: any; speed?: any }> = {};
-  for (const item of data || []) {
-    if (!latest[item.node_id]) latest[item.node_id] = {};
-    if (!latest[item.node_id][item.test_type as "latency" | "speed"]) {
-      latest[item.node_id][item.test_type as "latency" | "speed"] = item;
-    }
-  }
-  speedResultMap.value = latest;
-}
-
-function delay(ms: number) {
-  return new Promise((resolve) => window.setTimeout(resolve, ms));
-}
-
-async function waitSpeedTask(
-  taskId: number,
-  nodeId: number,
-  type: "latency" | "speed"
-) {
-  const deadline = Date.now() + (type === "latency" ? 90000 : 120000);
-  while (!speedRunCancelled && Date.now() < deadline) {
-    const { data } = await listSpeedTasks({ id: taskId });
-    const task = data?.[0];
-    if (task) {
-      if (!speedResultMap.value[nodeId]) speedResultMap.value[nodeId] = {};
-      speedResultMap.value[nodeId][type] = task;
-      if (task.status === "success" || task.status === "failed") {
-        return task;
-      }
-    }
-    await delay(1000);
-  }
-  throw new Error("等待家宽测速端返回结果超时");
-}
-
-const runSpeedTest = async (type: "latency" | "speed") => {
-  const targets =
-    multipleSelection.value.length > 0
-      ? multipleSelection.value
-      : tableData.value.filter((item) => !item.Disabled);
-  if (targets.length === 0) {
-    ElMessage.warning("没有可测速的节点");
-    return;
-  }
-  if (!selectedAgentId.value) {
-    ElMessage.warning("请选择已连接的家宽测速端");
-    return;
-  }
-  speedLoading.value = true;
-  speedRunCancelled = false;
-  let successCount = 0;
-  let failedCount = 0;
-  try {
-    for (let index = 0; index < targets.length; index++) {
-      if (speedRunCancelled) break;
-      const item = targets[index];
-      if (item.Disabled) continue;
-      ElMessage.info(`正在测试 ${index + 1}/${targets.length}：${item.Name}`);
-      try {
-        const { data: task } = await createSpeedTask({
-          node_id: item.ID,
-          agent_id: selectedAgentId.value,
-          type,
-        });
-        if (!speedResultMap.value[item.ID]) speedResultMap.value[item.ID] = {};
-        speedResultMap.value[item.ID][type] = task;
-        const result = await waitSpeedTask(task.id, item.ID, type);
-        if (result.status === "success") {
-          successCount++;
-        } else {
-          failedCount++;
-        }
-      } catch (error: any) {
-        failedCount++;
-        if (!speedResultMap.value[item.ID]) speedResultMap.value[item.ID] = {};
-        speedResultMap.value[item.ID][type] = {
-          status: "failed",
-          error_message:
-            error?.response?.data?.msg || error?.message || "测速失败",
-        };
-      }
-    }
-    ElMessage.success(`测速完成：成功 ${successCount}，失败 ${failedCount}`);
-  } catch (error) {
-    console.error("测速失败:", error);
-    ElMessage.error("测速失败");
-  } finally {
-    speedLoading.value = false;
-  }
-};
-
-const stopSpeedTest = async () => {
-  speedRunCancelled = true;
-  await cancelSpeedTasks(
-    selectedAgentId.value ? { agent_id: selectedAgentId.value } : {}
-  );
-  speedLoading.value = false;
-  await loadSpeedResults();
-  ElMessage.success("已结束家宽测速");
+  await refreshNodePageData();
 };
 const handleSelectionChange = (val: Node[]) => {
   multipleSelection.value = val;
 };
 
-watch(activeName, (newVal) => {
-  if (newVal === "全部") {
-    tableData.value = tableDataTemp.value;
-  } else {
-    tableData.value = tableDataTemp.value.filter((item) => {
-      return item.GroupNodes?.some((group) => group.Name === newVal);
-    });
-  }
+watch(activeName, () => {
+  currentPage.value = 1;
+  applyActiveGroupFilter();
 });
 
-onBeforeUnmount(() => {
-  speedRunCancelled = true;
+watch(pageSize, () => {
+  currentPage.value = 1;
 });
 </script>
 
@@ -737,7 +613,7 @@ onBeforeUnmount(() => {
     <div class="page-heading">
       <div>
         <h1>节点列表</h1>
-        <p>管理代理节点、分组以及连通性测试</p>
+        <p>管理代理节点和分组</p>
       </div>
       <el-button type="primary" @click="handleAddNode">添加节点</el-button>
     </div>
@@ -757,7 +633,7 @@ onBeforeUnmount(() => {
 
       <el-table
         ref="multipleTable"
-        :data="tableData"
+        :data="pagedTableData"
         tooltip-effect="dark"
         row-key="ID"
         :tree-props="{ children: 'Nodes' }"
@@ -807,74 +683,6 @@ onBeforeUnmount(() => {
           :formatter="Groupformatter"
           show-overflow-tooltip
         />
-        <el-table-column label="家宽延迟" width="90">
-          <template #default="{ row }">
-            <span
-              v-if="speedResultMap[row.ID]?.latency?.status === 'success'"
-              class="latency"
-              :class="'is-success'"
-            >
-              {{ speedResultMap[row.ID].latency.latency_ms }} ms
-            </span>
-            <span
-              v-else-if="
-                speedResultMap[row.ID]?.latency?.status === 'running' ||
-                speedResultMap[row.ID]?.latency?.status === 'pending'
-              "
-              class="muted-cell"
-              >测试中</span
-            >
-            <span
-              v-else-if="speedResultMap[row.ID]?.latency?.status === 'failed'"
-              class="latency is-failed"
-            >
-              <el-tooltip
-                :content="
-                  speedResultMap[row.ID].latency.error_message || '测速失败'
-                "
-                placement="top"
-              >
-                <span>失败</span>
-              </el-tooltip>
-            </span>
-            <span v-else class="muted-cell">未测试</span>
-          </template>
-        </el-table-column>
-        <el-table-column label="家宽下载" width="105">
-          <template #default="{ row }">
-            <span
-              v-if="
-                speedResultMap[row.ID]?.speed?.status === 'success' &&
-                speedResultMap[row.ID].speed.download_mbps > 0
-              "
-              class="latency is-success"
-            >
-              {{ speedResultMap[row.ID].speed.download_mbps.toFixed(1) }} Mbps
-            </span>
-            <span
-              v-else-if="
-                speedResultMap[row.ID]?.speed?.status === 'running' ||
-                speedResultMap[row.ID]?.speed?.status === 'pending'
-              "
-              class="muted-cell"
-              >测试中</span
-            >
-            <span
-              v-else-if="speedResultMap[row.ID]?.speed?.status === 'failed'"
-              class="latency is-failed"
-            >
-              <el-tooltip
-                :content="
-                  speedResultMap[row.ID].speed.error_message || '测速失败'
-                "
-                placement="top"
-              >
-                <span>失败</span>
-              </el-tooltip>
-            </span>
-            <span v-else class="muted-cell">--</span>
-          </template>
-        </el-table-column>
         <el-table-column label="操作" width="190" align="right" fixed="right">
           <template #default="scope">
             <el-button link type="primary" @click="handleEditNode(scope.row)"
@@ -893,44 +701,25 @@ onBeforeUnmount(() => {
 
       <div class="table-footer">
         <div class="batch-actions">
-          <el-button @click="selectAll">全选</el-button>
+          <el-button @click="selectAll">全选当前页</el-button>
           <el-button @click="selectClear">取消选择</el-button>
           <el-button type="primary" plain @click="selectCopy"
             >复制选中</el-button
           >
           <el-button type="danger" plain @click="selectDel">删除选中</el-button>
-          <el-select
-            v-model="selectedAgentId"
-            placeholder="选择家宽测速端"
-            style="width: 180px"
-            @visible-change="(visible: boolean) => visible && loadSpeedAgents()"
-          >
-            <el-option
-              v-for="agent in speedAgents"
-              :key="agent.id"
-              :label="agent.name"
-              :value="agent.id"
-            />
-          </el-select>
-          <el-button :loading="speedLoading" @click="runSpeedTest('latency')"
-            >测试延迟</el-button
-          >
-          <el-button
-            :loading="speedLoading"
-            type="primary"
-            @click="runSpeedTest('speed')"
-            >测试下载速度</el-button
-          >
-          <el-button
-            v-if="speedLoading"
-            type="danger"
-            plain
-            @click="stopSpeedTest"
-          >
-            结束测速
-          </el-button>
         </div>
-        <span class="record-count">共 {{ tableData.length }} 个节点</span>
+        <div class="table-pagination">
+          <span class="record-count">共 {{ tableData.length }} 个节点</span>
+          <el-pagination
+            v-model:current-page="currentPage"
+            v-model:page-size="pageSize"
+            layout="sizes, prev, pager, next"
+            :page-sizes="[10, 20, 50, 100]"
+            :total="tableData.length"
+            background
+            small
+          />
+        </div>
       </div>
     </section>
   </div>
@@ -1016,20 +805,10 @@ onBeforeUnmount(() => {
   color: var(--el-text-color-secondary);
 }
 
-.latency {
-  font-size: 13px;
-  font-variant-numeric: tabular-nums;
-}
-
-.latency.is-success {
-  color: #15803d;
-}
-
-.latency.is-failed {
-  color: var(--el-color-danger);
-}
-
-.latency.is-warning {
-  color: var(--el-color-warning);
+.table-pagination {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-left: auto;
 }
 </style>

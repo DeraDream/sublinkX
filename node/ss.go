@@ -3,6 +3,7 @@ package node
 import (
 	"fmt"
 	"log"
+	"net"
 	"net/url"
 	"strconv"
 	"strings"
@@ -37,14 +38,25 @@ func parsingSS(s string) (string, string, string) {
 		log.Println("ss url parse fail, not ss url.")
 		return "", "", ""
 	}
+	name := u.Fragment
 	// 处理url全编码的情况
 	if u.User == nil {
 		// 截取ss://后的字符串
 		raw := s[5:]
+		if index := strings.IndexAny(raw, "?#"); index >= 0 {
+			raw = raw[:index]
+		}
 		s = "ss://" + Base64Decode(raw)
 		u, err = url.Parse(s)
+		if err != nil {
+			log.Println("ss url parse fail.", err)
+			return "", "", ""
+		}
+		if name != "" && u.Fragment == "" {
+			u.Fragment = name
+		}
 	}
-	var auth, addr, name string
+	var auth, addr string
 	auth = u.User.String()
 	if u.Host != "" {
 		addr = u.Host
@@ -53,6 +65,31 @@ func parsingSS(s string) (string, string, string) {
 		name = u.Fragment
 	}
 	return auth, addr, name
+}
+
+func decodeSSAuth(auth string) (string, string, error) {
+	auth = strings.TrimSpace(auth)
+	if auth == "" {
+		return "", "", fmt.Errorf("invalid SS URL auth")
+	}
+	for i := 0; i < 3; i++ {
+		decoded, err := url.QueryUnescape(auth)
+		if err != nil || decoded == auth {
+			break
+		}
+		auth = decoded
+	}
+	if !strings.Contains(auth, ":") {
+		decoded := Base64Decode(auth)
+		if decoded != auth || strings.Contains(decoded, ":") {
+			auth = decoded
+		}
+	}
+	parts := strings.SplitN(auth, ":", 2)
+	if len(parts) != 2 || strings.TrimSpace(parts[0]) == "" || parts[1] == "" {
+		return "", "", fmt.Errorf("invalid SS URL auth")
+	}
+	return parts[0], parts[1], nil
 }
 
 // 开发者测试
@@ -86,30 +123,38 @@ func EncodeSSURL(s Ss) string {
 func DecodeSSURL(s string) (Ss, error) {
 	// 解析ss链接
 	param, addr, name := parsingSS(s)
-	// base64解码
-	param = Base64Decode(param)
 	// 判断是否为空
 	if param == "" || addr == "" {
 		return Ss{}, fmt.Errorf("invalid SS URL")
 	}
-	// 解析参数
-	parts := strings.Split(addr, ":")
-	port, _ := strconv.Atoi(parts[len(parts)-1])
-	server := strings.Replace(ValRetIPv6Addr(addr), ":"+parts[len(parts)-1], "", -1)
-	cipher := strings.Split(param, ":")[0]
-	password := strings.Replace(param, cipher+":", "", 1)
+	cipher, password, err := decodeSSAuth(param)
+	if err != nil {
+		return Ss{}, err
+	}
+	server, portText, err := net.SplitHostPort(addr)
+	if err != nil {
+		parts := strings.Split(addr, ":")
+		if len(parts) < 2 {
+			return Ss{}, fmt.Errorf("invalid SS URL address")
+		}
+		portText = parts[len(parts)-1]
+		server = strings.TrimSuffix(ValRetIPv6Addr(addr), ":"+portText)
+	}
+	port, err := strconv.Atoi(portText)
+	if err != nil || port <= 0 || port > 65535 || strings.TrimSpace(server) == "" {
+		return Ss{}, fmt.Errorf("invalid SS URL address")
+	}
 	// 如果没有备注则使用服务器加端口命名
 	if name == "" {
 		name = addr
 	}
 	// 开发环境输出结果
 	if CheckEnvironment() {
-		fmt.Println("Param:", Base64Decode(param))
+		fmt.Println("Param:", cipher+":***")
 		fmt.Println("Server", server)
 		fmt.Println("Port", port)
 		fmt.Println("Name:", name)
 		fmt.Println("Cipher:", cipher)
-		fmt.Println("Password:", password)
 	}
 	// 返回结果
 	return Ss{

@@ -1,4 +1,4 @@
-import Sortable from "sortablejs";
+import type Sortable from "sortablejs";
 import type { Ref } from "vue";
 import { nextTick, onBeforeUnmount, onMounted, watch } from "vue";
 
@@ -71,6 +71,7 @@ export function useDraggableTableRows<T>({
       | undefined;
     if (!nextTbody || nextTbody === tbody) return;
 
+    const { default: Sortable } = await import("sortablejs");
     destroy();
     tbody = nextTbody;
     sortable = Sortable.create(nextTbody, {
@@ -88,9 +89,11 @@ export function useDraggableTableRows<T>({
         }
         const from = startIndex() + oldIndex;
         const to = startIndex() + newIndex;
-        const moved = rows.value.splice(from, 1)[0];
+        const nextRows = [...rows.value];
+        const moved = nextRows.splice(from, 1)[0];
         if (!moved) return;
-        rows.value.splice(to, 0, moved);
+        nextRows.splice(to, 0, moved);
+        rows.value = nextRows;
         persistOrder();
       },
     });

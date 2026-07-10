@@ -31,6 +31,27 @@ func TestDecodeSSURL(t *testing.T) {
 				s: "noss://YWVzLTI1Ni1jZmI6S1NYTmhuWnBqd0M2UGM2Q0A1NC4xNjkuMzUuMjI4OjMxNDQ0",
 			},
 			wantErr: true,
+		}, {
+			name: "sip002 url encoded auth",
+			args: args{
+				s: "ss://2022-blake3-aes-256-gcm%3Ab64%3Apassword@example.com:443#encoded-auth",
+			},
+			want: Ss{
+				Param: Param{
+					Cipher:   "2022-blake3-aes-256-gcm",
+					Password: "b64:password",
+				},
+				Server: "example.com",
+				Port:   443,
+				Name:   "encoded-auth",
+				Type:   "ss",
+			},
+		}, {
+			name: "invalid ss auth",
+			args: args{
+				s: "ss://not-base64-or-sip002@example.com:443#bad",
+			},
+			wantErr: true,
 		},
 	}
 	for _, tt := range tests {
@@ -39,6 +60,9 @@ func TestDecodeSSURL(t *testing.T) {
 			if (err != nil) != tt.wantErr {
 				t.Errorf("DecodeSSURL() error = %v, wantErr %v", err, tt.wantErr)
 				return
+			}
+			if tt.want.Param.Cipher != "" && got != tt.want {
+				t.Errorf("DecodeSSURL() = %#v, want %#v", got, tt.want)
 			}
 			fmt.Println(got)
 		})

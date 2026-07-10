@@ -10,14 +10,27 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-	"sublink/models"
-	"sublink/node"
+	"sync"
 	"time"
 
+	"sublink/models"
+	"sublink/node"
+
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
-var SunName string
+const subscriptionCacheTTL = 60 * time.Second
+
+type subscriptionCacheEntry struct {
+	contentType string
+	filename    string
+	nodeCount   int
+	body        []byte
+	expiresAt   time.Time
+}
+
+var subscriptionCache sync.Map
 
 // md5加密
 func Md5(src string) string {
@@ -27,9 +40,10 @@ func Md5(src string) string {
 	return res
 }
 func GetClient(c *gin.Context) {
+	start := time.Now()
 	// 获取协议头
 	token := c.Query("token")
-	ClientIndex := c.Query("client") // 客户端标识
+	clientIndex := strings.ToLower(strings.TrimSpace(c.Query("client"))) // 客户端标识
 	if token == "" {
 		log.Println("token为空")
 		c.Writer.WriteString("token为空")
@@ -46,34 +60,131 @@ func GetClient(c *gin.Context) {
 		c.Writer.WriteString(reason)
 		return
 	}
-	models.DB.Model(&models.Subcription{}).Where("id = ?", sub.ID).
-		UpdateColumn("access_count", sub.AccessCount+1)
-	SunName = sub.Name
+	recordSubscriptionAccess(sub.ID)
 	c.Set("subname", sub.Name)
+	c.Set("subscription_id", sub.ID)
+	c.Set("subscription_start", start)
 
-	switch ClientIndex {
+	format := subscriptionFormat(c, clientIndex)
+	cacheKey := subscriptionCacheKey(sub, format)
+	if cached, ok := getSubscriptionCache(cacheKey); ok {
+		writeSubscriptionResponse(c, cached)
+		logSubscriptionGenerated(c, sub.ID, cached.nodeCount, format)
+		return
+	}
+
+	var resp subscriptionCacheEntry
+	var err error
+	switch format {
 	case "clash":
-		GetClash(c)
-		return
+		resp, err = buildClashSubscription(c)
 	case "surge":
-		GetSurge(c)
-		return
+		resp, err = buildSurgeSubscription(c)
 	case "v2ray":
-		GetV2ray(c)
+		resp, err = buildV2raySubscription(c)
+	default:
+		resp, err = buildV2raySubscription(c)
+		format = "v2ray"
+	}
+	if err != nil {
+		c.Writer.WriteString(err.Error())
 		return
+	}
+	setSubscriptionCache(cacheKey, resp)
+	writeSubscriptionResponse(c, resp)
+	logSubscriptionGenerated(c, sub.ID, resp.nodeCount, format)
+}
+
+func subscriptionStartedAt(c *gin.Context) time.Time {
+	if value, ok := c.Get("subscription_start"); ok {
+		if startedAt, ok := value.(time.Time); ok {
+			return startedAt
+		}
+	}
+	return time.Now()
+}
+
+func logSubscriptionGenerated(c *gin.Context, subID int, nodeCount int, format string) {
+	log.Printf(
+		"subscription generated: id=%d nodes=%d format=%s duration=%s",
+		subID,
+		nodeCount,
+		format,
+		time.Since(subscriptionStartedAt(c)),
+	)
+}
+
+func subscriptionFormat(c *gin.Context, clientIndex string) string {
+	switch clientIndex {
+	case "clash", "surge", "v2ray":
+		return clientIndex
 	}
 	for _, userAgent := range c.Request.Header.Values("User-Agent") {
 		ua := strings.ToLower(userAgent)
 		if strings.Contains(ua, "clash") {
-			GetClash(c)
-			return
+			return "clash"
 		}
 		if strings.Contains(ua, "surge") {
-			GetSurge(c)
-			return
+			return "surge"
 		}
 	}
-	GetV2ray(c)
+	return "v2ray"
+}
+
+func subscriptionCacheKey(sub models.Subcription, format string) string {
+	return fmt.Sprintf("%d:%s:%s:%s", sub.ID, format, sub.NodeOrder, Md5(sub.Config))
+}
+
+func getSubscriptionCache(key string) (subscriptionCacheEntry, bool) {
+	value, ok := subscriptionCache.Load(key)
+	if !ok {
+		return subscriptionCacheEntry{}, false
+	}
+	entry, ok := value.(subscriptionCacheEntry)
+	if !ok || time.Now().After(entry.expiresAt) {
+		subscriptionCache.Delete(key)
+		return subscriptionCacheEntry{}, false
+	}
+	return entry, true
+}
+
+func setSubscriptionCache(key string, entry subscriptionCacheEntry) {
+	entry.expiresAt = time.Now().Add(subscriptionCacheTTL)
+	subscriptionCache.Store(key, entry)
+}
+
+func clearSubscriptionCache() {
+	subscriptionCache.Range(func(key, _ any) bool {
+		subscriptionCache.Delete(key)
+		return true
+	})
+}
+
+func writeSubscriptionResponse(c *gin.Context, resp subscriptionCacheEntry) {
+	encodedFilename := url.QueryEscape(resp.filename)
+	c.Writer.Header().Set("Content-Disposition", "inline; filename*=utf-8''"+encodedFilename)
+	c.Writer.Header().Set("Content-Type", resp.contentType)
+	c.Writer.Write(resp.body)
+}
+
+func recordSubscriptionAccess(id int) {
+	go func() {
+		if err := models.DB.Model(&models.Subcription{}).
+			Where("id = ?", id).
+			UpdateColumn("access_count", gorm.Expr("access_count + ?", 1)).Error; err != nil {
+			log.Println("更新订阅访问次数失败:", err)
+		}
+	}()
+}
+
+func subscriptionNameFromContext(c *gin.Context) (string, bool) {
+	value, ok := c.Get("subname")
+	if !ok {
+		return "", false
+	}
+	name, ok := value.(string)
+	name = strings.TrimSpace(name)
+	return name, ok && name != ""
 }
 
 func findSubscriptionByToken(token string) (models.Subcription, bool) {
@@ -110,17 +221,42 @@ func subscriptionNodeLinks(n models.Node) []string {
 		return []string{link}
 	}
 	if !strings.Contains(link, ",") {
-		return []string{linkWithDisplayName(link, n.Name)}
+		normalized, ok := normalizeSubscriptionNodeLink(linkWithDisplayName(link, n.Name), n.Name)
+		if !ok {
+			return nil
+		}
+		return []string{normalized}
 	}
 	links := strings.Split(link, ",")
 	result := make([]string, 0, len(links))
 	for _, item := range links {
 		item = strings.TrimSpace(item)
 		if item != "" {
-			result = append(result, item)
+			normalized, ok := normalizeSubscriptionNodeLink(linkWithDisplayName(item, n.Name), n.Name)
+			if ok {
+				result = append(result, normalized)
+			}
 		}
 	}
 	return result
+}
+
+func normalizeSubscriptionNodeLink(link, displayName string) (string, bool) {
+	scheme := strings.ToLower(strings.SplitN(link, "://", 2)[0])
+	switch scheme {
+	case "ss":
+		ss, err := node.DecodeSSURL(link)
+		if err != nil {
+			log.Printf("skip invalid ss node: %v", err)
+			return "", false
+		}
+		if ss.Name == "" {
+			ss.Name = strings.TrimSpace(displayName)
+		}
+		return node.EncodeSSURL(ss), true
+	default:
+		return link, true
+	}
 }
 
 func linkWithDisplayName(link, displayName string) string {
@@ -158,27 +294,28 @@ func linkWithDisplayName(link, displayName string) string {
 }
 
 func GetV2ray(c *gin.Context) {
-	var sub models.Subcription
-	if SunName == "" {
-		c.Writer.WriteString("订阅名为空")
+	resp, err := buildV2raySubscription(c)
+	if err != nil {
+		c.Writer.WriteString(err.Error())
 		return
 	}
-	// subname := c.Param("subname")
-	// subname := SunName
-	// subname = node.Base64Decode(subname)
-	sub.Name = SunName
+	writeSubscriptionResponse(c, resp)
+}
+
+func buildV2raySubscription(c *gin.Context) (subscriptionCacheEntry, error) {
+	var sub models.Subcription
+	subName, ok := subscriptionNameFromContext(c)
+	if !ok {
+		return subscriptionCacheEntry{}, fmt.Errorf("订阅名为空")
+	}
+	sub.Name = subName
 	err := sub.Find()
 	if err != nil {
-		c.Writer.WriteString("找不到这个订阅:" + SunName)
-		return
-	}
-	err = sub.Find()
-	if err != nil {
-		c.Writer.WriteString("读取错误")
-		return
+		return subscriptionCacheEntry{}, fmt.Errorf("找不到这个订阅:%s", subName)
 	}
 	baselist := ""
-	for _, v := range sub.ActiveNodes() {
+	activeNodes := sub.ActiveNodes()
+	for _, v := range activeNodes {
 		nodeLinks := subscriptionNodeLinks(v)
 		switch {
 		// 如果包含多条节点
@@ -191,7 +328,7 @@ func GetV2ray(c *gin.Context) {
 			resp, err := http.Get(v.Link)
 			if err != nil {
 				log.Println(err)
-				return
+				return subscriptionCacheEntry{}, err
 			}
 			defer resp.Body.Close()
 			body, _ := io.ReadAll(resp.Body)
@@ -202,32 +339,38 @@ func GetV2ray(c *gin.Context) {
 			baselist += strings.Join(nodeLinks, "\n") + "\n"
 		}
 	}
-	c.Set("subname", SunName)
-	filename := fmt.Sprintf("%s.txt", SunName)
-	encodedFilename := url.QueryEscape(filename)
-	c.Writer.Header().Set("Content-Disposition", "inline; filename*=utf-8''"+encodedFilename)
-	c.Writer.Header().Set("Content-Type", "text/html; charset=utf-8")
-	c.Writer.WriteString(node.Base64Encode(baselist))
+	return subscriptionCacheEntry{
+		contentType: "text/html; charset=utf-8",
+		filename:    fmt.Sprintf("%s.txt", subName),
+		nodeCount:   len(activeNodes),
+		body:        []byte(node.Base64Encode(baselist)),
+	}, nil
 }
 func GetClash(c *gin.Context) {
+	resp, err := buildClashSubscription(c)
+	if err != nil {
+		c.Writer.WriteString(err.Error())
+		return
+	}
+	writeSubscriptionResponse(c, resp)
+}
+
+func buildClashSubscription(c *gin.Context) (subscriptionCacheEntry, error) {
 	var sub models.Subcription
-	// subname := c.Param("subname")
-	// subname := node.Base64Decode(SunName)
-	sub.Name = SunName
+	subName, ok := subscriptionNameFromContext(c)
+	if !ok {
+		return subscriptionCacheEntry{}, fmt.Errorf("订阅名为空")
+	}
+	sub.Name = subName
 	err := sub.Find()
 	if err != nil {
-		c.Writer.WriteString("找不到这个订阅:" + SunName)
-		return
+		return subscriptionCacheEntry{}, fmt.Errorf("找不到这个订阅:%s", subName)
 	}
 	// err = sub.Find()
 
 	urls := []string{}
 
-	models.DB.Model(sub).Preload("Nodes").Find(&sub)
-	log.Println("订阅名:", sub.Nodes)
 	for _, v := range sub.ActiveNodes() {
-		log.Println("节点信息:", v)
-		log.Println("节点链接:", v.Link)
 		nodeLinks := subscriptionNodeLinks(v)
 		switch {
 		// 如果包含多条节点
@@ -240,7 +383,7 @@ func GetClash(c *gin.Context) {
 			resp, err := http.Get(v.Link)
 			if err != nil {
 				log.Println(err)
-				return
+				return subscriptionCacheEntry{}, err
 			}
 			defer resp.Body.Close()
 			body, _ := io.ReadAll(resp.Body)
@@ -252,39 +395,41 @@ func GetClash(c *gin.Context) {
 			urls = append(urls, nodeLinks...)
 		}
 	}
-	log.Println("urls", urls)
 	var configs node.SqlConfig
 	err = json.Unmarshal([]byte(sub.Config), &configs)
 	if err != nil {
-		c.Writer.WriteString("配置读取错误")
-		return
+		return subscriptionCacheEntry{}, fmt.Errorf("配置读取错误")
 	}
 	DecodeClash, err := node.EncodeClash(urls, configs)
+	if err != nil {
+		return subscriptionCacheEntry{}, err
+	}
+	return subscriptionCacheEntry{
+		contentType: "text/plain; charset=utf-8",
+		filename:    fmt.Sprintf("%s.yaml", subName),
+		nodeCount:   len(urls),
+		body:        DecodeClash,
+	}, nil
+}
+func GetSurge(c *gin.Context) {
+	resp, err := buildSurgeSubscription(c)
 	if err != nil {
 		c.Writer.WriteString(err.Error())
 		return
 	}
-	c.Set("subname", SunName)
-	filename := fmt.Sprintf("%s.yaml", SunName)
-	encodedFilename := url.QueryEscape(filename)
-	c.Writer.Header().Set("Content-Disposition", "inline; filename*=utf-8''"+encodedFilename)
-	c.Writer.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	c.Writer.WriteString(string(DecodeClash))
+	writeSubscriptionResponse(c, resp)
 }
-func GetSurge(c *gin.Context) {
+
+func buildSurgeSubscription(c *gin.Context) (subscriptionCacheEntry, error) {
 	var sub models.Subcription
-	// subname := c.Param("subname")
-	// subname := node.Base64Decode(SunName)
-	sub.Name = SunName
+	subName, ok := subscriptionNameFromContext(c)
+	if !ok {
+		return subscriptionCacheEntry{}, fmt.Errorf("订阅名为空")
+	}
+	sub.Name = subName
 	err := sub.Find()
 	if err != nil {
-		c.Writer.WriteString("找不到这个订阅:" + SunName)
-		return
-	}
-	err = sub.Find()
-	if err != nil {
-		c.Writer.WriteString("读取错误")
-		return
+		return subscriptionCacheEntry{}, fmt.Errorf("找不到这个订阅:%s", subName)
 	}
 	urls := []string{}
 	for _, v := range sub.ActiveNodes() {
@@ -300,7 +445,7 @@ func GetSurge(c *gin.Context) {
 			resp, err := http.Get(v.Link)
 			if err != nil {
 				log.Println(err)
-				return
+				return subscriptionCacheEntry{}, err
 			}
 			defer resp.Body.Close()
 			body, _ := io.ReadAll(resp.Body)
@@ -316,28 +461,30 @@ func GetSurge(c *gin.Context) {
 	var configs node.SqlConfig
 	err = json.Unmarshal([]byte(sub.Config), &configs)
 	if err != nil {
-		c.Writer.WriteString("配置读取错误")
-		return
+		return subscriptionCacheEntry{}, fmt.Errorf("配置读取错误")
 	}
 	// log.Println("surge路径:", configs)
 	DecodeClash, err := node.EncodeSurge(urls, configs)
 	if err != nil {
-		c.Writer.WriteString(err.Error())
-		return
+		return subscriptionCacheEntry{}, err
 	}
-	c.Set("subname", SunName)
-	filename := fmt.Sprintf("%s.conf", SunName)
-	encodedFilename := url.QueryEscape(filename)
-	c.Writer.Header().Set("Content-Disposition", "inline; filename*=utf-8''"+encodedFilename)
-	c.Writer.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	host := c.Request.Host
 	url := c.Request.URL.String()
 	// 如果包含头部更新信息
 	if strings.Contains(DecodeClash, "#!MANAGED-CONFIG") {
-		c.Writer.WriteString(DecodeClash)
-		return
+		return subscriptionCacheEntry{
+			contentType: "text/plain; charset=utf-8",
+			filename:    fmt.Sprintf("%s.conf", subName),
+			nodeCount:   len(urls),
+			body:        []byte(DecodeClash),
+		}, nil
 	}
 	// 否则就插入头部更新信息
 	interval := fmt.Sprintf("#!MANAGED-CONFIG %s interval=86400 strict=false", host+url)
-	c.Writer.WriteString(string(interval + "\n" + DecodeClash))
+	return subscriptionCacheEntry{
+		contentType: "text/plain; charset=utf-8",
+		filename:    fmt.Sprintf("%s.conf", subName),
+		nodeCount:   len(urls),
+		body:        []byte(interval + "\n" + DecodeClash),
+	}, nil
 }

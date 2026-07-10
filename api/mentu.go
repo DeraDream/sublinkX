@@ -162,32 +162,6 @@ func GetMenus(c *gin.Context) {
 			},
 		},
 		{
-			Path:      "/speedtest",
-			Component: "Layout",
-			Redirect:  "/speedtest/agents",
-			Name:      "speedtest",
-			Meta: Meta{
-				Title:  "speedtestagents",
-				Icon:   "monitor",
-				Hidden: false,
-				Roles:  []string{"ADMIN"},
-			},
-			Children: []Child{
-				{
-					Path:      "agents",
-					Component: "speedtest/agents",
-					Name:      "SpeedTestAgents",
-					Meta: Meta{
-						Title:     "speedtestagents",
-						Icon:      "monitor",
-						Hidden:    false,
-						Roles:     []string{"ADMIN"},
-						KeepAlive: true,
-					},
-				},
-			},
-		},
-		{
 			Path:      "/settings",
 			Component: "Layout",
 			Redirect:  "/settings/telegram",

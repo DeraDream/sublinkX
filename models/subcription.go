@@ -4,8 +4,6 @@ import (
 	"crypto/md5"
 	"crypto/rand"
 	"encoding/hex"
-	// 用于将配置解析为结构体
-	"log"
 	"strconv"
 	"strings" // 用于处理逗号分隔的字符串
 	"time"
@@ -169,7 +167,6 @@ func (sub *Subcription) Update(NewName *Subcription) error {
 
 	// 更新多对多关系: Replace 会清除旧关联并建立新关联
 	// 确保 sub.Nodes 包含了新的排序后的节点对象
-	log.Println("Updating subscription nodes:", NewName.SubLogs)
 	return DB.Model(&existingSub).Association("Nodes").Replace(NewName.Nodes)
 }
 

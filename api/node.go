@@ -1,18 +1,15 @@
 package api
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"log"
-	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
-	"sublink/agent"
+
 	"sublink/models"
 	"sublink/node"
-	"time"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -140,6 +137,7 @@ func NodeUpdadte(c *gin.Context) {
 		})
 		return
 	}
+	clearSubscriptionCache()
 
 	c.JSON(200, gin.H{
 		"code": "00000",
@@ -161,81 +159,6 @@ func NodeGet(c *gin.Context) {
 		"code": "00000",
 		"data": ns,
 		"msg":  "node get",
-	})
-}
-
-func NodeControlLatencyTest(c *gin.Context) {
-	id, err := strconv.Atoi(c.PostForm("id"))
-	if err != nil || id <= 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"msg": "节点 id 不正确"})
-		return
-	}
-	var nd models.Node
-	if err := models.DB.First(&nd, id).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"msg": "节点不存在"})
-		return
-	}
-	scheme := strings.ToLower(strings.SplitN(nd.Link, "://", 2)[0])
-	if scheme != "ss" && scheme != "vless" {
-		c.JSON(http.StatusBadRequest, gin.H{"msg": "主控测速目前仅支持 SS 和 VLESS 节点"})
-		return
-	}
-
-	models.DB.Model(&nd).Updates(map[string]any{
-		"control_latency_status": "running",
-		"control_latency_error":  "",
-	})
-	ctx, cancel := context.WithTimeout(c.Request.Context(), 90*time.Second)
-	defer cancel()
-	entryLatency, proxyLatency, testErr := agent.MeasureControllerLatency(ctx, nd.Link)
-	exitLatency := int64(-1)
-	if entryLatency > 0 && proxyLatency > 0 {
-		exitLatency = proxyLatency - entryLatency
-		if exitLatency < 1 {
-			exitLatency = 1
-		}
-	}
-	now := time.Now()
-	status := "success"
-	errorMessage := ""
-	if testErr != nil {
-		status = "failed"
-		errorMessage = testErr.Error()
-	}
-	updates := map[string]any{
-		"control_entry_latency_ms": entryLatency,
-		"control_proxy_latency_ms": proxyLatency,
-		"control_exit_latency_ms":  exitLatency,
-		"control_latency_status":   status,
-		"control_latency_error":    errorMessage,
-		"control_latency_at":       &now,
-	}
-	if err := models.DB.Model(&nd).Updates(updates).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"msg": err.Error()})
-		return
-	}
-	if testErr != nil {
-		c.JSON(http.StatusBadGateway, gin.H{
-			"msg": testErr.Error(),
-			"data": gin.H{
-				"entry_latency_ms": entryLatency,
-				"proxy_latency_ms": proxyLatency,
-				"exit_latency_ms":  exitLatency,
-				"status":           status,
-			},
-		})
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{
-		"code": "00000",
-		"msg":  "主控延迟测试完成",
-		"data": gin.H{
-			"entry_latency_ms": entryLatency,
-			"proxy_latency_ms": proxyLatency,
-			"exit_latency_ms":  exitLatency,
-			"status":           status,
-			"checked_at":       now,
-		},
 	})
 }
 
@@ -386,6 +309,7 @@ func NodeAdd(c *gin.Context) {
 		}
 	}
 	//关联分组结束
+	clearSubscriptionCache()
 
 	c.JSON(200, gin.H{
 		"code": "00000",
@@ -413,6 +337,7 @@ func NodeDel(c *gin.Context) {
 		})
 		return
 	}
+	clearSubscriptionCache()
 	c.JSON(200, gin.H{
 		"code": "00000",
 		"msg":  "删除成功",
@@ -430,6 +355,7 @@ func NodeSetDisabled(c *gin.Context) {
 		c.JSON(500, gin.H{"msg": err.Error()})
 		return
 	}
+	clearSubscriptionCache()
 	c.JSON(200, gin.H{
 		"code": "00000",
 		"msg":  "节点状态已更新",

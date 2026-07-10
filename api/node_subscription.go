@@ -2,15 +2,18 @@ package api
 
 import (
 	"fmt"
+	"log"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
-	"sublink/models"
-	"sublink/node"
 	"time"
 
+	"sublink/models"
+	"sublink/node"
+
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 func NodeSubGet(c *gin.Context) {
@@ -168,8 +171,7 @@ func GetNodeSubscriptionClient(c *gin.Context) {
 		c.Writer.WriteString(reason)
 		return
 	}
-	models.DB.Model(&models.NodeSubscription{}).Where("id = ?", sub.ID).
-		UpdateColumn("access_count", sub.AccessCount+1)
+	recordNodeSubscriptionAccess(sub.ID)
 	var lines []string
 	for _, n := range sub.ActiveNodes() {
 		lines = append(lines, subscriptionNodeLinks(n)...)
@@ -179,4 +181,14 @@ func GetNodeSubscriptionClient(c *gin.Context) {
 	c.Writer.Header().Set("Content-Disposition", "inline; filename*=utf-8''"+encodedFilename)
 	c.Writer.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	c.Writer.WriteString(node.Base64Encode(strings.Join(lines, "\n") + "\n"))
+}
+
+func recordNodeSubscriptionAccess(id int) {
+	go func() {
+		if err := models.DB.Model(&models.NodeSubscription{}).
+			Where("id = ?", id).
+			UpdateColumn("access_count", gorm.Expr("access_count + ?", 1)).Error; err != nil {
+			log.Println("更新节点订阅访问次数失败:", err)
+		}
+	}()
 }

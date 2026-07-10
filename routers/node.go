@@ -14,7 +14,6 @@ func Nodes(r *gin.Engine) {
 		NodesGroup.GET("/get", api.NodeGet)
 		NodesGroup.POST("/update", api.NodeUpdadte)
 		NodesGroup.POST("/disabled", api.NodeSetDisabled)
-		NodesGroup.POST("/control-latency", api.NodeControlLatencyTest)
 
 	}
 	// 分组

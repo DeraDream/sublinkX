@@ -43,7 +43,11 @@ func EncodeSurge(urls []string, sqlconfig SqlConfig) (string, error) {
 			if vmess.Tls != "none" && vmess.Tls != "" {
 				tls = true
 			}
-			port, _ := convertToInt(vmess.Port)
+			port, err := convertToInt(vmess.Port)
+			if err != nil || port <= 0 {
+				log.Println("invalid vmess port")
+				continue
+			}
 			proxy := map[string]interface{}{
 				"name":             vmess.Ps,
 				"server":           vmess.Add,

@@ -28,6 +28,15 @@ func InitSqlite() {
 		log.Println("连接数据库失败")
 	}
 	DB = db
+	if err := db.Exec("PRAGMA journal_mode=WAL").Error; err != nil {
+		log.Println("启用 SQLite WAL 失败:", err)
+	}
+	if err := db.Exec("PRAGMA synchronous=NORMAL").Error; err != nil {
+		log.Println("设置 SQLite synchronous 失败:", err)
+	}
+	if err := db.Exec("PRAGMA busy_timeout=5000").Error; err != nil {
+		log.Println("设置 SQLite busy_timeout 失败:", err)
+	}
 	// 检查是否已经初始化
 	if isInitialized {
 		log.Println("数据库已经初始化，无需重复初始化")
@@ -40,8 +49,6 @@ func InitSqlite() {
 		&SubLogs{},
 		&GroupNode{},
 		&Node{},
-		&HomeAgent{},
-		&SpeedTestTask{},
 	)
 	if err != nil {
 		log.Println("数据表迁移失败")

@@ -258,6 +258,7 @@ func UpdateTemp(c *gin.Context) {
 		})
 		return
 	}
+	clearSubscriptionCache()
 
 	c.JSON(200, gin.H{
 		"code": "00000",
@@ -324,6 +325,7 @@ func AddTemp(c *gin.Context) {
 		})
 		return
 	}
+	clearSubscriptionCache()
 
 	c.JSON(200, gin.H{
 		"code": "00000",
@@ -377,6 +379,7 @@ func DelTemp(c *gin.Context) {
 		})
 		return
 	}
+	clearSubscriptionCache()
 
 	c.JSON(200, gin.H{
 		"code": "00000",

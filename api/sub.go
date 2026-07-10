@@ -117,6 +117,7 @@ func SubAdd(c *gin.Context) {
 		})
 		return
 	}
+	clearSubscriptionCache()
 
 	c.JSON(200, gin.H{
 		"code": "00000",
@@ -177,6 +178,7 @@ func SubUpdate(c *gin.Context) {
 		})
 		return
 	}
+	clearSubscriptionCache()
 
 	c.JSON(200, gin.H{
 		"code": "00000",
@@ -216,6 +218,7 @@ func SubDel(c *gin.Context) {
 		})
 		return
 	}
+	clearSubscriptionCache()
 	c.JSON(200, gin.H{
 		"code": "00000",
 		"msg":  "删除订阅成功",
@@ -239,6 +242,7 @@ func SubResetToken(c *gin.Context) {
 		c.JSON(500, gin.H{"msg": err.Error()})
 		return
 	}
+	clearSubscriptionCache()
 	c.JSON(200, gin.H{"code": "00000", "data": gin.H{"token": token}, "msg": "token 已重置"})
 }
 
@@ -253,6 +257,7 @@ func SubSetRevoked(c *gin.Context) {
 		c.JSON(500, gin.H{"msg": err.Error()})
 		return
 	}
+	clearSubscriptionCache()
 	c.JSON(200, gin.H{"code": "00000", "msg": "状态已更新"})
 }
 

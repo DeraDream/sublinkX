@@ -3,7 +3,6 @@ package models
 import (
 	"errors"
 	"log"
-	"time"
 
 	"gorm.io/gorm"
 )
@@ -21,12 +20,6 @@ type Node struct {
 	Name                  string
 	Link                  string
 	Disabled              bool
-	ControlEntryLatencyMs int64
-	ControlProxyLatencyMs int64
-	ControlExitLatencyMs  int64
-	ControlLatencyStatus  string
-	ControlLatencyError   string
-	ControlLatencyAt      *time.Time
 	GroupNodes            []GroupNode `gorm:"many2many:group_node_nodes"` // 反向关联字段
 }
 

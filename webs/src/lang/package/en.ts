@@ -12,7 +12,6 @@ export default {
     templatelist: "Template List",
     settingsmenu: "Settings",
     telegrambot: "Telegram Bot",
-    speedtestagents: "Home Speed Agents",
   },
   // 登录页面国际化
   login: {

@@ -29,7 +29,6 @@ func AuthorToken(c *gin.Context) {
 	list := []string{
 		"/static",
 		"/api/v1/auth/login",
-		"/api/v1/agent/",
 		"/c/",
 		"/n/",
 		"/api/v1/version",

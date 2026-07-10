@@ -118,6 +118,7 @@ func EncodeClash(urls []string, sqlconfig SqlConfig) ([]byte, error) {
 			ssr, err := DecodeSSRURL(link)
 			if err != nil {
 				log.Println(err)
+				continue
 			}
 			// 如果没有名字，就用服务器地址作为名字
 			if ssr.Qurey.Remarks == "" {
@@ -191,8 +192,15 @@ func EncodeClash(urls []string, sqlconfig SqlConfig) ([]byte, error) {
 			if vmess.Tls != "none" && vmess.Tls != "" {
 				tls = true
 			}
-			port, _ := convertToInt(vmess.Port)
-			aid, _ := convertToInt(vmess.Aid)
+			port, err := convertToInt(vmess.Port)
+			if err != nil || port <= 0 {
+				log.Println("invalid vmess port")
+				continue
+			}
+			aid, err := convertToInt(vmess.Aid)
+			if err != nil {
+				aid = 0
+			}
 			vmessproxy := Proxy{
 				Name:             vmess.Ps,
 				Type:             "vmess",

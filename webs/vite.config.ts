@@ -213,9 +213,35 @@ export default defineConfig(({ mode }: ConfigEnv): UserConfig => {
       },
       rollupOptions: {
         output: {
-          // manualChunks: {
-          //   "vue-i18n": ["vue-i18n"],
-          // },
+          manualChunks(id) {
+            if (!id.includes("node_modules")) return;
+            if (
+              id.includes("/@wangeditor/") ||
+              id.includes("/codemirror/") ||
+              id.includes("/@codemirror/")
+            ) {
+              return "editor";
+            }
+            if (id.includes("/echarts/")) {
+              return "charts";
+            }
+            if (id.includes("/element-plus/") || id.includes("/@element-plus/")) {
+              return "element-plus";
+            }
+            if (
+              id.includes("/vue/") ||
+              id.includes("/vue-router/") ||
+              id.includes("/pinia/") ||
+              id.includes("/vue-i18n/") ||
+              id.includes("/@vueuse/")
+            ) {
+              return "vue-vendor";
+            }
+            if (id.includes("/sortablejs/") || id.includes("/vue-draggable-plus/")) {
+              return "drag";
+            }
+            return "vendor";
+          },
           // 用于从入口点创建的块的打包输出格式[name]表示文件名,[hash]表示该文件内容hash值
           entryFileNames: "js/[name].[hash].js",
           // 用于命名代码拆分时创建的共享块的输出命名

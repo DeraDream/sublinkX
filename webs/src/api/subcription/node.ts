@@ -33,16 +33,6 @@ export function DelNode(data: any){
     params: data,
   });
 }
-export function testControlLatency(data: any){
-  return request({
-    url: "/api/v1/nodes/control-latency",
-    method: "post",
-    data,
-    headers: {
-      "Content-Type": "multipart/form-data",
-    },
-  });
-}
 export function setNodeDisabled(data: any){
   return request({
     url: "/api/v1/nodes/disabled",

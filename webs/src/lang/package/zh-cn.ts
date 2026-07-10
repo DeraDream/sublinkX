@@ -12,7 +12,6 @@ export default {
     templatelist: "模板列表",
     settingsmenu: "系统设置",
     telegrambot: "Telegram 机器人",
-    speedtestagents: "家宽测速端",
   },
   // 登录页面国际化
   login: {

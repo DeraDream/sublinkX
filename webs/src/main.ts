@@ -3,7 +3,8 @@ import App from "./App.vue";
 import router from "@/router";
 import { setupStore } from "@/store";
 import { setupDirective } from "@/directive";
-import { setupElIcons, setupI18n, setupPermission } from "@/plugins";
+import { setupI18n } from "@/plugins/i18n";
+import { setupPermission } from "@/plugins/permission";
 import { setupDialogKeyboardShortcuts } from "@/utils/dialog-keyboard";
 
 // 本地SVG图标
@@ -20,8 +21,6 @@ const app = createApp(App);
 setupDirective(app);
 // 全局注册 状态管理(store)
 setupStore(app);
-// 全局注册Element-plus图标
-setupElIcons(app);
 // 国际化
 setupI18n(app);
 // 注册动态路由
