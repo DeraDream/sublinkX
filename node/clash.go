@@ -109,7 +109,7 @@ func EncodeClash(urls []string, sqlconfig SqlConfig) ([]byte, error) {
 				Server:           ss.Server,
 				Port:             ss.Port,
 				Cipher:           ss.Param.Cipher,
-				Password:         ss.Param.Password,
+				Password:         ss.ClientPassword(),
 				Udp:              sqlconfig.Udp,
 				Skip_cert_verify: sqlconfig.Cert,
 			}

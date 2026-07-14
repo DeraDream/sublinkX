@@ -22,6 +22,24 @@ type Param struct {
 	Password string
 }
 
+func CompatibleSSPassword(cipher, password string) string {
+	if !strings.HasPrefix(strings.ToLower(strings.TrimSpace(cipher)), "2022-") {
+		return password
+	}
+	parts := strings.Split(password, ":")
+	for i := len(parts) - 1; i >= 0; i-- {
+		part := strings.TrimSpace(parts[i])
+		if part != "" {
+			return part
+		}
+	}
+	return password
+}
+
+func (s Ss) ClientPassword() string {
+	return CompatibleSSPassword(s.Param.Cipher, s.Param.Password)
+}
+
 func parsingSS(s string) (string, string, string) {
 	/* ss url编码分为三部分：加密方式、服务器地址和端口、备注
 	://和@之前为第一部分 @到#之间为第二部分 #之后为第三部分
@@ -106,7 +124,7 @@ func CallSSURL() {
 // ss 编码输出
 func EncodeSSURL(s Ss) string {
 	//编码格式 ss://base64(base64(method:password)@hostname:port)
-	p := Base64Encode(s.Param.Cipher + ":" + s.Param.Password)
+	p := Base64Encode(s.Param.Cipher + ":" + s.ClientPassword())
 	// 假设备注没有使用服务器加端口命名
 	if s.Name == "" {
 		s.Name = s.Server + ":" + strconv.Itoa(s.Port)

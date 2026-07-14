@@ -47,6 +47,21 @@ func TestDecodeSSURL(t *testing.T) {
 				Type:   "ss",
 			},
 		}, {
+			name: "ss 2022 multi key client compatibility",
+			args: args{
+				s: "ss://2022-blake3-aes-256-gcm:gn9Z%2F6A0oX%2BmuUx2FPmecIfHLHJqlpmj7eALCa60QCk%3D:FO0NiZaoHp2f37hqclsmpbT6ExHGz%2FqoXhTNe6dr9t4%3D@42.193.170.239:46342?type=tcp#Po0",
+			},
+			want: Ss{
+				Param: Param{
+					Cipher:   "2022-blake3-aes-256-gcm",
+					Password: "gn9Z/6A0oX+muUx2FPmecIfHLHJqlpmj7eALCa60QCk=:FO0NiZaoHp2f37hqclsmpbT6ExHGz/qoXhTNe6dr9t4=",
+				},
+				Server: "42.193.170.239",
+				Port:   46342,
+				Name:   "Po0",
+				Type:   "ss",
+			},
+		}, {
 			name: "invalid ss auth",
 			args: args{
 				s: "ss://not-base64-or-sip002@example.com:443#bad",
@@ -63,6 +78,20 @@ func TestDecodeSSURL(t *testing.T) {
 			}
 			if tt.want.Param.Cipher != "" && got != tt.want {
 				t.Errorf("DecodeSSURL() = %#v, want %#v", got, tt.want)
+			}
+			if tt.name == "ss 2022 multi key client compatibility" {
+				wantPassword := "FO0NiZaoHp2f37hqclsmpbT6ExHGz/qoXhTNe6dr9t4="
+				if got.ClientPassword() != wantPassword {
+					t.Errorf("ClientPassword() = %q, want %q", got.ClientPassword(), wantPassword)
+				}
+				encoded := EncodeSSURL(got)
+				roundTrip, err := DecodeSSURL(encoded)
+				if err != nil {
+					t.Fatalf("DecodeSSURL(EncodeSSURL()) error = %v", err)
+				}
+				if roundTrip.Param.Password != wantPassword {
+					t.Errorf("roundTrip password = %q, want %q", roundTrip.Param.Password, wantPassword)
+				}
 			}
 			fmt.Println(got)
 		})

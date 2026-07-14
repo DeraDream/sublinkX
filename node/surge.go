@@ -26,7 +26,7 @@ func EncodeSurge(urls []string, sqlconfig SqlConfig) (string, error) {
 				"server":   ss.Server,
 				"port":     ss.Port,
 				"cipher":   ss.Param.Cipher,
-				"password": ss.Param.Password,
+				"password": ss.ClientPassword(),
 				"udp":      sqlconfig.Udp,
 			}
 			ssproxy := fmt.Sprintf("%s = ss, %s, %d, encrypt-method=%s, password=%s, udp-relay=%t",
