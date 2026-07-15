@@ -340,6 +340,7 @@ const toggleMobileSubSelection = (row: NodeSub, checked: boolean) => {
       class="form-dialog qr-dialog"
       width="400px"
       :title="qrTitle"
+      :fullscreen="isMobile"
     >
       <div class="qr-content">
         <div class="qr-frame">
@@ -362,6 +363,7 @@ const toggleMobileSubSelection = (row: NodeSub, checked: boolean) => {
       class="form-dialog client-dialog"
       width="760px"
       title="节点订阅链接"
+      :fullscreen="isMobile"
     >
       <div class="client-dialog-head">
         <div>
@@ -397,6 +399,7 @@ const toggleMobileSubSelection = (row: NodeSub, checked: boolean) => {
       v-model="dialogVisible"
       class="form-dialog node-subscription-dialog"
       width="min(960px, calc(100vw - 32px))"
+      :fullscreen="isMobile"
       :close-on-click-modal="true"
       destroy-on-close
     >

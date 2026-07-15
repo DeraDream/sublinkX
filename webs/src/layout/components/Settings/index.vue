@@ -6,14 +6,15 @@
   >
     <el-divider>{{ $t("settings.theme") }}</el-divider>
 
-    <div class="flex-center">
-      <el-switch
-        v-model="isDark"
-        :active-icon="Moon"
-        :inactive-icon="Sunny"
-        @change="changeTheme"
-      />
-    </div>
+    <el-radio-group
+      v-model="themeMode"
+      class="theme-mode-group"
+      @change="changeTheme"
+    >
+      <el-radio-button :label="ThemeEnum.LIGHT">日间</el-radio-button>
+      <el-radio-button :label="ThemeEnum.DARK">夜间</el-radio-button>
+      <el-radio-button :label="ThemeEnum.AUTO">跟随系统</el-radio-button>
+    </el-radio-group>
 
     <el-divider>{{ $t("settings.interface") }}</el-divider>
 
@@ -56,7 +57,6 @@
 
 <script setup lang="ts">
 import { useSettingsStore, usePermissionStore, useAppStore } from "@/store";
-import { Sunny, Moon } from "@element-plus/icons-vue";
 import { LayoutEnum } from "@/enums/LayoutEnum";
 import { ThemeEnum } from "@/enums/ThemeEnum";
 
@@ -84,10 +84,12 @@ function changeThemeColor(color: string) {
 /**
  * 切换主题
  */
-const isDark = ref<boolean>(settingsStore.theme === ThemeEnum.DARK);
+const themeMode = computed({
+  get: () => settingsStore.theme,
+  set: (value: string) => settingsStore.changeTheme(value),
+});
 const changeTheme = (val: any) => {
-  isDark.value = val;
-  settingsStore.changeTheme(isDark.value ? ThemeEnum.DARK : ThemeEnum.LIGHT);
+  settingsStore.changeTheme(val);
 };
 
 /**
@@ -141,5 +143,15 @@ function findOutermostParent(tree: any[], findName: string) {
 <style lang="scss" scoped>
 .settings-option {
   @apply py-1 flex-x-between;
+}
+
+.theme-mode-group {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  width: 100%;
+}
+
+.theme-mode-group :deep(.el-radio-button__inner) {
+  width: 100%;
 }
 </style>

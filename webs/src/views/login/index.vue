@@ -90,7 +90,11 @@ const settingsStore = useSettingsStore();
 const { t } = useI18n();
 const route = useRoute();
 
-const isDark = ref(settingsStore.theme === ThemeEnum.DARK);
+const isDark = computed({
+  get: () => settingsStore.effectiveTheme === ThemeEnum.DARK,
+  set: (value: boolean) =>
+    settingsStore.changeTheme(value ? ThemeEnum.DARK : ThemeEnum.LIGHT),
+});
 const loading = ref(false);
 const isCapslock = ref(false);
 const loginFormRef = ref(ElForm);
@@ -147,9 +151,7 @@ function handleLogin() {
 }
 
 function toggleTheme() {
-  const theme =
-    settingsStore.theme === ThemeEnum.DARK ? ThemeEnum.LIGHT : ThemeEnum.DARK;
-  settingsStore.changeTheme(theme);
+  settingsStore.changeTheme(isDark.value ? ThemeEnum.DARK : ThemeEnum.LIGHT);
 }
 
 function checkCapslock(event: KeyboardEvent) {

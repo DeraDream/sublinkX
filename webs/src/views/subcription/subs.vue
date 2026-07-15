@@ -48,6 +48,7 @@ interface Config {
 }
 
 interface SubLogs {
+  ip?: string;
   IP?: string;
   Count?: number;
   Addr?: string;
@@ -516,6 +517,7 @@ const OpenUrl = (url: string) => {
       class="form-dialog qr-dialog"
       width="400px"
       :title="QrTitle"
+      :fullscreen="isMobile"
     >
       <div class="qr-content">
         <div class="qr-frame">
@@ -538,6 +540,7 @@ const OpenUrl = (url: string) => {
       class="form-dialog client-dialog"
       width="760px"
       title="订阅链接"
+      :fullscreen="isMobile"
     >
       <div class="client-dialog-head">
         <div>
@@ -600,19 +603,43 @@ const OpenUrl = (url: string) => {
       class="data-dialog"
       title="访问记录"
       width="min(880px, calc(100vw - 32px))"
+      :fullscreen="isMobile"
     >
-      <el-table :data="IplogsList" style="width: 100%">
+      <el-table class="desktop-data-table" :data="IplogsList" style="width: 100%">
         <el-table-column prop="IP" label="IP" />
         <el-table-column prop="Count" label="总访问次数" />
         <el-table-column prop="Addr" label="来源" />
         <el-table-column prop="Date" label="最近时间" />
       </el-table>
+      <div class="mobile-only-list mobile-card-list iplog-mobile-list">
+        <div v-if="IplogsList.length === 0" class="mobile-empty-state">
+          暂无访问记录
+        </div>
+        <article
+          v-for="(log, index) in IplogsList"
+          :key="`${log.IP || log.ip}-${index}`"
+          class="mobile-card"
+        >
+          <div class="mobile-card-top">
+            <div class="mobile-card-title">
+              <strong>{{ log.IP || log.ip || "未知 IP" }}</strong>
+              <small>{{ log.Date || log.date || "未知时间" }}</small>
+            </div>
+            <span class="mobile-status">{{ log.Count || log.count || 0 }} 次</span>
+          </div>
+          <div class="mobile-field">
+            <span>来源</span>
+            <strong>{{ log.Addr || log.address || "未知" }}</strong>
+          </div>
+        </article>
+      </div>
     </el-dialog>
 
     <el-dialog
       v-model="dialogVisible"
       class="form-dialog subscription-wizard-dialog"
       width="min(1040px, calc(100vw - 32px))"
+      :fullscreen="isMobile"
       :close-on-click-modal="true"
       destroy-on-close
     >

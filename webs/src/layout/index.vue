@@ -1,11 +1,5 @@
 <template>
   <div class="app-shell" :class="classObj">
-    <div
-      v-if="!classObj.mobile && classObj.openSidebar"
-      class="sidebar-mask"
-      @click="handleOutsideClick"
-    />
-
     <Sidebar v-if="!classObj.mobile" class="sidebar-container" />
 
     <div class="main-container">
@@ -41,9 +35,6 @@ watchEffect(() => {
   }
 });
 
-function handleOutsideClick() {
-  appStore.closeSideBar();
-}
 </script>
 
 <style lang="scss" scoped>
@@ -52,17 +43,10 @@ function handleOutsideClick() {
   background: var(--el-bg-color-page);
 }
 
-.sidebar-mask {
-  position: fixed;
-  inset: 0;
-  z-index: 998;
-  background: rgb(15 23 42 / 32%);
-}
-
 .sidebar-container {
   position: fixed;
   inset: 0 auto 0 0;
-  z-index: 999;
+  z-index: 30;
   width: $sidebar-width;
   overflow: hidden;
   background: $menu-background;

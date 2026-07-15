@@ -22,14 +22,14 @@
     </template>
 
     <el-tooltip
-      :content="isDark ? '切换为浅色模式' : '切换为暗黑模式'"
+      :content="themeTooltip"
       effect="dark"
       placement="bottom"
     >
       <button
         class="setting-item theme-toggle"
         type="button"
-        :aria-label="isDark ? '切换为浅色模式' : '切换为暗黑模式'"
+        :aria-label="themeTooltip"
         @click="toggleTheme"
       >
         <svg-icon :icon-class="isDark ? 'sunny' : 'moon'" />
@@ -125,7 +125,13 @@ const route = useRoute();
 const router = useRouter();
 
 const isMobile = computed(() => appStore.device === DeviceEnum.MOBILE);
-const isDark = computed(() => settingsStore.theme === ThemeEnum.DARK);
+const isDark = computed(() => settingsStore.effectiveTheme === ThemeEnum.DARK);
+const themeTooltip = computed(() => {
+  if (settingsStore.theme === ThemeEnum.LIGHT) return "当前日间，点击切换夜间";
+  if (settingsStore.theme === ThemeEnum.DARK)
+    return "当前夜间，点击切换跟随系统";
+  return "当前跟随系统，点击切换日间";
+});
 
 const { isFullscreen, toggle } = useFullscreen();
 const { t } = useI18n();
@@ -165,7 +171,13 @@ const passwordRules = {
 };
 
 function toggleTheme() {
-  settingsStore.changeTheme(isDark.value ? ThemeEnum.LIGHT : ThemeEnum.DARK);
+  const nextTheme =
+    settingsStore.theme === ThemeEnum.LIGHT
+      ? ThemeEnum.DARK
+      : settingsStore.theme === ThemeEnum.DARK
+        ? ThemeEnum.AUTO
+        : ThemeEnum.LIGHT;
+  settingsStore.changeTheme(nextTheme);
 }
 
 function openPasswordDialog() {

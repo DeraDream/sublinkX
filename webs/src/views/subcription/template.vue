@@ -276,6 +276,7 @@ const toggleMobileTemplateSelection = (row: Temp, checked: boolean) => {
       class="template-editor-dialog"
       width="calc(100vw - 64px)"
       top="32px"
+      :fullscreen="isMobile"
       :close-on-click-modal="true"
       destroy-on-close
     >

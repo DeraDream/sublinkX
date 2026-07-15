@@ -29,6 +29,23 @@ export const useSettingsStore = defineStore("setting", () => {
   );
   // 主题：light-亮色(默认) dark-暗色
   const theme = useStorage<string>("theme", defaultSettings.theme);
+  const systemDark = ref(false);
+  let mediaQuery: MediaQueryList | undefined;
+
+  if (typeof window !== "undefined") {
+    mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
+    systemDark.value = mediaQuery.matches;
+    mediaQuery.addEventListener("change", (event) => {
+      systemDark.value = event.matches;
+    });
+  }
+  const effectiveTheme = computed(() =>
+    theme.value === ThemeEnum.AUTO
+      ? systemDark.value
+        ? ThemeEnum.DARK
+        : ThemeEnum.LIGHT
+      : theme.value
+  );
   // 是否开启水印
   const watermarkEnabled = useStorage<boolean>(
     "watermarkEnabled",
@@ -36,14 +53,13 @@ export const useSettingsStore = defineStore("setting", () => {
   );
 
   watch(
-    [theme, themeColor],
+    [effectiveTheme, themeColor],
     ([newTheme, newThemeColor], [oldTheme, oldThemeColor]) => {
       if (newTheme !== oldTheme) {
-        if (newTheme === ThemeEnum.DARK) {
-          document.documentElement.classList.add("dark");
-        } else {
-          document.documentElement.classList.remove("dark");
-        }
+        document.documentElement.classList.toggle(
+          "dark",
+          newTheme === ThemeEnum.DARK
+        );
       }
 
       if (newThemeColor !== oldThemeColor) {
@@ -115,6 +131,8 @@ export const useSettingsStore = defineStore("setting", () => {
     layout,
     themeColor,
     theme,
+    effectiveTheme,
+    systemDark,
     watermarkEnabled,
     changeSetting,
     changeTheme,

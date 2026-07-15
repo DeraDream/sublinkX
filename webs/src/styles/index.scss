@@ -595,6 +595,7 @@ html.dark .el-dialog {
     width: 100vw !important;
     max-width: none;
     max-height: 100dvh;
+    height: 100dvh;
     margin: 0 !important;
     flex-direction: column;
     border-width: 0;
@@ -611,14 +612,99 @@ html.dark .el-dialog {
   .el-dialog__body {
     max-height: none;
     flex: 1;
+    min-height: 0;
+    overflow-y: auto;
   }
 
   .el-dialog__footer {
     padding-bottom: calc(14px + env(safe-area-inset-bottom));
   }
 
-  .mobile-page {
+  .el-dialog__header {
+    background: var(--el-bg-color);
+  }
+
+  .el-dialog__footer {
+    background: var(--el-bg-color);
+  }
+
+  html.dark .el-dialog {
+    background: #090c12;
+    border-color: #202631;
+  }
+
+  html.dark .el-dialog__header,
+  html.dark .el-dialog__footer {
+    background: #090c12;
+    border-color: #202631;
+  }
+
+  html.dark .el-dialog__body {
     background: #05070b;
+  }
+
+  html.dark .dialog-heading h2,
+  html.dark .editor-dialog-heading h2 {
+    color: #f8fafc;
+  }
+
+  html.dark .dialog-heading p,
+  html.dark .dialog-intro,
+  html.dark .editor-dialog-heading p {
+    color: #8b93a7;
+  }
+
+  html.dark .client-card,
+  html.dark .template-card,
+  html.dark .summary-card,
+  html.dark .summary-block,
+  html.dark .node-column,
+  html.dark .node-panel,
+  html.dark .editor-panel {
+    background: #151820;
+    border-color: #2a303b;
+  }
+
+  html.dark .client-card-title span,
+  html.dark .template-card-head strong,
+  html.dark .node-column-head strong,
+  html.dark .node-panel-head strong,
+  html.dark .panel-copy h3,
+  html.dark .summary-card strong,
+  html.dark .summary-block strong {
+    color: #f8fafc;
+  }
+
+  html.dark .client-card p,
+  html.dark .panel-copy p,
+  html.dark .summary-card span,
+  html.dark .summary-block p {
+    color: #8b93a7;
+  }
+
+  html.dark .node-option,
+  html.dark .draggable-item {
+    color: #d8dee9;
+    background: #151820;
+    border-color: #2a303b;
+  }
+
+  html.dark .node-empty,
+  html.dark .empty-selection,
+  html.dark .empty-hint {
+    color: #8b93a7;
+    background: #10131a;
+    border-color: #2a303b;
+  }
+
+  html.dark .yaml-preview,
+  html.dark .editor-content {
+    background: #10131a;
+    border-color: #2a303b;
+  }
+
+  .mobile-page {
+    background: #f4f6fa;
   }
 
   .mobile-page .page-heading {
@@ -626,12 +712,12 @@ html.dark .el-dialog {
   }
 
   .mobile-page .page-heading h1 {
-    color: #f8fafc;
+    color: #111827;
     font-size: 20px;
   }
 
   .mobile-page .page-heading p {
-    color: #8b93a7;
+    color: #6b7280;
   }
 
   .mobile-page .page-heading .el-button {
@@ -645,16 +731,16 @@ html.dark .el-dialog {
   .mobile-app-surface {
     padding: 10px;
     overflow: visible;
-    background: #090c12;
-    border-color: #202631;
+    background: #ffffff;
+    border-color: #e5e7eb;
     border-radius: 12px;
-    box-shadow: 0 18px 40px rgb(0 0 0 / 34%);
+    box-shadow: 0 14px 32px rgb(15 23 42 / 8%);
   }
 
   .mobile-app-surface .table-toolbar {
     min-height: 0;
     margin-bottom: 10px;
-    color: #8b93a7;
+    color: #6b7280;
   }
 
   .desktop-data-table {
@@ -672,7 +758,7 @@ html.dark .el-dialog {
   .mobile-empty-state {
     display: grid;
     min-height: 120px;
-    color: #8b93a7;
+    color: #6b7280;
     place-items: center;
   }
 
@@ -680,11 +766,11 @@ html.dark .el-dialog {
     display: grid;
     gap: 10px;
     padding: 12px;
-    color: #e5e7eb;
-    background: #151820;
-    border: 1px solid #2a303b;
+    color: #111827;
+    background: #ffffff;
+    border: 1px solid #e5e7eb;
     border-radius: 10px;
-    box-shadow: inset 0 1px 0 rgb(255 255 255 / 4%);
+    box-shadow: 0 8px 22px rgb(15 23 42 / 6%);
   }
 
   .mobile-card.is-muted {
@@ -706,7 +792,7 @@ html.dark .el-dialog {
 
   .mobile-card-title strong {
     overflow: hidden;
-    color: #f8fafc;
+    color: #111827;
     font-size: 14px;
     font-weight: 700;
     text-overflow: ellipsis;
@@ -716,7 +802,7 @@ html.dark .el-dialog {
   .mobile-card-title small,
   .mobile-card-subtext,
   .mobile-field span {
-    color: #8b93a7;
+    color: #6b7280;
     font-size: 11px;
   }
 
@@ -755,15 +841,15 @@ html.dark .el-dialog {
     gap: 3px;
     min-width: 0;
     padding: 7px 8px;
-    background: #10131a;
-    border: 1px solid #2a303b;
+    background: #f8fafc;
+    border: 1px solid #e5e7eb;
     border-radius: 6px;
   }
 
   .mobile-field strong,
   .mobile-field code {
     overflow: hidden;
-    color: #d8dee9;
+    color: #111827;
     font-size: 12px;
     font-weight: 600;
     text-overflow: ellipsis;
@@ -812,9 +898,9 @@ html.dark .el-dialog {
     min-width: 0;
     height: 30px;
     margin-left: 0;
-    color: #d8dee9;
-    background: #0f2746;
-    border: 1px solid #1f6feb66;
+    color: #1d4ed8;
+    background: #eff6ff;
+    border: 1px solid #bfdbfe;
     border-radius: 7px;
   }
 
@@ -843,8 +929,8 @@ html.dark .el-dialog {
     gap: 10px;
     padding: 10px;
     margin: 10px 0 0;
-    background: rgb(9 12 18 / 88%);
-    border: 1px solid #202631;
+    background: rgb(255 255 255 / 88%);
+    border: 1px solid #e5e7eb;
     border-radius: 10px;
     backdrop-filter: blur(14px);
   }
@@ -860,9 +946,9 @@ html.dark .el-dialog {
     width: 100%;
     height: 32px;
     margin-left: 0;
-    color: #d8dee9;
-    background: #151820;
-    border-color: #2a303b;
+    color: #374151;
+    background: #ffffff;
+    border-color: #e5e7eb;
     border-radius: 7px;
   }
 
@@ -875,6 +961,67 @@ html.dark .el-dialog {
   .mobile-app-surface .table-pagination {
     width: 100%;
     margin-left: 0;
+  }
+
+  html.dark .mobile-page {
+    background: #05070b;
+  }
+
+  html.dark .mobile-page .page-heading h1 {
+    color: #f8fafc;
+  }
+
+  html.dark .mobile-page .page-heading p,
+  html.dark .mobile-app-surface .table-toolbar,
+  html.dark .mobile-empty-state,
+  html.dark .mobile-card-title small,
+  html.dark .mobile-card-subtext,
+  html.dark .mobile-field span {
+    color: #8b93a7;
+  }
+
+  html.dark .mobile-app-surface {
+    background: #090c12;
+    border-color: #202631;
+    box-shadow: 0 18px 40px rgb(0 0 0 / 34%);
+  }
+
+  html.dark .mobile-card {
+    color: #e5e7eb;
+    background: #151820;
+    border-color: #2a303b;
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 4%);
+  }
+
+  html.dark .mobile-card-title strong {
+    color: #f8fafc;
+  }
+
+  html.dark .mobile-field {
+    background: #10131a;
+    border-color: #2a303b;
+  }
+
+  html.dark .mobile-field strong,
+  html.dark .mobile-field code {
+    color: #d8dee9;
+  }
+
+  html.dark .mobile-card-actions .el-button {
+    color: #d8dee9;
+    background: #0f2746;
+    border-color: #1f6feb66;
+  }
+
+  html.dark .mobile-app-surface .table-footer {
+    background: rgb(9 12 18 / 88%);
+    border-color: #202631;
+  }
+
+  html.dark .mobile-app-surface .batch-actions .el-button {
+    color: #d8dee9;
+    background: #151820;
+    border-color: #2a303b;
   }
 }
 
