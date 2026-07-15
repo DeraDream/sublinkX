@@ -276,7 +276,6 @@ const toggleMobileTemplateSelection = (row: Temp, checked: boolean) => {
       class="template-editor-dialog"
       width="calc(100vw - 64px)"
       top="32px"
-      :fullscreen="isMobile"
       :close-on-click-modal="true"
       destroy-on-close
     >
@@ -657,8 +656,7 @@ const toggleMobileTemplateSelection = (row: Temp, checked: boolean) => {
 
 @media (max-width: 640px) {
   :deep(.template-editor-dialog) {
-    width: 100vw !important;
-    margin-top: 0 !important;
+    width: min(92vw, 520px) !important;
   }
 
   :deep(.template-editor-dialog .el-dialog__body) {

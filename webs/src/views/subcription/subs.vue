@@ -517,7 +517,6 @@ const OpenUrl = (url: string) => {
       class="form-dialog qr-dialog"
       width="400px"
       :title="QrTitle"
-      :fullscreen="isMobile"
     >
       <div class="qr-content">
         <div class="qr-frame">
@@ -540,7 +539,6 @@ const OpenUrl = (url: string) => {
       class="form-dialog client-dialog"
       width="760px"
       title="订阅链接"
-      :fullscreen="isMobile"
     >
       <div class="client-dialog-head">
         <div>
@@ -603,7 +601,6 @@ const OpenUrl = (url: string) => {
       class="data-dialog"
       title="访问记录"
       width="min(880px, calc(100vw - 32px))"
-      :fullscreen="isMobile"
     >
       <el-table class="desktop-data-table" :data="IplogsList" style="width: 100%">
         <el-table-column prop="IP" label="IP" />
@@ -639,7 +636,6 @@ const OpenUrl = (url: string) => {
       v-model="dialogVisible"
       class="form-dialog subscription-wizard-dialog"
       width="min(1040px, calc(100vw - 32px))"
-      :fullscreen="isMobile"
       :close-on-click-modal="true"
       destroy-on-close
     >
@@ -1410,8 +1406,7 @@ const OpenUrl = (url: string) => {
 
 @media (max-width: 640px) {
   :deep(.subscription-wizard-dialog) {
-    width: 100vw !important;
-    margin-top: 0 !important;
+    width: min(92vw, 520px) !important;
   }
 
   :deep(.subscription-wizard-dialog .el-dialog__body) {

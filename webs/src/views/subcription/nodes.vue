@@ -522,7 +522,6 @@ watch(currentPage, () => {
       v-model="Nodedialog"
       class="form-dialog node-dialog"
       width="680px"
-      :fullscreen="isMobile"
       :close-on-click-modal="true"
       destroy-on-close
     >
@@ -1064,20 +1063,19 @@ watch(currentPage, () => {
     flex: 0 0 auto;
   }
 
-  :deep(.node-dialog.is-fullscreen) {
+  :deep(.node-dialog) {
     display: flex;
     flex-direction: column;
-    margin: 0;
   }
 
-  :deep(.node-dialog.is-fullscreen .el-dialog__body) {
+  :deep(.node-dialog .el-dialog__body) {
     flex: 1;
     min-height: 0;
     overflow-y: auto;
     padding: 12px 16px;
   }
 
-  :deep(.node-dialog.is-fullscreen .el-dialog__footer) {
+  :deep(.node-dialog .el-dialog__footer) {
     padding: 10px 16px calc(14px + env(safe-area-inset-bottom));
     border-top: 1px solid var(--el-border-color-lighter);
   }

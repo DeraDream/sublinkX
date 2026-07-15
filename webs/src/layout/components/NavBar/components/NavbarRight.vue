@@ -255,11 +255,15 @@ function logout() {
 @media (max-width: 640px) {
   .setting-item {
     min-width: 34px;
-    color: #d8dee9;
+    color: var(--el-text-color-primary);
 
     &:hover {
       background: rgb(255 255 255 / 8%);
     }
+  }
+
+  html.dark .setting-item {
+    color: #d8dee9;
   }
 
   .setting-item :deep(span) {

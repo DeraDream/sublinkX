@@ -96,9 +96,9 @@ function go(path: string) {
   grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
   min-height: calc(62px + env(safe-area-inset-bottom));
   padding: 6px 6px calc(6px + env(safe-area-inset-bottom));
-  background: rgb(5 7 11 / 94%);
-  border-top: 1px solid #202631;
-  box-shadow: 0 -10px 30px rgb(0 0 0 / 42%);
+  background: rgb(255 255 255 / 94%);
+  border-top: 1px solid #e5e7eb;
+  box-shadow: 0 -10px 30px rgb(15 23 42 / 10%);
   backdrop-filter: blur(14px);
 }
 
@@ -109,7 +109,7 @@ function go(path: string) {
   place-items: center;
   gap: 3px;
   padding: 4px 2px;
-  color: #8b93a7;
+  color: #6b7280;
   background: transparent;
   border: 0;
   border-radius: 8px;
@@ -132,6 +132,21 @@ function go(path: string) {
 }
 
 .mobile-tabbar-item.active {
+  color: #0969ff;
+  background: rgb(9 105 255 / 10%);
+}
+
+html.dark .mobile-tabbar {
+  background: rgb(5 7 11 / 94%);
+  border-top-color: #202631;
+  box-shadow: 0 -10px 30px rgb(0 0 0 / 42%);
+}
+
+html.dark .mobile-tabbar-item {
+  color: #8b93a7;
+}
+
+html.dark .mobile-tabbar-item.active {
   color: #58a6ff;
   background: rgb(9 105 255 / 16%);
 }

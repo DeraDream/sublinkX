@@ -47,7 +47,7 @@ function toggleSideBar() {
 @media (max-width: 640px) {
   .page-title {
     max-width: 46vw;
-    color: #f8fafc;
+    color: var(--el-text-color-primary);
     font-size: 14px;
   }
 }
