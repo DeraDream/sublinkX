@@ -345,6 +345,11 @@ const Groupformatter = (row: any, cellValue: any) => {
   }
   return data.map((group: any) => group.Name).join(", ");
 };
+const maskMiddle = (value: string, head = 32, tail = 18) => {
+  if (!value) return "";
+  if (value.length <= head + tail + 3) return value;
+  return `${value.slice(0, head)}...${value.slice(-tail)}`;
+};
 // --- 复制链接 (保持不变) ---
 const copyUrl = (url: string) => {
   if (navigator.clipboard) {
@@ -693,11 +698,13 @@ watch(currentPage, () => {
         <el-table-column
           prop="Link"
           label="节点链接"
-          min-width="180"
+          min-width="320"
           show-overflow-tooltip
         >
           <template #default="{ row }">
-            <code class="node-link">{{ row.Link }}</code>
+            <code class="node-link" :title="row.Link">
+              {{ maskMiddle(row.Link) }}
+            </code>
           </template>
         </el-table-column>
         <el-table-column
@@ -714,18 +721,20 @@ watch(currentPage, () => {
           :formatter="Groupformatter"
           show-overflow-tooltip
         />
-        <el-table-column label="操作" width="190" align="right" fixed="right">
+        <el-table-column label="操作" width="132" align="center" fixed="right">
           <template #default="scope">
-            <el-button link type="primary" @click="handleEditNode(scope.row)"
-              >编辑</el-button
-            >
-            <el-button link @click="copyInfo(scope.row)">复制</el-button>
-            <el-button link @click="toggleNodeDisabled(scope.row)">
-              {{ scope.row.Disabled ? "恢复" : "禁用" }}
-            </el-button>
-            <el-button link type="danger" @click="handleDel(scope.row)"
-              >删除</el-button
-            >
+            <div class="desktop-action-grid">
+              <el-button link type="primary" @click="handleEditNode(scope.row)"
+                >编辑</el-button
+              >
+              <el-button link @click="copyInfo(scope.row)">复制</el-button>
+              <el-button link @click="toggleNodeDisabled(scope.row)">
+                {{ scope.row.Disabled ? "恢复" : "禁用" }}
+              </el-button>
+              <el-button link type="danger" @click="handleDel(scope.row)"
+                >删除</el-button
+              >
+            </div>
           </template>
         </el-table-column>
       </el-table>
@@ -839,10 +848,27 @@ watch(currentPage, () => {
 }
 
 .node-link {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 12px;
   color: var(--el-text-color-secondary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
   background: transparent;
+}
+
+.desktop-action-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 2px 10px;
+  justify-items: center;
+}
+
+.desktop-action-grid .el-button {
+  min-height: 22px;
+  margin-left: 0;
 }
 
 .node-import-preview {
@@ -949,21 +975,6 @@ watch(currentPage, () => {
     place-items: center;
   }
 
-  .node-card {
-    display: grid;
-    gap: 10px;
-    padding: 12px;
-    color: #e5e7eb;
-    background: #151820;
-    border: 1px solid #2a303b;
-    border-radius: 10px;
-    box-shadow: inset 0 1px 0 rgb(255 255 255 / 4%);
-  }
-
-  .node-card.is-disabled-card {
-    background: #10131a;
-  }
-
   .node-card-head {
     display: grid;
     grid-template-columns: auto minmax(0, 1fr) auto;
@@ -981,7 +992,6 @@ watch(currentPage, () => {
     overflow: hidden;
     font-size: 15px;
     font-weight: 650;
-    color: #f8fafc;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
@@ -989,7 +999,6 @@ watch(currentPage, () => {
   .node-card-title span,
   .node-card-meta {
     font-size: 12px;
-    color: #8b93a7;
   }
 
   .node-card-meta {

@@ -1046,12 +1046,27 @@ html.dark .el-table {
   --el-table-header-text-color: #e2e8f0;
 }
 
+html.dark .el-table th.el-table__cell {
+  color: #93a4bb;
+}
+
 html.dark .el-button.is-link:not(.is-disabled) {
   --el-button-text-color: #7dd3fc;
 }
 
 html.dark .el-button--danger.is-link:not(.is-disabled) {
   --el-button-text-color: #fca5a5;
+}
+
+html.dark .sidebar-container .el-menu-item.is-active,
+html.dark .sidebar-container .el-sub-menu.is-active > .el-sub-menu__title {
+  color: #eaf3ff;
+  background: linear-gradient(90deg, rgb(9 105 255 / 26%), #151b26);
+}
+
+html.dark .sidebar-container .el-menu-item.is-active .svg-icon,
+html.dark .sidebar-container .el-sub-menu.is-active > .el-sub-menu__title .svg-icon {
+  color: #58a6ff;
 }
 
 .table-container > .el-card__header {

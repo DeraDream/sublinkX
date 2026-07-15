@@ -9,7 +9,7 @@
       @click="go(item.path)"
     >
       <svg-icon :icon-class="item.icon || 'menu'" />
-      <span>{{ t(`route.${item.title}`) }}</span>
+      <span>{{ mobileTitle(item.title) }}</span>
     </button>
   </nav>
 </template>
@@ -83,6 +83,16 @@ function go(path: string) {
     router.push(path);
   }
 }
+
+function mobileTitle(title: string) {
+  const titleMap: Record<string, string> = {
+    nodesublist: "节点订阅",
+    templatelist: "模板",
+    settingsmenu: "设置",
+    telegrambot: "机器人",
+  };
+  return titleMap[title] || t(`route.${title}`);
+}
 </script>
 
 <style lang="scss" scoped>
@@ -124,7 +134,7 @@ function go(path: string) {
 .mobile-tabbar-item span {
   max-width: 100%;
   overflow: hidden;
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 600;
   line-height: 1.2;
   text-overflow: ellipsis;

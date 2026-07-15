@@ -58,6 +58,11 @@ const permissionStore = usePermissionStore();
 }
 
 html.dark :deep(.el-menu-item.is-active) {
-  background: #1b2b42;
+  color: #eaf3ff;
+  background: linear-gradient(90deg, rgb(9 105 255 / 26%), #151b26);
+}
+
+html.dark :deep(.el-menu-item.is-active .svg-icon) {
+  color: #58a6ff;
 }
 </style>

@@ -658,6 +658,11 @@ const OpenUrl = (url: string) => {
         <el-step title="确认保存" @click="jumpStep(3)" />
       </el-steps>
 
+      <div class="mobile-wizard-status">
+        <span>步骤 {{ wizardStep + 1 }} / 4</span>
+        <strong>{{ ["基本信息", "输出模板", "选择节点", "确认保存"][wizardStep] }}</strong>
+      </div>
+
       <section v-show="wizardStep === 0" class="wizard-panel">
         <div class="panel-copy">
           <h3>基本信息</h3>
@@ -1110,6 +1115,10 @@ const OpenUrl = (url: string) => {
   border-radius: 10px;
 }
 
+.mobile-wizard-status {
+  display: none;
+}
+
 .wizard-panel {
   min-height: 470px;
   padding: 18px 2px 4px;
@@ -1418,13 +1427,29 @@ const OpenUrl = (url: string) => {
   }
 
   .wizard-steps {
-    overflow-x: auto;
-    padding: 6px;
-    -webkit-overflow-scrolling: touch;
+    display: none;
   }
 
-  .wizard-steps :deep(.el-step) {
-    min-width: 96px;
+  .mobile-wizard-status {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 12px;
+    margin-bottom: 12px;
+    border: 1px solid var(--el-border-color-lighter);
+    border-radius: 10px;
+    background: var(--el-fill-color-extra-light);
+  }
+
+  .mobile-wizard-status span {
+    color: var(--el-text-color-secondary);
+    font-size: 12px;
+  }
+
+  .mobile-wizard-status strong {
+    color: var(--el-text-color-primary);
+    font-size: 13px;
   }
 
   .wizard-panel {

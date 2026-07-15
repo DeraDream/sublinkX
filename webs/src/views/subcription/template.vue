@@ -347,7 +347,9 @@ const toggleMobileTemplateSelection = (row: Temp, checked: boolean) => {
         <p>维护 Clash、Surge 等订阅输出模板</p>
       </div>
       <div class="heading-actions">
-        <el-button @click="openFilePicker">导入本地文件</el-button>
+        <el-button class="import-file-button" @click="openFilePicker">
+          导入本地文件
+        </el-button>
         <el-button type="primary" @click="handleAddTemp">添加模板</el-button>
       </div>
     </div>
@@ -655,6 +657,31 @@ const toggleMobileTemplateSelection = (row: Temp, checked: boolean) => {
 }
 
 @media (max-width: 640px) {
+  .heading-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+  }
+
+  .heading-actions .el-button {
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .heading-actions .import-file-button.el-button {
+    color: #0f172a;
+    background: #ffffff;
+    border-color: #cbd5e1;
+    box-shadow: 0 8px 18px rgb(15 23 42 / 8%);
+  }
+
+  html.dark .heading-actions .import-file-button.el-button {
+    color: #d8dee9;
+    background: #151820;
+    border-color: #2a303b;
+    box-shadow: none;
+  }
+
   :deep(.template-editor-dialog) {
     width: min(92vw, 520px) !important;
   }
