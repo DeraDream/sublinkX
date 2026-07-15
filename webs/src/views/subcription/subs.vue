@@ -1279,8 +1279,8 @@ const OpenUrl = (url: string) => {
 
 @media (max-width: 640px) {
   :deep(.subscription-wizard-dialog) {
-    width: calc(100vw - 12px) !important;
-    margin-top: 6px !important;
+    width: 100vw !important;
+    margin-top: 0 !important;
   }
 
   :deep(.subscription-wizard-dialog .el-dialog__body) {
@@ -1288,7 +1288,7 @@ const OpenUrl = (url: string) => {
   }
 
   :deep(.subscription-wizard-dialog .el-dialog__footer) {
-    padding: 10px 12px;
+    padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
   }
 
   .wizard-steps {

@@ -1,0 +1,144 @@
+<template>
+  <nav class="mobile-tabbar" aria-label="手机端主导航">
+    <button
+      v-for="item in tabItems"
+      :key="item.path"
+      class="mobile-tabbar-item"
+      :class="{ active: isActive(item) }"
+      type="button"
+      @click="go(item.path)"
+    >
+      <svg-icon :icon-class="item.icon || 'menu'" />
+      <span>{{ t(`route.${item.title}`) }}</span>
+    </button>
+  </nav>
+</template>
+
+<script setup lang="ts">
+import { usePermissionStore } from "@/store";
+
+interface TabItem {
+  path: string;
+  basePath: string;
+  icon: string;
+  title: string;
+}
+
+const route = useRoute();
+const router = useRouter();
+const { t } = useI18n();
+const permissionStore = usePermissionStore();
+
+const normalizePath = (path: string) => path.replace(/\/+/g, "/");
+
+const visibleChildren = (children: any[] = []) =>
+  children.filter((child) => !child.meta?.hidden);
+
+const resolveChildPath = (parentPath: string, childPath: string) =>
+  normalizePath(`${parentPath}/${childPath}`).replace(/\/$/, "") || "/";
+
+const tabItems = computed<TabItem[]>(() =>
+  permissionStore.routes
+    .filter((item: any) => !item.meta?.hidden)
+    .flatMap((item: any) => {
+      const children = visibleChildren(item.children);
+      if (item.meta?.alwaysShow) {
+        return [
+          {
+            path:
+              item.redirect ||
+              (children[0] ? resolveChildPath(item.path, children[0].path) : item.path),
+            basePath: item.path,
+            icon: item.meta?.icon || children[0]?.meta?.icon || "menu",
+            title: item.meta?.title || children[0]?.meta?.title || "",
+          },
+        ];
+      }
+      if (children.length > 0) {
+        return children.map((child: any) => ({
+          path: resolveChildPath(item.path, child.path),
+          basePath: item.path,
+          icon: child.meta?.icon || item.meta?.icon || "menu",
+          title: child.meta?.title || item.meta?.title || "",
+        }));
+      }
+      return [
+        {
+          path: item.path,
+          basePath: item.path,
+          icon: item.meta?.icon || "menu",
+          title: item.meta?.title || "",
+        },
+      ];
+    })
+    .filter((item: TabItem) => item.title)
+);
+
+function isActive(item: TabItem) {
+  return route.path === item.path || route.path.startsWith(`${item.basePath}/`);
+}
+
+function go(path: string) {
+  if (route.path !== path) {
+    router.push(path);
+  }
+}
+</script>
+
+<style lang="scss" scoped>
+.mobile-tabbar {
+  position: fixed;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 30;
+  display: none;
+  grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
+  min-height: calc(62px + env(safe-area-inset-bottom));
+  padding: 6px 6px calc(6px + env(safe-area-inset-bottom));
+  background: color-mix(in srgb, var(--el-bg-color) 94%, transparent);
+  border-top: 1px solid var(--el-border-color-lighter);
+  box-shadow: 0 -8px 24px rgb(15 23 42 / 10%);
+  backdrop-filter: blur(14px);
+}
+
+.mobile-tabbar-item {
+  display: grid;
+  min-width: 0;
+  min-height: 50px;
+  place-items: center;
+  gap: 3px;
+  padding: 4px 2px;
+  color: var(--el-text-color-secondary);
+  background: transparent;
+  border: 0;
+  border-radius: 8px;
+  font: inherit;
+}
+
+.mobile-tabbar-item :deep(.svg-icon) {
+  width: 19px;
+  height: 19px;
+}
+
+.mobile-tabbar-item span {
+  max-width: 100%;
+  overflow: hidden;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mobile-tabbar-item.active {
+  color: var(--el-color-primary);
+  background: color-mix(in srgb, var(--el-color-primary) 11%, transparent);
+}
+
+@media (max-width: 992px) {
+  .mobile-tabbar {
+    display: grid;
+  }
+}
+</style>

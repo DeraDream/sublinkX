@@ -1,23 +1,25 @@
 <template>
   <div class="app-shell" :class="classObj">
     <div
-      v-if="classObj.mobile && classObj.openSidebar"
+      v-if="!classObj.mobile && classObj.openSidebar"
       class="sidebar-mask"
       @click="handleOutsideClick"
     />
 
-    <Sidebar class="sidebar-container" />
+    <Sidebar v-if="!classObj.mobile" class="sidebar-container" />
 
     <div class="main-container">
       <NavBar class="fixed-header" />
       <AppMain />
     </div>
+    <MobileTabBar v-if="classObj.mobile" />
   </div>
 </template>
 
 <script setup lang="ts">
 import { useAppStore } from "@/store";
 import { DeviceEnum } from "@/enums/DeviceEnum";
+import MobileTabBar from "./components/MobileTabBar/index.vue";
 
 const appStore = useAppStore();
 const width = useWindowSize().width;
@@ -118,6 +120,7 @@ function handleOutsideClick() {
   .main-container {
     width: 100%;
     margin-left: 0;
+    padding-bottom: calc(74px + env(safe-area-inset-bottom));
   }
 
   .fixed-header {

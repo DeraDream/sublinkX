@@ -587,8 +587,8 @@ const formatTemplateTime = (row: Temp) => formatBeijingTime(row.create_date);
 
 @media (max-width: 640px) {
   :deep(.template-editor-dialog) {
-    width: calc(100vw - 12px) !important;
-    margin-top: 6px !important;
+    width: 100vw !important;
+    margin-top: 0 !important;
   }
 
   :deep(.template-editor-dialog .el-dialog__body) {
@@ -596,7 +596,7 @@ const formatTemplateTime = (row: Temp) => formatBeijingTime(row.create_date);
   }
 
   :deep(.template-editor-dialog .el-dialog__footer) {
-    padding: 10px 12px;
+    padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
   }
 
   .editor-dialog-heading {

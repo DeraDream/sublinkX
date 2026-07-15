@@ -1,6 +1,7 @@
 <template>
   <div class="navbar-left">
     <hamburger
+      v-if="!isMobile"
       :is-active="appStore.sidebar.opened"
       @toggle-click="toggleSideBar"
     />
@@ -10,10 +11,12 @@
 
 <script setup lang="ts">
 import { useAppStore } from "@/store";
+import { DeviceEnum } from "@/enums/DeviceEnum";
 
 const appStore = useAppStore();
 const route = useRoute();
 const { t } = useI18n();
+const isMobile = computed(() => appStore.device === DeviceEnum.MOBILE);
 const pageTitle = computed(() => {
   const title = route.meta.title as string | undefined;
   return title ? t(`route.${title}`) : "";
