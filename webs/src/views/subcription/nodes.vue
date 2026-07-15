@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, shallowRef, onMounted, nextTick, computed } from "vue";
+import { ref, shallowRef, onMounted, nextTick, computed, watch } from "vue";
 import {
   getNodes,
   AddNodes,
@@ -10,6 +10,8 @@ import {
   setNodeDisabled,
 } from "@/api/subcription/node";
 import { formatBeijingTime } from "@/utils/time";
+import { useAppStore } from "@/store";
+import { DeviceEnum } from "@/enums/DeviceEnum";
 
 interface GroupNode {
   ID: number;
@@ -35,6 +37,8 @@ onMounted(async () => {
   await refreshNodePageData();
 });
 const dialogMode = ref<"add" | "edit">("add");
+const appStore = useAppStore();
+const isMobile = computed(() => appStore.device === DeviceEnum.MOBILE);
 
 // --- 表格选择与操作相关数据 ---
 const multipleSelection = ref<Node[]>([]); // Stores selected table items
@@ -79,6 +83,9 @@ const inferredAddNames = computed(() =>
   parsedAddLinks.value.map((link) => extractNodeRemark(link))
 );
 const pagedTableData = computed(() => tableData.value);
+const selectedNodeIds = computed(() =>
+  new Set(multipleSelection.value.map((item) => item.ID))
+);
 
 function decodeBase64Text(text: string) {
   try {
@@ -419,6 +426,10 @@ const selectDel = async () => {
 };
 // 全选
 const selectAll = () => {
+  if (isMobile.value) {
+    multipleSelection.value = [...pagedTableData.value];
+    return;
+  }
   nextTick(() => {
       const table = multipleTable.value;
     if (table) {
@@ -431,6 +442,10 @@ const selectAll = () => {
 };
 // 取消全选
 const selectClear = () => {
+  if (isMobile.value) {
+    multipleSelection.value = [];
+    return;
+  }
   nextTick(() => {
     const table = multipleTable.value;
     if (table) {
@@ -474,6 +489,20 @@ const handleSelectionChange = (val: Node[]) => {
   multipleSelection.value = val;
 };
 
+const isNodeSelected = (row: Node) => selectedNodeIds.value.has(row.ID);
+
+const toggleMobileSelection = (row: Node, checked: boolean) => {
+  if (checked) {
+    if (!isNodeSelected(row)) {
+      multipleSelection.value = [...multipleSelection.value, row];
+    }
+    return;
+  }
+  multipleSelection.value = multipleSelection.value.filter(
+    (item) => item.ID !== row.ID
+  );
+};
+
 watch(activeName, () => {
   refreshFirstPage();
 });
@@ -493,6 +522,7 @@ watch(currentPage, () => {
       v-model="Nodedialog"
       class="form-dialog node-dialog"
       width="680px"
+      :fullscreen="isMobile"
       :close-on-click-modal="true"
       destroy-on-close
     >
@@ -637,6 +667,7 @@ watch(currentPage, () => {
       </div>
 
       <el-table
+        class="desktop-node-table"
         ref="multipleTable"
         :data="pagedTableData"
         :empty-text="tableLoading ? '加载中...' : '暂无数据'"
@@ -699,6 +730,53 @@ watch(currentPage, () => {
           </template>
         </el-table-column>
       </el-table>
+
+      <div class="mobile-node-list" v-loading="tableLoading">
+        <div v-if="pagedTableData.length === 0" class="mobile-empty">
+          {{ tableLoading ? "加载中..." : "暂无数据" }}
+        </div>
+
+        <article
+          v-for="(row, index) in pagedTableData"
+          :key="row.ID"
+          class="node-card"
+          :class="{ 'is-disabled-card': row.Disabled }"
+        >
+          <div class="node-card-head">
+            <el-checkbox
+              :model-value="isNodeSelected(row)"
+              @change="(checked) => toggleMobileSelection(row, Boolean(checked))"
+            />
+            <div class="node-card-title">
+              <strong>{{ row.Name || `节点 ${index + 1}` }}</strong>
+              <span>#{{ (currentPage - 1) * pageSize + index + 1 }}</span>
+            </div>
+            <el-tag v-if="row.Disabled" size="small" type="info" effect="plain">
+              已禁用
+            </el-tag>
+          </div>
+
+          <div class="node-card-meta">
+            <span>{{ Groupformatter(row, null) }}</span>
+            <span>{{ Timeformatter(row) }}</span>
+          </div>
+
+          <code class="mobile-node-link">{{ row.Link }}</code>
+
+          <div class="node-card-actions">
+            <el-button size="small" type="primary" @click="handleEditNode(row)">
+              编辑
+            </el-button>
+            <el-button size="small" @click="copyInfo(row)">复制</el-button>
+            <el-button size="small" @click="toggleNodeDisabled(row)">
+              {{ row.Disabled ? "恢复" : "禁用" }}
+            </el-button>
+            <el-button size="small" type="danger" plain @click="handleDel(row)">
+              删除
+            </el-button>
+          </div>
+        </article>
+      </div>
 
       <div class="table-footer">
         <div class="batch-actions">
@@ -811,5 +889,210 @@ watch(currentPage, () => {
   align-items: center;
   gap: 12px;
   margin-left: auto;
+}
+
+.mobile-node-list {
+  display: none;
+}
+
+@media (max-width: 992px) {
+  .page-heading {
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .page-heading h1 {
+    font-size: 21px;
+  }
+
+  .page-heading p {
+    font-size: 13px;
+  }
+
+  .node-filters {
+    margin: -4px 0 14px;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .node-filters::-webkit-scrollbar {
+    display: none;
+  }
+
+  .desktop-node-table {
+    display: none;
+  }
+
+  .mobile-node-list {
+    display: grid;
+    gap: 10px;
+    min-height: 120px;
+  }
+
+  .mobile-empty {
+    display: grid;
+    min-height: 120px;
+    color: var(--el-text-color-secondary);
+    place-items: center;
+  }
+
+  .node-card {
+    display: grid;
+    gap: 10px;
+    padding: 12px;
+    background: var(--el-bg-color);
+    border: 1px solid var(--el-border-color-lighter);
+    border-radius: 8px;
+  }
+
+  .node-card.is-disabled-card {
+    background: var(--el-fill-color-lighter);
+  }
+
+  .node-card-head {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: 10px;
+    align-items: center;
+  }
+
+  .node-card-title {
+    display: grid;
+    min-width: 0;
+    gap: 2px;
+  }
+
+  .node-card-title strong {
+    overflow: hidden;
+    font-size: 15px;
+    font-weight: 650;
+    color: var(--el-text-color-primary);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .node-card-title span,
+  .node-card-meta {
+    font-size: 12px;
+    color: var(--el-text-color-secondary);
+  }
+
+  .node-card-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 10px;
+  }
+
+  .mobile-node-link {
+    display: -webkit-box;
+    max-height: 54px;
+    overflow: hidden;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+      monospace;
+    font-size: 12px;
+    line-height: 18px;
+    color: var(--el-text-color-secondary);
+    overflow-wrap: anywhere;
+    background: var(--el-fill-color-light);
+    border-radius: 6px;
+    padding: 8px;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+  }
+
+  .node-card-actions {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .node-card-actions .el-button {
+    width: 100%;
+    min-width: 0;
+    margin-left: 0;
+  }
+
+  .table-footer {
+    position: sticky;
+    bottom: calc(70px + env(safe-area-inset-bottom));
+    z-index: 5;
+    gap: 10px;
+    padding: 10px;
+    margin: 10px -2px -2px;
+    background: color-mix(in srgb, var(--el-bg-color) 92%, transparent);
+    border: 1px solid var(--el-border-color-lighter);
+    border-radius: 8px;
+    backdrop-filter: blur(10px);
+  }
+
+  .batch-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+    gap: 8px;
+  }
+
+  .batch-actions .el-button {
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .table-pagination {
+    justify-content: space-between;
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .record-count {
+    flex: 0 0 auto;
+  }
+
+  :deep(.node-dialog.is-fullscreen) {
+    display: flex;
+    flex-direction: column;
+    margin: 0;
+  }
+
+  :deep(.node-dialog.is-fullscreen .el-dialog__body) {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 12px 16px;
+  }
+
+  :deep(.node-dialog.is-fullscreen .el-dialog__footer) {
+    padding: 10px 16px calc(14px + env(safe-area-inset-bottom));
+    border-top: 1px solid var(--el-border-color-lighter);
+  }
+
+  .dialog-footer {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+
+  .dialog-footer .el-button {
+    width: 100%;
+    margin-left: 0;
+  }
+}
+
+@media (max-width: 420px) {
+  .page-heading {
+    display: grid;
+  }
+
+  .page-heading .el-button {
+    width: 100%;
+  }
+
+  .node-card-actions {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .table-pagination {
+    display: grid;
+    justify-items: stretch;
+  }
 }
 </style>
