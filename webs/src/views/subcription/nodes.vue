@@ -517,7 +517,7 @@ watch(currentPage, () => {
 </script>
 
 <template>
-  <div class="page-workspace">
+  <div class="page-workspace mobile-page">
     <el-dialog
       v-model="Nodedialog"
       class="form-dialog node-dialog"
@@ -653,7 +653,7 @@ watch(currentPage, () => {
       <el-button type="primary" @click="handleAddNode">添加节点</el-button>
     </div>
 
-    <section class="work-surface">
+    <section class="work-surface mobile-app-surface">
       <div class="node-filters">
         <el-tabs v-model="activeName">
           <el-tab-pane :label="`全部 ${totalAllNodes}`" name="全部" />
@@ -667,7 +667,7 @@ watch(currentPage, () => {
       </div>
 
       <el-table
-        class="desktop-node-table"
+        class="desktop-node-table desktop-data-table"
         ref="multipleTable"
         :data="pagedTableData"
         :empty-text="tableLoading ? '加载中...' : '暂无数据'"
@@ -731,7 +731,10 @@ watch(currentPage, () => {
         </el-table-column>
       </el-table>
 
-      <div class="mobile-node-list" v-loading="tableLoading">
+      <div
+        class="mobile-node-list mobile-only-list mobile-card-list"
+        v-loading="tableLoading"
+      >
         <div v-if="pagedTableData.length === 0" class="mobile-empty">
           {{ tableLoading ? "加载中..." : "暂无数据" }}
         </div>
@@ -739,31 +742,42 @@ watch(currentPage, () => {
         <article
           v-for="(row, index) in pagedTableData"
           :key="row.ID"
-          class="node-card"
-          :class="{ 'is-disabled-card': row.Disabled }"
+          class="node-card mobile-card"
+          :class="{ 'is-disabled-card is-muted': row.Disabled }"
         >
-          <div class="node-card-head">
+          <div class="node-card-head mobile-card-top">
             <el-checkbox
               :model-value="isNodeSelected(row)"
               @change="(checked) => toggleMobileSelection(row, Boolean(checked))"
             />
-            <div class="node-card-title">
+            <div class="node-card-title mobile-card-title">
               <strong>{{ row.Name || `节点 ${index + 1}` }}</strong>
               <span>#{{ (currentPage - 1) * pageSize + index + 1 }}</span>
             </div>
-            <el-tag v-if="row.Disabled" size="small" type="info" effect="plain">
-              已禁用
-            </el-tag>
+            <span
+              class="mobile-status"
+              :class="{ 'is-danger': row.Disabled }"
+            >
+              {{ row.Disabled ? "禁用" : "正常" }}
+            </span>
           </div>
 
-          <div class="node-card-meta">
-            <span>{{ Groupformatter(row, null) }}</span>
-            <span>{{ Timeformatter(row) }}</span>
+          <div class="mobile-fields">
+            <div class="mobile-field">
+              <span>分组</span>
+              <strong>{{ Groupformatter(row, null) }}</strong>
+            </div>
+            <div class="mobile-field">
+              <span>创建时间</span>
+              <strong>{{ Timeformatter(row) }}</strong>
+            </div>
+            <div class="mobile-field">
+              <span>节点链接</span>
+              <code>{{ row.Link }}</code>
+            </div>
           </div>
 
-          <code class="mobile-node-link">{{ row.Link }}</code>
-
-          <div class="node-card-actions">
+          <div class="node-card-actions mobile-card-actions">
             <el-button size="small" type="primary" @click="handleEditNode(row)">
               编辑
             </el-button>
@@ -940,13 +954,15 @@ watch(currentPage, () => {
     display: grid;
     gap: 10px;
     padding: 12px;
-    background: var(--el-bg-color);
-    border: 1px solid var(--el-border-color-lighter);
-    border-radius: 8px;
+    color: #e5e7eb;
+    background: #151820;
+    border: 1px solid #2a303b;
+    border-radius: 10px;
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 4%);
   }
 
   .node-card.is-disabled-card {
-    background: var(--el-fill-color-lighter);
+    background: #10131a;
   }
 
   .node-card-head {
@@ -966,7 +982,7 @@ watch(currentPage, () => {
     overflow: hidden;
     font-size: 15px;
     font-weight: 650;
-    color: var(--el-text-color-primary);
+    color: #f8fafc;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
@@ -974,7 +990,7 @@ watch(currentPage, () => {
   .node-card-title span,
   .node-card-meta {
     font-size: 12px;
-    color: var(--el-text-color-secondary);
+    color: #8b93a7;
   }
 
   .node-card-meta {
@@ -1010,6 +1026,7 @@ watch(currentPage, () => {
     width: 100%;
     min-width: 0;
     margin-left: 0;
+    border-radius: 7px;
   }
 
   .table-footer {

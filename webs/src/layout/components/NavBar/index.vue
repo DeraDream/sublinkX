@@ -22,6 +22,8 @@
 @media (max-width: 640px) {
   .navbar-container {
     padding-right: 4px;
+    background: #05070b;
+    border-bottom-color: #202631;
   }
 }
 </style>

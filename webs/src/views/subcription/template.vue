@@ -4,6 +4,8 @@ import YamlEditor from "@/components/YamlEditor/index.vue";
 import { AddTemp, DelTemp, getTemp, UpdateTemp } from "@/api/subcription/temp";
 import { formatBeijingTime } from "@/utils/time";
 import { useDraggableTableRows } from "@/utils/table-drag";
+import { useAppStore } from "@/store";
+import { DeviceEnum } from "@/enums/DeviceEnum";
 
 interface Temp {
   file: string;
@@ -12,6 +14,8 @@ interface Temp {
 }
 
 const tableData = ref<Temp[]>([]);
+const appStore = useAppStore();
+const isMobile = computed(() => appStore.device === DeviceEnum.MOBILE);
 const Tempoldname = ref("");
 const Tempname = ref("");
 const TempText = ref("");
@@ -97,6 +101,10 @@ const normalizeTemplateFilename = (filename: string, text = "") => {
 };
 
 const selectAll = () => {
+  if (isMobile.value) {
+    multipleSelection.value = [...currentTableData.value];
+    return;
+  }
   nextTick(() => {
     tableData.value.forEach((row) => {
       table.value.toggleRowSelection(row, true);
@@ -128,6 +136,10 @@ const handleEdit = (row: any) => {
 };
 
 const toggleSelection = () => {
+  if (isMobile.value) {
+    multipleSelection.value = [];
+    return;
+  }
   table.value.clearSelection();
 };
 
@@ -219,19 +231,38 @@ const currentTableData = computed(() => {
   const start = (currentPage.value - 1) * pageSize.value;
   return tableData.value.slice(start, start + pageSize.value);
 });
+const selectedTemplateNames = computed(
+  () => new Set(multipleSelection.value.map((item) => item.file))
+);
 useDraggableTableRows({
   tableRef: table,
   rows: tableData,
+  enabled: computed(() => !isMobile.value),
   startIndex: () => (currentPage.value - 1) * pageSize.value,
   storageKey: "sublink:templates:order",
   rowKey: (row) => row.file,
 });
 
 const formatTemplateTime = (row: Temp) => formatBeijingTime(row.create_date);
+const templateKind = (row: Temp) =>
+  row.file.toLowerCase().endsWith(".conf") ? "Surge" : "YAML";
+const isTemplateSelected = (row: Temp) =>
+  selectedTemplateNames.value.has(row.file);
+const toggleMobileTemplateSelection = (row: Temp, checked: boolean) => {
+  if (checked) {
+    if (!isTemplateSelected(row)) {
+      multipleSelection.value = [...multipleSelection.value, row];
+    }
+    return;
+  }
+  multipleSelection.value = multipleSelection.value.filter(
+    (item) => item.file !== row.file
+  );
+};
 </script>
 
 <template>
-  <div class="page-workspace">
+  <div class="page-workspace mobile-page">
     <input
       ref="fileInput"
       class="hidden-file-input"
@@ -323,7 +354,7 @@ const formatTemplateTime = (row: Temp) => formatBeijingTime(row.create_date);
 
     <section
       class="work-surface template-drop-surface"
-      :class="{ 'is-dragging': isDragging }"
+      :class="['mobile-app-surface', { 'is-dragging': isDragging }]"
       @dragover.prevent="isDragging = true"
       @dragleave.prevent="isDragging = false"
       @drop.prevent="handleDrop"
@@ -336,6 +367,7 @@ const formatTemplateTime = (row: Temp) => formatBeijingTime(row.create_date);
       </div>
 
       <el-table
+        class="desktop-data-table"
         ref="table"
         :data="currentTableData"
         @selection-change="handleSelectionChange"
@@ -372,6 +404,43 @@ const formatTemplateTime = (row: Temp) => formatBeijingTime(row.create_date);
           </template>
         </el-table-column>
       </el-table>
+
+      <div class="mobile-only-list mobile-card-list">
+        <div v-if="currentTableData.length === 0" class="mobile-empty-state">
+          暂无模板
+        </div>
+        <article
+          v-for="row in currentTableData"
+          :key="row.file"
+          class="mobile-card"
+        >
+          <div class="mobile-card-top">
+            <el-checkbox
+              :model-value="isTemplateSelected(row)"
+              @change="
+                (checked) =>
+                  toggleMobileTemplateSelection(row, Boolean(checked))
+              "
+            />
+            <div class="mobile-card-title">
+              <strong>{{ row.file }}</strong>
+              <small>{{ formatTemplateTime(row) }}</small>
+            </div>
+            <span class="mobile-status">{{ templateKind(row) }}</span>
+          </div>
+
+          <div class="mobile-field">
+            <span>内容预览</span>
+            <code>{{ row.text || "空模板" }}</code>
+          </div>
+
+          <div class="mobile-card-actions">
+            <el-button @click="handleExport(row)">导出</el-button>
+            <el-button type="primary" @click="handleEdit(row)">编辑</el-button>
+            <el-button type="danger" @click="handleDel(row)">删除</el-button>
+          </div>
+        </article>
+      </div>
 
       <div class="drop-overlay">
         <div>

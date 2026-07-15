@@ -96,9 +96,9 @@ function go(path: string) {
   grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
   min-height: calc(62px + env(safe-area-inset-bottom));
   padding: 6px 6px calc(6px + env(safe-area-inset-bottom));
-  background: color-mix(in srgb, var(--el-bg-color) 94%, transparent);
-  border-top: 1px solid var(--el-border-color-lighter);
-  box-shadow: 0 -8px 24px rgb(15 23 42 / 10%);
+  background: rgb(5 7 11 / 94%);
+  border-top: 1px solid #202631;
+  box-shadow: 0 -10px 30px rgb(0 0 0 / 42%);
   backdrop-filter: blur(14px);
 }
 
@@ -109,7 +109,7 @@ function go(path: string) {
   place-items: center;
   gap: 3px;
   padding: 4px 2px;
-  color: var(--el-text-color-secondary);
+  color: #8b93a7;
   background: transparent;
   border: 0;
   border-radius: 8px;
@@ -132,8 +132,8 @@ function go(path: string) {
 }
 
 .mobile-tabbar-item.active {
-  color: var(--el-color-primary);
-  background: color-mix(in srgb, var(--el-color-primary) 11%, transparent);
+  color: #58a6ff;
+  background: rgb(9 105 255 / 16%);
 }
 
 @media (max-width: 992px) {

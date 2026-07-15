@@ -13,6 +13,8 @@ import {
 import { getNodes } from "@/api/subcription/node";
 import { beijingTimestamp, formatBeijingTime } from "@/utils/time";
 import { useDraggableTableRows } from "@/utils/table-drag";
+import { useAppStore } from "@/store";
+import { DeviceEnum } from "@/enums/DeviceEnum";
 
 interface Node {
   ID: number;
@@ -36,6 +38,8 @@ interface NodeSub {
 const tableData = ref<NodeSub[]>([]);
 const nodesList = ref<Node[]>([]);
 const table = ref();
+const appStore = useAppStore();
+const isMobile = computed(() => appStore.device === DeviceEnum.MOBILE);
 const multipleSelection = ref<NodeSub[]>([]);
 const dialogVisible = ref(false);
 const mode = ref<"add" | "edit">("add");
@@ -76,9 +80,13 @@ const currentTableData = computed(() => {
   const start = (currentPage.value - 1) * pageSize.value;
   return tableData.value.slice(start, start + pageSize.value);
 });
+const selectedSubIds = computed(
+  () => new Set(multipleSelection.value.map((item) => item.ID))
+);
 useDraggableTableRows({
   tableRef: table,
   rows: tableData,
+  enabled: computed(() => !isMobile.value),
   startIndex: () => (currentPage.value - 1) * pageSize.value,
   storageKey: "sublink:node-subscriptions:order",
   rowKey: (row) => row.ID,
@@ -184,10 +192,18 @@ function handleSelectionChange(val: NodeSub[]) {
 }
 
 function selectAll() {
+  if (isMobile.value) {
+    multipleSelection.value = [...currentTableData.value];
+    return;
+  }
   tableData.value.forEach((row) => table.value.toggleRowSelection(row, true));
 }
 
 function toggleSelection() {
+  if (isMobile.value) {
+    multipleSelection.value = [];
+    return;
+  }
   table.value.clearSelection();
 }
 
@@ -283,10 +299,42 @@ function nodeNames(row: any) {
 function isExpired(row: any) {
   return row.ExpireAt && beijingTimestamp(row.ExpireAt) < Date.now();
 }
+
+const subStatusText = (row: NodeSub) => {
+  if (row.Revoked) return "已失效";
+  if (isExpired(row)) return "已过期";
+  return "正常";
+};
+
+const subStatusClass = (row: NodeSub) => ({
+  "is-danger": row.Revoked,
+  "is-warning": !row.Revoked && isExpired(row),
+});
+
+const compactNodeNames = (row: NodeSub) => {
+  const nodes = row.Nodes || [];
+  if (!nodes.length) return "未选择节点";
+  const head = nodes.slice(0, 3).map((item) => item.Name).join(" / ");
+  return nodes.length > 3 ? `${head} 等 ${nodes.length} 个` : head;
+};
+
+const isSubSelected = (row: NodeSub) => selectedSubIds.value.has(row.ID);
+
+const toggleMobileSubSelection = (row: NodeSub, checked: boolean) => {
+  if (checked) {
+    if (!isSubSelected(row)) {
+      multipleSelection.value = [...multipleSelection.value, row];
+    }
+    return;
+  }
+  multipleSelection.value = multipleSelection.value.filter(
+    (item) => item.ID !== row.ID
+  );
+};
 </script>
 
 <template>
-  <div class="page-workspace">
+  <div class="page-workspace mobile-page">
     <el-dialog
       v-model="qrDialog"
       class="form-dialog qr-dialog"
@@ -462,8 +510,9 @@ function isExpired(row: any) {
       <el-button type="primary" @click="handleAdd">添加节点订阅</el-button>
     </div>
 
-    <section class="work-surface">
+    <section class="work-surface mobile-app-surface">
       <el-table
+        class="desktop-data-table"
         ref="table"
         :data="currentTableData"
         row-key="ID"
@@ -535,6 +584,57 @@ function isExpired(row: any) {
           </template>
         </el-table-column>
       </el-table>
+
+      <div class="mobile-only-list mobile-card-list">
+        <div v-if="currentTableData.length === 0" class="mobile-empty-state">
+          暂无节点订阅
+        </div>
+        <article
+          v-for="row in currentTableData"
+          :key="row.ID"
+          class="mobile-card"
+          :class="{ 'is-muted': row.Revoked || isExpired(row) }"
+        >
+          <div class="mobile-card-top">
+            <el-checkbox
+              :model-value="isSubSelected(row)"
+              @change="
+                (checked) => toggleMobileSubSelection(row, Boolean(checked))
+              "
+            />
+            <div class="mobile-card-title">
+              <strong>{{ row.Name }}</strong>
+              <small>{{ formatCreatedAt(row) }}</small>
+            </div>
+            <span class="mobile-status" :class="subStatusClass(row)">
+              {{ subStatusText(row) }}
+            </span>
+          </div>
+
+          <div class="mobile-fields">
+            <div class="mobile-field">
+              <span>节点</span>
+              <strong>{{ compactNodeNames(row) }}</strong>
+            </div>
+            <div class="mobile-field">
+              <span>访问</span>
+              <strong>{{ row.AccessCount || 0 }}/{{ row.AccessLimit || "不限" }}</strong>
+            </div>
+          </div>
+
+          <div class="mobile-card-actions">
+            <el-button type="primary" @click="showClient(row)">链接</el-button>
+            <el-button type="warning" @click="handleResetToken(row)">
+              重置
+            </el-button>
+            <el-button @click="handleToggleRevoked(row)">
+              {{ row.Revoked ? "恢复" : "失效" }}
+            </el-button>
+            <el-button type="primary" @click="handleEdit(row)">编辑</el-button>
+            <el-button type="danger" @click="handleDelete(row)">删除</el-button>
+          </div>
+        </article>
+      </div>
 
       <div class="table-footer">
         <div class="batch-actions">
