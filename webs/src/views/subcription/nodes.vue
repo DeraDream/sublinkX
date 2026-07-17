@@ -284,8 +284,8 @@ function scheduleReplacementPreview() {
   }, 280);
 }
 
-async function handleReplacementSwitch(enabled: boolean) {
-  if (!enabled) return;
+async function handleReplacementSwitch() {
+  if (!replaceIPEnabled.value) return;
   if (ipEntries.value.length === 0) {
     replaceIPEnabled.value = false;
     ElMessage.warning("请先向 IP 库添加入口 IP");
@@ -303,11 +303,12 @@ function resetIPForm() {
   ipForm.value = { Alias: "", Address: "" };
 }
 
-function editIPEntry(entry: IPEntry) {
+function editIPEntry(entry: IPEntry | Record<PropertyKey, unknown>) {
+  const typedEntry = entry as IPEntry;
   ipForm.value = {
-    ID: entry.ID,
-    Alias: entry.Alias,
-    Address: entry.Address,
+    ID: typedEntry.ID,
+    Alias: typedEntry.Alias,
+    Address: typedEntry.Address,
   };
 }
 
@@ -335,14 +336,15 @@ async function saveIPEntry() {
   }
 }
 
-async function removeIPEntry(entry: IPEntry) {
+async function removeIPEntry(entry: IPEntry | Record<PropertyKey, unknown>) {
+  const typedEntry = entry as IPEntry;
   try {
     await ElMessageBox.confirm(
-      `确定从 IP 库删除“${entry.Alias} · ${entry.Address}”吗？已保存节点不会改变。`,
+      `确定从 IP 库删除“${typedEntry.Alias} · ${typedEntry.Address}”吗？已保存节点不会改变。`,
       "删除 IP",
       { type: "warning", confirmButtonText: "删除", cancelButtonText: "取消" }
     );
-    await deleteIPEntry(entry.ID);
+    await deleteIPEntry(typedEntry.ID);
     ElMessage.success("IP 已删除");
     await loadIPEntries();
     scheduleReplacementPreview();
