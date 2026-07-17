@@ -72,6 +72,7 @@ const isMobile = computed(() => appStore.device === DeviceEnum.MOBILE);
 const NodesList = ref<Node[]>([]);
 const templist = ref<Temp[]>([]);
 const multipleSelection = ref<Sub[]>([]);
+const subscriptionSortMode = ref(false);
 
 const dialogVisible = ref(false);
 const subMode = ref<"add" | "edit">("add");
@@ -143,7 +144,7 @@ const selectedSubIds = computed(
 useDraggableTableRows({
   tableRef: table,
   rows: tableData,
-  enabled: computed(() => !isMobile.value),
+  enabled: computed(() => subscriptionSortMode.value && !isMobile.value),
   startIndex: () => (currentPage.value - 1) * pageSize.value,
   storageKey: "sublink:subscriptions:order",
   rowKey: (row) => row.ID,
@@ -912,7 +913,16 @@ const OpenUrl = (url: string) => {
         <h1>订阅列表</h1>
         <p>管理订阅地址、客户端入口和访问记录</p>
       </div>
-      <el-button type="primary" @click="handleAddSub">添加订阅</el-button>
+      <div class="heading-actions">
+        <el-button
+          v-if="!isMobile"
+          :type="subscriptionSortMode ? 'success' : undefined"
+          @click="subscriptionSortMode = !subscriptionSortMode"
+        >
+          {{ subscriptionSortMode ? "完成排序" : "排序" }}
+        </el-button>
+        <el-button type="primary" @click="handleAddSub">添加订阅</el-button>
+      </div>
     </div>
 
     <section class="work-surface mobile-app-surface">
@@ -929,7 +939,7 @@ const OpenUrl = (url: string) => {
         @selection-change="handleSelectionChange"
       >
         <el-table-column type="selection" fixed width="48" />
-        <el-table-column width="42" label="">
+        <el-table-column v-if="subscriptionSortMode" width="42" label="">
           <template #default>
             <span class="row-drag-handle" title="拖动排序">☰</span>
           </template>

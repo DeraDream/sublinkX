@@ -29,6 +29,7 @@ import {
   updateIPEntry,
 } from "@/api/subcription/ip-library";
 import { formatBeijingTime } from "@/utils/time";
+import { useDraggableTableRows } from "@/utils/table-drag";
 import { useAppStore } from "@/store";
 import { DeviceEnum } from "@/enums/DeviceEnum";
 
@@ -77,6 +78,7 @@ let replacementRequestID = 0;
 // --- 表格选择与操作相关数据 ---
 const multipleSelection = ref<Node[]>([]); // Stores selected table items
 const multipleTable = ref<any>(null);
+const nodeSortMode = ref(false);
 
 const tableRefs = ref<{ [key: string]: any }>({}); // Stores references to each el-table
 // --- 表格选择与操作相关数据结束 ---
@@ -126,6 +128,14 @@ const pagedTableData = computed(() => tableData.value);
 const selectedNodeIds = computed(
   () => new Set(multipleSelection.value.map((item) => item.ID))
 );
+useDraggableTableRows({
+  tableRef: multipleTable,
+  rows: tableData,
+  enabled: computed(() => nodeSortMode.value && !isMobile.value),
+  storageKey: () =>
+    `sublink:nodes:order:${activeName.value}:${pageSize.value}:${currentPage.value}`,
+  rowKey: (row) => row.ID,
+});
 
 function decodeBase64Text(text: string) {
   try {
@@ -454,7 +464,7 @@ const SubmitNodeForm = async (row: any) => {
     ElMessage.warning("批量添加时请留空节点名称，每条链接会自动读取自己的注释");
     return;
   }
-  if (isAdd && replaceIPEnabled.value) {
+  if (replaceIPEnabled.value) {
     if (!selectedIPEntryID.value) {
       ElMessage.warning("请选择入口 IP");
       return;
@@ -490,6 +500,9 @@ const SubmitNodeForm = async (row: any) => {
         id: NodeForm.value.ID,
         name: NodeForm.value.Name?.trim(), // 新名称
         link: NodeForm.value.Link.trim(), // 新链接
+        ...(replaceIPEnabled.value
+          ? { replace_ip_id: selectedIPEntryID.value }
+          : {}),
         group:
           RadioGroup.value === "1"
             ? SelectionNodeGroups.value.join(",")
@@ -936,7 +949,7 @@ onBeforeUnmount(() => {
           >
         </label>
 
-        <div v-if="dialogMode === 'add'" class="ip-replacement-section">
+        <div class="ip-replacement-section">
           <div class="replacement-switch-row">
             <div class="replacement-switch-copy">
               <strong>替换入口 IP</strong>
@@ -1114,6 +1127,13 @@ onBeforeUnmount(() => {
           >导入节点</el-button
         >
         <el-button @click="downloadNodeBackup">导出节点</el-button>
+        <el-button
+          v-if="!isMobile"
+          :type="nodeSortMode ? 'success' : undefined"
+          @click="nodeSortMode = !nodeSortMode"
+        >
+          {{ nodeSortMode ? "完成排序" : "排序" }}
+        </el-button>
         <el-button type="primary" @click="handleAddNode">添加节点</el-button>
       </div>
     </div>
@@ -1142,6 +1162,11 @@ onBeforeUnmount(() => {
         @selection-change="handleSelectionChange"
       >
         <el-table-column type="selection" width="48" />
+        <el-table-column v-if="nodeSortMode" width="42" label="">
+          <template #default>
+            <span class="row-drag-handle" title="拖动排序">☰</span>
+          </template>
+        </el-table-column>
         <el-table-column type="index" width="56" label="#" />
         <el-table-column prop="Name" label="节点名称" min-width="130" sortable>
           <template #default="{ row }">

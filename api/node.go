@@ -111,6 +111,18 @@ func NodeUpdadte(c *gin.Context) {
 	// var node models.Node
 	NewName := strings.TrimSpace(c.PostForm("name"))
 	Newlink := strings.TrimSpace(c.PostForm("link"))
+	if replacementID := strings.TrimSpace(c.PostForm("replace_ip_id")); replacementID != "" {
+		entry, ok := findReplacementIP(c, replacementID)
+		if !ok {
+			return
+		}
+		replacement, err := node.ReplaceServerAddress(Newlink, entry.Address)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"msg": err.Error()})
+			return
+		}
+		Newlink = replacement.Link
+	}
 	id := c.PostForm("id")
 	group := c.PostForm("group")        // 分组
 	groups := strings.Split(group, ",") // 分组列表

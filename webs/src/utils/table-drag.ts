@@ -7,7 +7,7 @@ interface DraggableTableOptions<T> {
   rows: Ref<T[]>;
   enabled?: Ref<boolean>;
   startIndex?: () => number;
-  storageKey?: string;
+  storageKey?: string | (() => string);
   rowKey?: (row: T) => string | number | undefined;
 }
 
@@ -24,11 +24,14 @@ export function useDraggableTableRows<T>({
   let applyingStoredOrder = false;
 
   const getRowKey = (row: T) => rowKey?.(row);
+  const getStorageKey = () =>
+    typeof storageKey === "function" ? storageKey() : storageKey;
 
   const readStoredOrder = () => {
-    if (!storageKey) return [];
+    const key = getStorageKey();
+    if (!key) return [];
     try {
-      const value = localStorage.getItem(storageKey);
+      const value = localStorage.getItem(key);
       return value ? (JSON.parse(value) as Array<string | number>) : [];
     } catch {
       return [];
@@ -36,26 +39,32 @@ export function useDraggableTableRows<T>({
   };
 
   const persistOrder = () => {
-    if (!storageKey || !rowKey) return;
+    const key = getStorageKey();
+    if (!key || !rowKey) return;
     const order = rows.value
       .map((row) => getRowKey(row))
       .filter((key): key is string | number => key !== undefined);
-    localStorage.setItem(storageKey, JSON.stringify(order));
+    localStorage.setItem(key, JSON.stringify(order));
   };
 
   const applyStoredOrder = () => {
-    if (!storageKey || !rowKey || applyingStoredOrder) return;
+    if (!getStorageKey() || !rowKey || applyingStoredOrder) return;
     const order = readStoredOrder();
     if (!order.length) return;
     const position = new Map(order.map((key, index) => [String(key), index]));
-    applyingStoredOrder = true;
-    rows.value = [...rows.value].sort((left, right) => {
+    const sortedRows = [...rows.value].sort((left, right) => {
       const leftIndex =
         position.get(String(getRowKey(left))) ?? Number.MAX_SAFE_INTEGER;
       const rightIndex =
         position.get(String(getRowKey(right))) ?? Number.MAX_SAFE_INTEGER;
       return leftIndex - rightIndex;
     });
+    const alreadySorted = rows.value.every(
+      (row, index) => getRowKey(row) === getRowKey(sortedRows[index])
+    );
+    if (alreadySorted) return;
+    applyingStoredOrder = true;
+    rows.value = sortedRows;
     applyingStoredOrder = false;
   };
 
@@ -71,6 +80,7 @@ export function useDraggableTableRows<T>({
       return;
     }
     await nextTick();
+    if (enabled && !enabled.value) return;
     const root = tableRef.value?.$el || tableRef.value;
     const nextTbody = root?.querySelector?.(".el-table__body-wrapper tbody") as
       | HTMLElement
@@ -78,6 +88,7 @@ export function useDraggableTableRows<T>({
     if (!nextTbody || nextTbody === tbody) return;
 
     const { default: Sortable } = await import("sortablejs");
+    if (enabled && !enabled.value) return;
     destroy();
     tbody = nextTbody;
     sortable = Sortable.create(nextTbody, {
@@ -116,13 +127,14 @@ export function useDraggableTableRows<T>({
       rows.value.length,
       rows.value.map((row) => getRowKey(row)).join("|"),
       startIndex(),
+      getStorageKey(),
     ],
     () => {
+      applyStoredOrder();
       if (enabled && !enabled.value) {
         destroy();
         return;
       }
-      applyStoredOrder();
       bind();
     },
     { flush: "post" }
