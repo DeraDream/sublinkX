@@ -987,23 +987,17 @@ const OpenUrl = (url: string) => {
           sortable
           :formatter="formatCreatedAt"
         />
-        <el-table-column label="操作" width="280" align="right">
+        <el-table-column label="操作" width="270" align="center">
           <template #default="scope">
-            <template v-if="scope.row.Nodes">
+            <div v-if="scope.row.Nodes" class="subscription-action-grid">
               <el-button link @click="handleIplogs(scope.row)">记录</el-button>
-              <el-button link @click="handleResetToken(scope.row)"
-                >重置 token</el-button
-              >
+              <el-button link @click="handleResetToken(scope.row)">重置 token</el-button>
               <el-button link @click="handleToggleRevoked(scope.row)">
                 {{ scope.row.Revoked ? "恢复" : "失效" }}
               </el-button>
-              <el-button link type="primary" @click="handleEdit(scope.row)"
-                >编辑</el-button
-              >
-              <el-button link type="danger" @click="handleDel(scope.row)"
-                >删除</el-button
-              >
-            </template>
+              <el-button link type="primary" @click="handleEdit(scope.row)">编辑</el-button>
+              <el-button link type="danger" @click="handleDel(scope.row)">删除</el-button>
+            </div>
             <el-button v-else link type="primary" @click="copyInfo(scope.row)">
               复制
             </el-button>
@@ -1085,6 +1079,22 @@ const OpenUrl = (url: string) => {
 </template>
 
 <style scoped>
+.subscription-action-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 2px 8px;
+  align-items: center;
+}
+
+.subscription-action-grid .el-button {
+  min-height: 24px;
+  margin-left: 0;
+}
+
+.subscription-action-grid .el-button:last-child {
+  grid-column: 2;
+}
+
 .record-count,
 .muted-cell {
   color: var(--el-text-color-secondary);

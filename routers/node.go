@@ -11,7 +11,9 @@ func Nodes(r *gin.Engine) {
 	{
 		NodesGroup.POST("/add", api.NodeAdd)
 		NodesGroup.DELETE("/delete", api.NodeDel)
+		NodesGroup.GET("/export", api.NodeExport)
 		NodesGroup.GET("/get", api.NodeGet)
+		NodesGroup.POST("/import", api.NodeImport)
 		NodesGroup.POST("/update", api.NodeUpdadte)
 		NodesGroup.POST("/disabled", api.NodeSetDisabled)
 

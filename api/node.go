@@ -1,12 +1,16 @@
 package api
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
+	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"sublink/models"
 	"sublink/node"
@@ -14,6 +18,24 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
+
+const (
+	nodeTransferVersion = 1
+	maxNodeImportSize   = 5 << 20
+)
+
+type nodeTransferFile struct {
+	Version    int                `json:"version"`
+	ExportedAt time.Time          `json:"exported_at"`
+	Nodes      []nodeTransferNode `json:"nodes"`
+}
+
+type nodeTransferNode struct {
+	Name     string   `json:"name"`
+	Link     string   `json:"link"`
+	Disabled bool     `json:"disabled"`
+	Groups   []string `json:"groups"`
+}
 
 func DocodeNodeName(nd *models.Node) (models.Node, error) { // 解码节点名称
 	nd.Name = strings.TrimSpace(nd.Name)
@@ -184,6 +206,161 @@ func NodeGet(c *gin.Context) {
 		},
 		"msg": "node get",
 	})
+}
+
+// NodeExport downloads a portable JSON backup of all nodes and their groups.
+func NodeExport(c *gin.Context) {
+	nodes, err := models.GetNodeList()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"msg": "node export error"})
+		return
+	}
+
+	payload := nodeTransferFile{
+		Version:    nodeTransferVersion,
+		ExportedAt: time.Now().UTC(),
+		Nodes:      make([]nodeTransferNode, 0, len(nodes)),
+	}
+	for _, item := range nodes {
+		groups := make([]string, 0, len(item.GroupNodes))
+		for _, group := range item.GroupNodes {
+			groups = append(groups, group.Name)
+		}
+		payload.Nodes = append(payload.Nodes, nodeTransferNode{
+			Name:     item.Name,
+			Link:     item.Link,
+			Disabled: item.Disabled,
+			Groups:   groups,
+		})
+	}
+
+	c.Header("Cache-Control", "no-store")
+	c.Header("Content-Disposition", "attachment; filename=\"sublink-nodes.json\"")
+	c.JSON(http.StatusOK, payload)
+}
+
+// NodeImport restores nodes from a NodeExport JSON file. Invalid files are rejected
+// before data is written, and existing name/link pairs are left untouched.
+func NodeImport(c *gin.Context) {
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxNodeImportSize)
+	file, err := c.FormFile("file")
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"msg": "请选择节点导出文件"})
+		return
+	}
+	if file.Size > maxNodeImportSize {
+		c.JSON(http.StatusRequestEntityTooLarge, gin.H{"msg": "导入文件不能超过 5 MB"})
+		return
+	}
+
+	source, err := file.Open()
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"msg": "无法读取导入文件"})
+		return
+	}
+	defer source.Close()
+
+	var payload nodeTransferFile
+	decoder := json.NewDecoder(io.LimitReader(source, maxNodeImportSize))
+	if err := decoder.Decode(&payload); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"msg": "导入文件不是有效的节点备份 JSON"})
+		return
+	}
+	if payload.Version != nodeTransferVersion {
+		c.JSON(http.StatusBadRequest, gin.H{"msg": "不支持的节点备份版本"})
+		return
+	}
+	if len(payload.Nodes) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"msg": "导入文件中没有节点"})
+		return
+	}
+	if len(payload.Nodes) > 1000 {
+		c.JSON(http.StatusBadRequest, gin.H{"msg": "单次最多导入 1000 个节点"})
+		return
+	}
+
+	for index := range payload.Nodes {
+		item := &payload.Nodes[index]
+		item.Name = strings.TrimSpace(item.Name)
+		item.Link = strings.TrimSpace(item.Link)
+		if item.Link == "" || !strings.Contains(item.Link, "://") {
+			c.JSON(http.StatusBadRequest, gin.H{"msg": fmt.Sprintf("第 %d 个节点链接格式不正确", index+1)})
+			return
+		}
+		decoded, err := DocodeNodeName(&models.Node{Name: item.Name, Link: item.Link})
+		if err != nil || strings.TrimSpace(decoded.Name) == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"msg": fmt.Sprintf("第 %d 个节点无法解析", index+1)})
+			return
+		}
+		item.Name = decoded.Name
+		item.Groups = uniqueGroupNames(item.Groups)
+	}
+
+	created := 0
+	skipped := 0
+	err = models.DB.Transaction(func(tx *gorm.DB) error {
+		for _, item := range payload.Nodes {
+			var existing models.Node
+			err := tx.Where("link = ? AND name = ?", item.Link, item.Name).First(&existing).Error
+			if err == nil {
+				skipped++
+				continue
+			}
+			if !errors.Is(err, gorm.ErrRecordNotFound) {
+				return err
+			}
+
+			createdNode := models.Node{Name: item.Name, Link: item.Link, Disabled: item.Disabled}
+			if err := tx.Create(&createdNode).Error; err != nil {
+				return err
+			}
+			for _, groupName := range item.Groups {
+				var group models.GroupNode
+				if err := tx.Where("name = ?", groupName).First(&group).Error; err != nil {
+					if !errors.Is(err, gorm.ErrRecordNotFound) {
+						return err
+					}
+					group = models.GroupNode{Name: groupName}
+					if err := tx.Create(&group).Error; err != nil {
+						return err
+					}
+				}
+				if err := tx.Model(&createdNode).Association("GroupNodes").Append(&group); err != nil {
+					return err
+				}
+			}
+			created++
+		}
+		return nil
+	})
+	if err != nil {
+		log.Printf("node import failed: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"msg": "节点导入失败"})
+		return
+	}
+	clearSubscriptionCache()
+	c.JSON(http.StatusOK, gin.H{
+		"code": "00000",
+		"data": gin.H{"created": created, "skipped": skipped},
+		"msg":  "节点导入完成",
+	})
+}
+
+func uniqueGroupNames(groups []string) []string {
+	seen := make(map[string]struct{}, len(groups))
+	result := make([]string, 0, len(groups))
+	for _, group := range groups {
+		name := strings.TrimSpace(group)
+		if name == "" {
+			continue
+		}
+		if _, exists := seen[name]; exists {
+			continue
+		}
+		seen[name] = struct{}{}
+		result = append(result, name)
+	}
+	return result
 }
 
 // 获取分组列表

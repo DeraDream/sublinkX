@@ -7,6 +7,25 @@ export function getNodes(params?: any){
   });
 }
 
+export function exportNodes(){
+  return request({
+    url: "/api/v1/nodes/export",
+    method: "get",
+    responseType: "arraybuffer",
+  });
+}
+
+export function importNodes(data: FormData){
+  return request({
+    url: "/api/v1/nodes/import",
+    method: "post",
+    data,
+    headers: {
+      "Content-Type": "multipart/form-data",
+    },
+  });
+}
+
 export function AddNodes(data: any){
   return request({
     url: "/api/v1/nodes/add",

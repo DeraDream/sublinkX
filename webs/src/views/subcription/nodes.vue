@@ -2,6 +2,8 @@
 import { ref, shallowRef, onMounted, nextTick, computed, watch } from "vue";
 import {
   getNodes,
+  exportNodes,
+  importNodes,
   AddNodes,
   DelNode,
   UpdateNode,
@@ -55,6 +57,8 @@ const pageSize = ref(20);
 const totalNodes = ref(0);
 const totalAllNodes = ref(0);
 const tableLoading = ref(false);
+const nodeImportInput = ref<HTMLInputElement>();
+const nodeImporting = ref(false);
 let latestNodeRequest = 0;
 // 分组列表临时存放数据
 const activeName = ref("全部");
@@ -196,6 +200,51 @@ const handleAddNode = () => {
   };
   SelectionNodeGroups.value = [];
   NodeGroupInput.value = "";
+};
+
+const downloadNodeBackup = async () => {
+  try {
+    const response: any = await exportNodes();
+    const blob = new Blob([response.data], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `sublink-nodes-${new Date().toISOString().slice(0, 10)}.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+    ElMessage.success("节点已导出");
+  } catch {
+    ElMessage.error("节点导出失败");
+  }
+};
+
+const selectNodeBackup = () => {
+  nodeImportInput.value?.click();
+};
+
+const uploadNodeBackup = async (event: Event) => {
+  const input = event.target as HTMLInputElement;
+  const file = input.files?.[0];
+  if (!file) return;
+  if (!file.name.toLowerCase().endsWith(".json")) {
+    ElMessage.warning("请选择节点导出的 JSON 文件");
+    input.value = "";
+    return;
+  }
+
+  nodeImporting.value = true;
+  try {
+    const formData = new FormData();
+    formData.append("file", file);
+    const { data } = await importNodes(formData);
+    ElMessage.success(`导入完成：新增 ${data.created}，跳过 ${data.skipped}`);
+    await refreshFirstPage();
+  } catch {
+    ElMessage.error("节点导入失败");
+  } finally {
+    nodeImporting.value = false;
+    input.value = "";
+  }
 };
 
 const handleEditNode = (row: any) => {
@@ -654,7 +703,18 @@ watch(currentPage, () => {
         <h1>节点列表</h1>
         <p>管理代理节点和分组</p>
       </div>
-      <el-button type="primary" @click="handleAddNode">添加节点</el-button>
+      <div class="heading-actions">
+        <input
+          ref="nodeImportInput"
+          class="node-import-input"
+          type="file"
+          accept="application/json,.json"
+          @change="uploadNodeBackup"
+        />
+        <el-button :loading="nodeImporting" @click="selectNodeBackup">导入节点</el-button>
+        <el-button @click="downloadNodeBackup">导出节点</el-button>
+        <el-button type="primary" @click="handleAddNode">添加节点</el-button>
+      </div>
     </div>
 
     <section class="work-surface mobile-app-surface">
@@ -832,6 +892,10 @@ watch(currentPage, () => {
 
 .node-filters {
   margin: -8px 0 12px;
+}
+
+.node-import-input {
+  display: none;
 }
 
 .node-filters :deep(.el-tabs__header) {

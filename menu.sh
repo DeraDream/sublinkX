@@ -49,9 +49,62 @@ function current_version {
     fi
 }
 
+function service_port {
+    local port
+    port=$(sed -nE 's/^ExecStart=.*--port[ =]([0-9]+).*/\1/p' "$SERVICE_FILE" 2>/dev/null | head -n 1)
+    echo "${port:-8000}"
+}
+
+function reverse_proxy_domain {
+    local port="$1"
+    local config domain
+
+    if systemctl is-active --quiet caddy 2>/dev/null && [ -f /etc/caddy/Caddyfile ]; then
+        domain=$(awk -v port="$port" '
+            /^[[:space:]]*[[:alnum:].-]+[[:space:]]*\{/ {
+                site=$1
+            }
+            site != "" && $0 ~ "reverse_proxy" && $0 ~ ("(127\\.0\\.0\\.1|localhost):" port) {
+                print site
+                exit
+            }
+        ' /etc/caddy/Caddyfile)
+        if [ -n "$domain" ]; then
+            echo "$domain"
+            return
+        fi
+    fi
+
+    if systemctl is-active --quiet nginx 2>/dev/null; then
+        for config in /etc/nginx/nginx.conf /etc/nginx/conf.d/*.conf /etc/nginx/sites-enabled/*; do
+            [ -f "$config" ] || continue
+            if grep -Eq "proxy_pass[[:space:]]+http://(127\\.0\\.0\\.1|localhost):${port}" "$config"; then
+                domain=$(awk '/^[[:space:]]*server_name[[:space:]]+/ { print $2; exit }' "$config" | tr -d ';')
+                if [ -n "$domain" ] && [ "$domain" != "_" ] && [ "$domain" != "localhost" ]; then
+                    echo "$domain"
+                    return
+                fi
+            fi
+        done
+    fi
+}
+
+function panel_address {
+    local port domain ip
+    port=$(service_port)
+    domain=$(reverse_proxy_domain "$port")
+    if [ -n "$domain" ]; then
+        echo "https://$domain"
+        return
+    fi
+    ip=$(hostname -I 2>/dev/null | awk '{print $1}')
+    echo "http://${ip:-127.0.0.1}:$port"
+}
+
 function install_sublink {
     log_step "开始安装 SublinkX"
-    curl --fail --show-error --location --retry 3 \
+    echo "下载并执行安装脚本..."
+    curl --fail --show-error --location --retry 3 --progress-bar \
         -H "Cache-Control: no-cache" \
         -H "Pragma: no-cache" \
         "https://raw.githubusercontent.com/$REPO/main/install.sh" |
@@ -59,27 +112,21 @@ function install_sublink {
 }
 
 function uninstall_sublink {
-    log_step "停止并卸载 SublinkX"
-    if is_running; then
-        systemctl stop sublink
+    log_step "完整卸载 SublinkX"
+    read -r -p "将删除程序、数据库、模板和日志，确认继续？(y/N): " confirm
+    if [ "$confirm" != "y" ] && [ "$confirm" != "Y" ]; then
+        echo "已取消卸载。"
+        return
     fi
-    if systemctl is-enabled --quiet sublink 2>/dev/null; then
-        systemctl disable sublink
-    fi
-    if [ -f "$SERVICE_FILE" ]; then
-        rm -f "$SERVICE_FILE"
-    fi
+
+    echo "停止并禁用服务..."
+    systemctl disable --now sublink 2>/dev/null || true
+    echo "删除 systemd 服务和运行数据..."
+    rm -f "$SERVICE_FILE" "$MENU_PATH"
+    rm -rf "$INSTALL_DIR"
     systemctl daemon-reload
-
-    rm -f "$BIN_PATH"
-    rm -f "$MENU_PATH"
-
-    read -p "是否删除模板文件、数据库和日志？(y/n): " is_delete
-    if [ "$is_delete" = "y" ]; then
-        rm -rf "$INSTALL_DIR/db" "$INSTALL_DIR/template" "$INSTALL_DIR/logs"
-    fi
-
-    echo "卸载完成"
+    systemctl reset-failed sublink 2>/dev/null || true
+    echo "卸载完成：SublinkX 程序、数据库、模板和日志均已删除。"
 }
 
 function update_sublink {
@@ -88,7 +135,7 @@ function update_sublink {
         return 1
     fi
 
-    log_step "获取最新版本信息"
+    log_step "检查 GitHub 最新版本"
     latest="$(latest_release)"
     if [ -z "$latest" ]; then
         echo "未找到可更新的发行版。"
@@ -109,7 +156,8 @@ function update_sublink {
     trap 'rm -f "$tmp_bin" "$tmp_menu"' RETURN
 
     log_step "下载主程序: $file_name"
-    curl --fail --show-error --location --retry 3 \
+    echo "下载进度："
+    curl --fail --show-error --location --retry 3 --progress-bar \
         "https://github.com/$REPO/releases/download/$latest/$file_name" \
         -o "$tmp_bin" || {
             rm -f "$tmp_bin" "$tmp_menu"
@@ -118,7 +166,8 @@ function update_sublink {
         }
 
     log_step "下载最新菜单脚本"
-    curl --fail --show-error --location --retry 3 \
+    echo "下载进度："
+    curl --fail --show-error --location --retry 3 --progress-bar \
         -H "Cache-Control: no-cache" \
         -H "Pragma: no-cache" \
         "https://raw.githubusercontent.com/$REPO/main/menu.sh" \
@@ -140,7 +189,15 @@ function update_sublink {
 
     rm -f "$tmp_bin" "$tmp_menu"
     trap - RETURN
-    echo "更新完成，当前版本: $("$BIN_PATH" --version)"
+    if is_running; then
+        echo "更新完成，当前版本: $("$BIN_PATH" --version)"
+        echo "最近服务日志："
+        journalctl -u sublink -n 12 --no-pager 2>/dev/null || true
+    else
+        echo "更新完成，但服务没有正常启动。最近服务日志："
+        journalctl -u sublink -n 30 --no-pager 2>/dev/null || true
+        return 1
+    fi
 }
 
 function start_sublink {
@@ -148,8 +205,8 @@ function start_sublink {
         echo "当前未安装 SublinkX，请先安装。"
         return 1
     fi
-    systemctl start sublink
     systemctl daemon-reload
+    systemctl start sublink
     echo "服务已启动"
 }
 
@@ -239,56 +296,61 @@ function Select {
     echo "最新版本: ${latest:-获取失败}"
     echo "当前版本: $version"
     echo "当前状态: $status"
+    echo "面板地址: $(panel_address)"
     echo
 
-    if is_installed; then
-        echo "1. 卸载"
-    else
+    if ! is_installed; then
         echo "1. 安装"
+    else
+        if is_running; then
+            echo "1. 停止服务"
+        else
+            echo "1. 启动服务"
+        fi
     fi
     echo "2. 更新"
-    if is_running; then
-        echo "3. 停止服务"
-    else
-        echo "3. 启动服务"
+    echo "3. 查看服务状态"
+    echo "4. 查看运行目录"
+    echo "5. 修改端口"
+    echo "6. 重置账号密码"
+    if is_installed; then
+        echo "7. 完整卸载"
     fi
-    echo "4. 查看服务状态"
-    echo "5. 查看运行目录"
-    echo "6. 修改端口"
-    echo "7. 重置账号密码"
     echo "0. 退出"
     echo -n "请选择一个选项: "
     read option
 
     case $option in
         1)
-            if is_installed; then
-                uninstall_sublink
-            else
+            if ! is_installed; then
                 install_sublink
+            elif is_running; then
+                stop_sublink
+            else
+                start_sublink
             fi
             ;;
         2)
             update_sublink
             ;;
         3)
-            if is_running; then
-                stop_sublink
-            else
-                start_sublink
-            fi
-            ;;
-        4)
             service_status
             ;;
-        5)
+        4)
             show_workdir
             ;;
-        6)
+        5)
             change_port
             ;;
-        7)
+        6)
             reset_account
+            ;;
+        7)
+            if is_installed; then
+                uninstall_sublink
+            else
+                echo "当前未安装 SublinkX。"
+            fi
             ;;
         0)
             exit 0
