@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -132,7 +133,48 @@ func subscriptionFormat(c *gin.Context, clientIndex string) string {
 }
 
 func subscriptionCacheKey(sub models.Subcription, format string) string {
-	return fmt.Sprintf("%d:%s:%s:%s", sub.ID, format, sub.NodeOrder, Md5(sub.Config))
+	return fmt.Sprintf(
+		"%d:%s:%s:%s:%s",
+		sub.ID,
+		format,
+		sub.NodeOrder,
+		Md5(sub.Config),
+		templateFingerprint(sub.Config, format),
+	)
+}
+
+func templateFingerprint(configText string, format string) string {
+	if format != "clash" && format != "surge" {
+		return ""
+	}
+
+	var config node.SqlConfig
+	if err := json.Unmarshal([]byte(configText), &config); err != nil {
+		return "config-error"
+	}
+
+	templatePath := config.Clash
+	if format == "surge" {
+		templatePath = config.Surge
+	}
+	templatePath = strings.TrimSpace(templatePath)
+	if templatePath == "" {
+		return "empty-template"
+	}
+	if strings.Contains(templatePath, "://") {
+		return "remote:" + templatePath
+	}
+
+	info, err := os.Stat(templatePath)
+	if err != nil {
+		return "missing:" + templatePath
+	}
+	return fmt.Sprintf(
+		"local:%s:%d:%d",
+		templatePath,
+		info.ModTime().UnixNano(),
+		info.Size(),
+	)
 }
 
 func getSubscriptionCache(key string) (subscriptionCacheEntry, bool) {
@@ -162,7 +204,12 @@ func clearSubscriptionCache() {
 
 func writeSubscriptionResponse(c *gin.Context, resp subscriptionCacheEntry) {
 	encodedFilename := url.QueryEscape(resp.filename)
+	c.Writer.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+	c.Writer.Header().Set("CDN-Cache-Control", "no-store")
+	c.Writer.Header().Set("Cloudflare-CDN-Cache-Control", "no-store")
 	c.Writer.Header().Set("Content-Disposition", "inline; filename*=utf-8''"+encodedFilename)
+	c.Writer.Header().Set("Expires", "0")
+	c.Writer.Header().Set("Pragma", "no-cache")
 	c.Writer.Header().Set("Content-Type", resp.contentType)
 	c.Writer.Write(resp.body)
 }
