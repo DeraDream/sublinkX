@@ -45,7 +45,7 @@ curl --fail --silent --show-error --location --retry 3 \
 curl --fail --silent --show-error --location --retry 3 \
     -H "Cache-Control: no-cache" \
     -H "Pragma: no-cache" \
-    "https://raw.githubusercontent.com/$REPO/main/menu.sh" \
+    "https://raw.githubusercontent.com/$REPO/$LATEST_RELEASE/menu.sh" \
     -o "$TMP_MENU"
 
 mkdir -p "$INSTALL_DIR/db" "$INSTALL_DIR/template" "$INSTALL_DIR/logs"

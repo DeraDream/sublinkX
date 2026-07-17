@@ -1,6 +1,7 @@
 #!/bin/bash
 
 REPO="DeraDream/sublinkX"
+MENU_VERSION="4.22"
 INSTALL_DIR="/usr/local/bin/sublink"
 BIN_PATH="$INSTALL_DIR/sublink"
 MENU_PATH="/usr/bin/sublink"
@@ -170,7 +171,7 @@ function update_sublink {
     curl --fail --show-error --location --retry 3 --progress-bar \
         -H "Cache-Control: no-cache" \
         -H "Pragma: no-cache" \
-        "https://raw.githubusercontent.com/$REPO/main/menu.sh" \
+        "https://raw.githubusercontent.com/$REPO/$latest/menu.sh" \
         -o "$tmp_menu" || {
             rm -f "$tmp_bin" "$tmp_menu"
             echo "菜单脚本下载失败，服务未更新。"
@@ -293,6 +294,7 @@ function Select {
     clear
     echo "SublinkX 管理菜单"
     echo "----------------"
+    echo "菜单版本: $MENU_VERSION"
     echo "最新版本: ${latest:-获取失败}"
     echo "当前版本: $version"
     echo "当前状态: $status"
