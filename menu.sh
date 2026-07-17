@@ -1,7 +1,7 @@
 #!/bin/bash
 
 REPO="DeraDream/sublinkX"
-MENU_VERSION="4.23"
+MENU_VERSION="4.24"
 INSTALL_DIR="/usr/local/bin/sublink"
 BIN_PATH="$INSTALL_DIR/sublink"
 MENU_PATH="/usr/bin/sublink"

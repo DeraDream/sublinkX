@@ -91,7 +91,7 @@ func decodeSSAuth(auth string) (string, string, error) {
 		return "", "", fmt.Errorf("invalid SS URL auth")
 	}
 	for i := 0; i < 3; i++ {
-		decoded, err := url.QueryUnescape(auth)
+		decoded, err := url.PathUnescape(auth)
 		if err != nil || decoded == auth {
 			break
 		}
