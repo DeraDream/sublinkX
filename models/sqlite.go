@@ -49,6 +49,7 @@ func InitSqlite() {
 		&SubLogs{},
 		&GroupNode{},
 		&Node{},
+		&IPEntry{},
 	)
 	if err != nil {
 		log.Println("数据表迁移失败")

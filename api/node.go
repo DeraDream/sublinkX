@@ -452,6 +452,18 @@ func NodeAdd(c *gin.Context) {
 	link := strings.TrimSpace(c.PostForm("link"))
 	name := strings.TrimSpace(c.PostForm("name"))
 	group := c.PostForm("group")
+	if replacementID := strings.TrimSpace(c.PostForm("replace_ip_id")); replacementID != "" {
+		entry, ok := findReplacementIP(c, replacementID)
+		if !ok {
+			return
+		}
+		replacement, err := node.ReplaceServerAddress(link, entry.Address)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"msg": err.Error()})
+			return
+		}
+		link = replacement.Link
+	}
 	n = models.Node{
 		Name: name,
 		Link: link,

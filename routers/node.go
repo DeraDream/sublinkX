@@ -16,6 +16,7 @@ func Nodes(r *gin.Engine) {
 		NodesGroup.POST("/import", api.NodeImport)
 		NodesGroup.POST("/update", api.NodeUpdadte)
 		NodesGroup.POST("/disabled", api.NodeSetDisabled)
+		NodesGroup.POST("/replace-preview", api.NodeReplacementPreview)
 
 	}
 	// 分组
@@ -25,5 +26,12 @@ func Nodes(r *gin.Engine) {
 		Group.POST("/set", api.GroupNodeSet) // 绑定创建分组
 		// Group.DELETE("/delete", api.GroupNodeDel) // 删除分组
 		// Group.POST("/update", api.GroupNodeUpdate) // 更新分组
+	}
+	IPLibrary := r.Group("/api/v1/ip-library")
+	{
+		IPLibrary.GET("", api.IPEntryList)
+		IPLibrary.POST("/add", api.IPEntryAdd)
+		IPLibrary.POST("/update", api.IPEntryUpdate)
+		IPLibrary.DELETE("/delete", api.IPEntryDelete)
 	}
 }

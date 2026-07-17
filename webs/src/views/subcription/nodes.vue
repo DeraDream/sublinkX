@@ -1,5 +1,13 @@
 <script setup lang="ts">
-import { ref, shallowRef, onMounted, nextTick, computed, watch } from "vue";
+import {
+  ref,
+  shallowRef,
+  onMounted,
+  onBeforeUnmount,
+  nextTick,
+  computed,
+  watch,
+} from "vue";
 import {
   getNodes,
   exportNodes,
@@ -11,6 +19,15 @@ import {
   SetGroup,
   setNodeDisabled,
 } from "@/api/subcription/node";
+import {
+  addIPEntry,
+  deleteIPEntry,
+  getIPEntries,
+  IPEntry,
+  NodeReplacementPreview,
+  previewNodeReplacement,
+  updateIPEntry,
+} from "@/api/subcription/ip-library";
 import { formatBeijingTime } from "@/utils/time";
 import { useAppStore } from "@/store";
 import { DeviceEnum } from "@/enums/DeviceEnum";
@@ -41,6 +58,21 @@ onMounted(async () => {
 const dialogMode = ref<"add" | "edit">("add");
 const appStore = useAppStore();
 const isMobile = computed(() => appStore.device === DeviceEnum.MOBILE);
+const IPLibrarydialog = ref(false);
+const ipEntries = ref<IPEntry[]>([]);
+const ipEntriesLoading = ref(false);
+const ipSaving = ref(false);
+const ipForm = ref<{ ID?: number; Alias: string; Address: string }>({
+  Alias: "",
+  Address: "",
+});
+const replaceIPEnabled = ref(false);
+const selectedIPEntryID = ref<number>();
+const replacementPreview = ref<NodeReplacementPreview>();
+const replacementLoading = ref(false);
+const replacementError = ref("");
+let replacementTimer: ReturnType<typeof setTimeout> | undefined;
+let replacementRequestID = 0;
 
 // --- 表格选择与操作相关数据 ---
 const multipleSelection = ref<Node[]>([]); // Stores selected table items
@@ -79,16 +111,20 @@ const SelectionNode = ref(""); // 选中的节点
 const RadioGroup = ref("1"); // 分组单选框
 const parsedAddLinks = computed(() =>
   NodeForm.value.Link.trim()
-    .split(/[\n,]/)
+    .split(/\r?\n/)
     .map((item) => item.trim())
     .filter((item) => item)
 );
+const replacementLinkSupported = computed(() => {
+  if (parsedAddLinks.value.length !== 1) return false;
+  return /^(ss|vless):\/\//i.test(parsedAddLinks.value[0]);
+});
 const inferredAddNames = computed(() =>
   parsedAddLinks.value.map((link) => extractNodeRemark(link))
 );
 const pagedTableData = computed(() => tableData.value);
-const selectedNodeIds = computed(() =>
-  new Set(multipleSelection.value.map((item) => item.ID))
+const selectedNodeIds = computed(
+  () => new Set(multipleSelection.value.map((item) => item.ID))
 );
 
 function decodeBase64Text(text: string) {
@@ -135,6 +171,7 @@ function ClearInput() {
   nodelistShow.value = false; // 隐藏节点列表
   Nodedialog.value = false; // 关闭节点添加弹窗
   Groupdialog.value = false; // 关闭分组绑定弹窗
+  resetReplacement();
 }
 async function getnodes() {
   const requestId = ++latestNodeRequest;
@@ -170,8 +207,148 @@ async function GetGroups() {
   // console.log("单选框",RadioGroup.value);
 }
 
+async function loadIPEntries() {
+  ipEntriesLoading.value = true;
+  try {
+    const { data } = await getIPEntries();
+    ipEntries.value = Array.isArray(data) ? data : [];
+    if (
+      selectedIPEntryID.value &&
+      !ipEntries.value.some((item) => item.ID === selectedIPEntryID.value)
+    ) {
+      selectedIPEntryID.value = undefined;
+    }
+  } finally {
+    ipEntriesLoading.value = false;
+  }
+}
+
 async function refreshNodePageData() {
-  await Promise.all([getnodes(), GetGroups()]);
+  await Promise.all([getnodes(), GetGroups(), loadIPEntries()]);
+}
+
+function resetReplacement() {
+  replaceIPEnabled.value = false;
+  selectedIPEntryID.value = undefined;
+  replacementPreview.value = undefined;
+  replacementError.value = "";
+  replacementLoading.value = false;
+  replacementRequestID += 1;
+  if (replacementTimer) clearTimeout(replacementTimer);
+}
+
+function scheduleReplacementPreview() {
+  if (replacementTimer) clearTimeout(replacementTimer);
+  replacementPreview.value = undefined;
+  replacementError.value = "";
+  replacementRequestID += 1;
+  const requestID = replacementRequestID;
+
+  if (!replaceIPEnabled.value) {
+    replacementLoading.value = false;
+    return;
+  }
+  if (parsedAddLinks.value.length !== 1) {
+    replacementLoading.value = false;
+    replacementError.value = "IP 替换仅支持单条节点链接";
+    return;
+  }
+  if (!replacementLinkSupported.value) {
+    replacementLoading.value = false;
+    replacementError.value = "IP 替换仅支持 SS 和 VLESS 链接";
+    return;
+  }
+  if (!selectedIPEntryID.value) {
+    replacementLoading.value = false;
+    return;
+  }
+
+  replacementLoading.value = true;
+  replacementTimer = setTimeout(async () => {
+    try {
+      const { data } = await previewNodeReplacement({
+        link: parsedAddLinks.value[0],
+        replace_ip_id: selectedIPEntryID.value!,
+      });
+      if (requestID !== replacementRequestID) return;
+      replacementPreview.value = data;
+    } catch (error: any) {
+      if (requestID !== replacementRequestID) return;
+      replacementError.value =
+        error?.response?.data?.msg || "节点链接解析失败，请检查原始链接";
+    } finally {
+      if (requestID === replacementRequestID) {
+        replacementLoading.value = false;
+      }
+    }
+  }, 280);
+}
+
+async function handleReplacementSwitch(enabled: boolean) {
+  if (!enabled) return;
+  if (ipEntries.value.length === 0) {
+    replaceIPEnabled.value = false;
+    ElMessage.warning("请先向 IP 库添加入口 IP");
+    await openIPLibrary();
+  }
+}
+
+async function openIPLibrary() {
+  IPLibrarydialog.value = true;
+  resetIPForm();
+  await loadIPEntries();
+}
+
+function resetIPForm() {
+  ipForm.value = { Alias: "", Address: "" };
+}
+
+function editIPEntry(entry: IPEntry) {
+  ipForm.value = {
+    ID: entry.ID,
+    Alias: entry.Alias,
+    Address: entry.Address,
+  };
+}
+
+async function saveIPEntry() {
+  const alias = ipForm.value.Alias.trim();
+  const address = ipForm.value.Address.trim();
+  if (!alias || !address) {
+    ElMessage.warning("请填写 IP 和别名");
+    return;
+  }
+  ipSaving.value = true;
+  try {
+    if (ipForm.value.ID) {
+      await updateIPEntry({ id: ipForm.value.ID, alias, address });
+      ElMessage.success("IP 已更新");
+    } else {
+      await addIPEntry({ alias, address });
+      ElMessage.success("IP 已加入库");
+    }
+    resetIPForm();
+    await loadIPEntries();
+    scheduleReplacementPreview();
+  } finally {
+    ipSaving.value = false;
+  }
+}
+
+async function removeIPEntry(entry: IPEntry) {
+  try {
+    await ElMessageBox.confirm(
+      `确定从 IP 库删除“${entry.Alias} · ${entry.Address}”吗？已保存节点不会改变。`,
+      "删除 IP",
+      { type: "warning", confirmButtonText: "删除", cancelButtonText: "取消" }
+    );
+    await deleteIPEntry(entry.ID);
+    ElMessage.success("IP 已删除");
+    await loadIPEntries();
+    scheduleReplacementPreview();
+  } catch {
+    // 用户取消时保持当前内容。
+  }
 }
 
 function clampCurrentPage() {
@@ -190,6 +367,7 @@ async function refreshFirstPage() {
 }
 
 const handleAddNode = () => {
+  resetReplacement();
   dialogMode.value = "add";
   Nodedialog.value = true;
   NodeForm.value = {
@@ -248,6 +426,7 @@ const uploadNodeBackup = async (event: Event) => {
 };
 
 const handleEditNode = (row: any) => {
+  resetReplacement();
   // NodeNewNameInput.value = row.Name; // 编辑时使用原名称
   // NodeNewLinkInput.value = row.Link; // 编辑时使用原链接
   dialogMode.value = "edit";
@@ -273,6 +452,20 @@ const SubmitNodeForm = async (row: any) => {
     ElMessage.warning("批量添加时请留空节点名称，每条链接会自动读取自己的注释");
     return;
   }
+  if (isAdd && replaceIPEnabled.value) {
+    if (!selectedIPEntryID.value) {
+      ElMessage.warning("请选择入口 IP");
+      return;
+    }
+    if (
+      replacementLoading.value ||
+      replacementError.value ||
+      !replacementPreview.value
+    ) {
+      ElMessage.warning("请等待节点链接解析成功后再保存");
+      return;
+    }
+  }
 
   try {
     if (isAdd) {
@@ -280,6 +473,9 @@ const SubmitNodeForm = async (row: any) => {
         await AddNodes({
           link,
           name: links.length === 1 ? NodeForm.value.Name?.trim() : "",
+          ...(replaceIPEnabled.value
+            ? { replace_ip_id: selectedIPEntryID.value }
+            : {}),
           group:
             RadioGroup.value === "1"
               ? SelectionNodeGroups.value.join(",")
@@ -301,6 +497,7 @@ const SubmitNodeForm = async (row: any) => {
     }
   } catch (err) {
     ElMessage.error(`${isAdd ? "添加" : "更新"}失败`);
+    return;
   }
   await refreshNodePageData();
   ClearInput();
@@ -378,7 +575,10 @@ const handleShownodeGroupList = () => {
   // 显示这个节点关联的分组
   SelectionNodeGroups.value = [];
   tableData.value.forEach((item) => {
-    if (item.Name === SelectionNode.value && (item.GroupNodes?.length ?? 0) > 0) {
+    if (
+      item.Name === SelectionNode.value &&
+      (item.GroupNodes?.length ?? 0) > 0
+    ) {
       // console.log(`节点 ${nodeData} 的分组:`, item.GroupNodes);
       item.GroupNodes?.forEach((item) => {
         SelectionNodeGroups.value.push(item.Name); // 将分组名称添加到 SelectionNodeGroups 中
@@ -485,7 +685,7 @@ const selectAll = () => {
     return;
   }
   nextTick(() => {
-      const table = multipleTable.value;
+    const table = multipleTable.value;
     if (table) {
       // 否则全选
       pagedTableData.value.forEach((row) => {
@@ -568,10 +768,122 @@ watch(pageSize, () => {
 watch(currentPage, () => {
   getnodes();
 });
+
+watch(
+  [() => NodeForm.value.Link, replaceIPEnabled, selectedIPEntryID],
+  scheduleReplacementPreview
+);
+
+onBeforeUnmount(() => {
+  if (replacementTimer) clearTimeout(replacementTimer);
+  replacementRequestID += 1;
+});
 </script>
 
 <template>
   <div class="page-workspace mobile-page">
+    <el-dialog
+      v-model="IPLibrarydialog"
+      class="form-dialog ip-library-dialog"
+      width="760px"
+      destroy-on-close
+    >
+      <template #header>
+        <div class="dialog-heading">
+          <h2>IP 库</h2>
+          <p>维护转发链路第一台机器的入口 IP；修改或删除不会影响已保存节点。</p>
+        </div>
+      </template>
+
+      <div class="ip-library-content">
+        <div class="ip-entry-form">
+          <label class="field">
+            <span class="field-label">IP 地址</span>
+            <el-input
+              v-model="ipForm.Address"
+              placeholder="例如 198.51.100.24 或 2001:db8::18"
+              autocomplete="off"
+            />
+          </label>
+          <label class="field">
+            <span class="field-label">别名</span>
+            <el-input
+              v-model="ipForm.Alias"
+              maxlength="80"
+              placeholder="例如：香港入口 A"
+              autocomplete="off"
+              @keyup.enter="saveIPEntry"
+            />
+          </label>
+          <div class="ip-form-actions">
+            <el-button v-if="ipForm.ID" @click="resetIPForm"
+              >取消编辑</el-button
+            >
+            <el-button type="primary" :loading="ipSaving" @click="saveIPEntry">
+              {{ ipForm.ID ? "保存修改" : "加入 IP 库" }}
+            </el-button>
+          </div>
+        </div>
+
+        <el-table
+          v-loading="ipEntriesLoading"
+          class="desktop-ip-table desktop-data-table"
+          :data="ipEntries"
+          empty-text="IP 库还是空的"
+          row-key="ID"
+        >
+          <el-table-column prop="Alias" label="别名" min-width="150" />
+          <el-table-column prop="Address" label="IP 地址" min-width="230">
+            <template #default="{ row }">
+              <code class="ip-address">{{ row.Address }}</code>
+            </template>
+          </el-table-column>
+          <el-table-column label="操作" width="130" align="right">
+            <template #default="{ row }">
+              <el-button link type="primary" @click="editIPEntry(row)"
+                >编辑</el-button
+              >
+              <el-button link type="danger" @click="removeIPEntry(row)"
+                >删除</el-button
+              >
+            </template>
+          </el-table-column>
+        </el-table>
+
+        <div
+          v-loading="ipEntriesLoading"
+          class="mobile-ip-list mobile-only-list mobile-card-list"
+        >
+          <div v-if="ipEntries.length === 0" class="mobile-empty">
+            IP 库还是空的
+          </div>
+          <article
+            v-for="entry in ipEntries"
+            :key="entry.ID"
+            class="mobile-card ip-card"
+          >
+            <div class="ip-card-copy">
+              <strong>{{ entry.Alias }}</strong>
+              <code>{{ entry.Address }}</code>
+            </div>
+            <div class="ip-card-actions">
+              <el-button size="small" @click="editIPEntry(entry)"
+                >编辑</el-button
+              >
+              <el-button
+                size="small"
+                type="danger"
+                plain
+                @click="removeIPEntry(entry)"
+              >
+                删除
+              </el-button>
+            </div>
+          </article>
+        </div>
+      </div>
+    </el-dialog>
+
     <el-dialog
       v-model="Nodedialog"
       class="form-dialog node-dialog"
@@ -613,14 +925,94 @@ watch(currentPage, () => {
           <span class="field-label">节点链接</span>
           <el-input
             v-model="NodeForm.Link"
-            placeholder="支持换行或逗号分隔多个链接"
+            placeholder="支持粘贴一个或多个链接；多个链接请每行填写一个"
             type="textarea"
             :autosize="{ minRows: dialogMode === 'add' ? 5 : 3, maxRows: 10 }"
           />
           <span v-if="dialogMode === 'add'" class="field-help"
-            >每个链接会被分别创建为一个节点。</span
+            >每行填写一个链接，每个链接会被分别创建为一个节点。</span
           >
         </label>
+
+        <div v-if="dialogMode === 'add'" class="ip-replacement-section">
+          <div class="replacement-switch-row">
+            <div class="replacement-switch-copy">
+              <strong>替换入口 IP</strong>
+              <span>仅替换 SS/VLESS 的服务器地址，其他内容保持原样</span>
+            </div>
+            <el-switch
+              v-model="replaceIPEnabled"
+              :disabled="!replacementLinkSupported && !replaceIPEnabled"
+              inline-prompt
+              active-text="开"
+              inactive-text="关"
+              @change="handleReplacementSwitch"
+            />
+          </div>
+
+          <template v-if="replaceIPEnabled">
+            <label class="field">
+              <span class="field-label">选择入口 IP</span>
+              <el-select
+                v-model="selectedIPEntryID"
+                class="field-control"
+                filterable
+                placeholder="选择 IP 库中的入口地址"
+                :loading="ipEntriesLoading"
+              >
+                <el-option
+                  v-for="entry in ipEntries"
+                  :key="entry.ID"
+                  :value="entry.ID"
+                  :label="`${entry.Alias} · ${entry.Address}`"
+                >
+                  <div class="ip-option">
+                    <span>{{ entry.Alias }}</span>
+                    <code>{{ entry.Address }}</code>
+                  </div>
+                </el-option>
+              </el-select>
+              <button
+                class="inline-manage-button"
+                type="button"
+                @click="openIPLibrary"
+              >
+                管理 IP 库
+              </button>
+            </label>
+
+            <div v-if="selectedIPEntryID" class="replacement-arrow">
+              <span></span>
+              <strong v-if="replacementPreview">
+                {{ replacementPreview.original_host }} →
+                {{ replacementPreview.ip_entry.Address }}
+              </strong>
+              <strong v-else-if="replacementLoading">正在严格解析链接…</strong>
+              <strong v-else>等待解析</strong>
+              <span></span>
+            </div>
+
+            <label v-if="selectedIPEntryID" class="field">
+              <span class="field-label">保存后的节点链接</span>
+              <el-input
+                :model-value="replacementPreview?.link || ''"
+                type="textarea"
+                :rows="3"
+                readonly
+                resize="vertical"
+                :placeholder="
+                  replacementLoading ? '正在生成…' : '解析成功后显示只读链接'
+                "
+              />
+              <span v-if="replacementError" class="replacement-error">
+                {{ replacementError }}
+              </span>
+              <span v-else class="field-help">
+                只读结果会随上方原链接实时更新；修改备注或参数请返回原输入框。
+              </span>
+            </label>
+          </template>
+        </div>
 
         <div
           v-if="dialogMode === 'add' && parsedAddLinks.length > 0"
@@ -691,7 +1083,11 @@ watch(currentPage, () => {
       <template #footer>
         <div class="dialog-footer">
           <el-button @click="Nodedialog = false">取消</el-button>
-          <el-button type="primary" @click="SubmitNodeForm">
+          <el-button
+            type="primary"
+            :loading="replacementLoading"
+            @click="SubmitNodeForm"
+          >
             {{ dialogMode === "add" ? "添加节点" : "保存修改" }}
           </el-button>
         </div>
@@ -711,7 +1107,10 @@ watch(currentPage, () => {
           accept="application/json,.json"
           @change="uploadNodeBackup"
         />
-        <el-button :loading="nodeImporting" @click="selectNodeBackup">导入节点</el-button>
+        <el-button @click="openIPLibrary">IP 库</el-button>
+        <el-button :loading="nodeImporting" @click="selectNodeBackup"
+          >导入节点</el-button
+        >
         <el-button @click="downloadNodeBackup">导出节点</el-button>
         <el-button type="primary" @click="handleAddNode">添加节点</el-button>
       </div>
@@ -816,16 +1215,15 @@ watch(currentPage, () => {
           <div class="node-card-head mobile-card-top">
             <el-checkbox
               :model-value="isNodeSelected(row)"
-              @change="(checked) => toggleMobileSelection(row, Boolean(checked))"
+              @change="
+                (checked) => toggleMobileSelection(row, Boolean(checked))
+              "
             />
             <div class="node-card-title mobile-card-title">
               <strong>{{ row.Name || `节点 ${index + 1}` }}</strong>
               <span>#{{ (currentPage - 1) * pageSize + index + 1 }}</span>
             </div>
-            <span
-              class="mobile-status"
-              :class="{ 'is-danger': row.Disabled }"
-            >
+            <span class="mobile-status" :class="{ 'is-danger': row.Disabled }">
               {{ row.Disabled ? "禁用" : "正常" }}
             </span>
           </div>
@@ -890,6 +1288,140 @@ watch(currentPage, () => {
   width: 100%;
 }
 
+.ip-library-content {
+  display: grid;
+  gap: 18px;
+}
+
+.ip-entry-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: end;
+  padding: 14px;
+  background: var(--el-fill-color-lighter);
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 8px;
+}
+
+.ip-form-actions,
+.ip-card-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.ip-form-actions .el-button + .el-button,
+.ip-card-actions .el-button + .el-button {
+  margin-left: 0;
+}
+
+.ip-address,
+.ip-card-copy code,
+.ip-option code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.mobile-ip-list {
+  display: none;
+}
+
+.ip-card {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+}
+
+.ip-card-copy {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.ip-card-copy code {
+  color: var(--el-text-color-secondary);
+  overflow-wrap: anywhere;
+}
+
+.ip-replacement-section {
+  display: grid;
+  gap: 14px;
+  padding: 14px;
+  background: var(--el-fill-color-lighter);
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 8px;
+}
+
+.replacement-switch-row {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.replacement-switch-copy {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.replacement-switch-copy strong {
+  font-size: 13px;
+  color: var(--el-text-color-primary);
+}
+
+.replacement-switch-copy span {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--el-text-color-secondary);
+}
+
+.ip-option {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.ip-option code {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+
+.inline-manage-button {
+  justify-self: start;
+  padding: 0;
+  font: inherit;
+  font-size: 12px;
+  color: var(--el-color-primary);
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+}
+
+.replacement-arrow {
+  display: grid;
+  grid-template-columns: minmax(20px, 1fr) auto minmax(20px, 1fr);
+  gap: 10px;
+  align-items: center;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+
+.replacement-arrow span {
+  height: 1px;
+  background: var(--el-border-color);
+}
+
+.replacement-arrow strong {
+  font-weight: 600;
+  color: var(--el-text-color-regular);
+}
+
+.replacement-error {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--el-color-danger);
+}
+
 .node-filters {
   margin: -8px 0 12px;
 }
@@ -946,19 +1478,19 @@ watch(currentPage, () => {
 
 .preview-head {
   display: flex;
+  gap: 12px;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
 }
 
 .preview-head strong {
-  color: var(--el-text-color-primary);
   font-size: 13px;
+  color: var(--el-text-color-primary);
 }
 
 .preview-head span {
-  color: var(--el-text-color-secondary);
   font-size: 12px;
+  color: var(--el-text-color-secondary);
 }
 
 .preview-list {
@@ -972,8 +1504,8 @@ watch(currentPage, () => {
   max-width: 180px;
   padding: 5px 9px;
   overflow: hidden;
-  color: var(--el-color-primary);
   font-size: 12px;
+  color: var(--el-color-primary);
   text-overflow: ellipsis;
   white-space: nowrap;
   background: color-mix(in srgb, var(--el-color-primary) 10%, transparent);
@@ -989,8 +1521,8 @@ watch(currentPage, () => {
 
 .table-pagination {
   display: flex;
-  align-items: center;
   gap: 12px;
+  align-items: center;
   margin-left: auto;
 }
 
@@ -998,10 +1530,10 @@ watch(currentPage, () => {
   display: none;
 }
 
-@media (max-width: 992px) {
+@media (width <= 992px) {
   .page-heading {
-    align-items: flex-start;
     gap: 12px;
+    align-items: flex-start;
   }
 
   .page-heading h1 {
@@ -1034,9 +1566,9 @@ watch(currentPage, () => {
 
   .mobile-empty {
     display: grid;
+    place-items: center;
     min-height: 120px;
     color: var(--el-text-color-secondary);
-    place-items: center;
   }
 
   .node-card-head {
@@ -1048,8 +1580,8 @@ watch(currentPage, () => {
 
   .node-card-title {
     display: grid;
-    min-width: 0;
     gap: 2px;
+    min-width: 0;
   }
 
   .node-card-title strong {
@@ -1074,16 +1606,16 @@ watch(currentPage, () => {
   .mobile-node-link {
     display: -webkit-box;
     max-height: 54px;
+    padding: 8px;
     overflow: hidden;
-    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
-      monospace;
+    font-family:
+      ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
     font-size: 12px;
     line-height: 18px;
     color: var(--el-text-color-secondary);
     overflow-wrap: anywhere;
     background: var(--el-fill-color-light);
     border-radius: 6px;
-    padding: 8px;
     -webkit-box-orient: vertical;
     -webkit-line-clamp: 3;
   }
@@ -1109,16 +1641,16 @@ watch(currentPage, () => {
     padding: 10px;
     margin: 10px -2px -2px;
     background: color-mix(in srgb, var(--el-bg-color) 92%, transparent);
+    backdrop-filter: blur(10px);
     border: 1px solid var(--el-border-color-lighter);
     border-radius: 8px;
-    backdrop-filter: blur(10px);
   }
 
   .batch-actions {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    width: 100%;
     gap: 8px;
+    width: 100%;
   }
 
   .batch-actions .el-button {
@@ -1144,8 +1676,8 @@ watch(currentPage, () => {
   :deep(.node-dialog .el-dialog__body) {
     flex: 1;
     min-height: 0;
-    overflow-y: auto;
     padding: 12px 16px;
+    overflow-y: auto;
   }
 
   :deep(.node-dialog .el-dialog__footer) {
@@ -1163,9 +1695,49 @@ watch(currentPage, () => {
     width: 100%;
     margin-left: 0;
   }
+
+  .ip-entry-form {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+
+  .ip-form-actions {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  }
+
+  .ip-form-actions .el-button {
+    width: 100%;
+  }
 }
 
-@media (max-width: 420px) {
+@media (width <= 768px) {
+  .desktop-ip-table {
+    display: none;
+  }
+
+  .mobile-ip-list {
+    display: grid;
+  }
+
+  .replacement-switch-row {
+    align-items: flex-start;
+  }
+
+  :deep(.ip-library-dialog) {
+    display: flex;
+    flex-direction: column;
+  }
+
+  :deep(.ip-library-dialog .el-dialog__body) {
+    flex: 1;
+    min-height: 0;
+    padding: 12px 16px;
+    overflow-y: auto;
+  }
+}
+
+@media (width <= 420px) {
   .page-heading {
     display: grid;
   }
@@ -1181,6 +1753,19 @@ watch(currentPage, () => {
   .table-pagination {
     display: grid;
     justify-items: stretch;
+  }
+
+  .ip-card {
+    grid-template-columns: 1fr;
+  }
+
+  .ip-card-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .ip-card-actions .el-button {
+    width: 100%;
   }
 }
 </style>
