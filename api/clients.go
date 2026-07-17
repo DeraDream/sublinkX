@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -67,11 +68,13 @@ func GetClient(c *gin.Context) {
 	c.Set("subscription_start", start)
 
 	format := subscriptionFormat(c, clientIndex)
-	cacheKey := subscriptionCacheKey(sub, format)
-	if cached, ok := getSubscriptionCache(cacheKey); ok {
-		writeSubscriptionResponse(c, cached)
-		logSubscriptionGenerated(c, sub.ID, cached.nodeCount, format)
-		return
+	cacheKey, cacheable := subscriptionCacheKey(sub, format)
+	if cacheable {
+		if cached, ok := getSubscriptionCache(cacheKey); ok {
+			writeSubscriptionResponse(c, cached)
+			logSubscriptionGenerated(c, sub.ID, cached.nodeCount, format)
+			return
+		}
 	}
 
 	var resp subscriptionCacheEntry
@@ -91,7 +94,9 @@ func GetClient(c *gin.Context) {
 		c.Writer.WriteString(err.Error())
 		return
 	}
-	setSubscriptionCache(cacheKey, resp)
+	if cacheable {
+		setSubscriptionCache(cacheKey, resp)
+	}
 	writeSubscriptionResponse(c, resp)
 	logSubscriptionGenerated(c, sub.ID, resp.nodeCount, format)
 }
@@ -132,25 +137,30 @@ func subscriptionFormat(c *gin.Context, clientIndex string) string {
 	return "v2ray"
 }
 
-func subscriptionCacheKey(sub models.Subcription, format string) string {
+func subscriptionCacheKey(sub models.Subcription, format string) (string, bool) {
+	templateHash, cacheable := templateFingerprint(sub.Config, format)
+	if !cacheable {
+		return "", false
+	}
 	return fmt.Sprintf(
-		"%d:%s:%s:%s:%s",
+		"%d:%s:%s:%s:%s:%s",
 		sub.ID,
 		format,
 		sub.NodeOrder,
 		Md5(sub.Config),
-		templateFingerprint(sub.Config, format),
-	)
+		templateHash,
+		subscriptionNodesFingerprint(sub.Nodes),
+	), true
 }
 
-func templateFingerprint(configText string, format string) string {
+func templateFingerprint(configText string, format string) (string, bool) {
 	if format != "clash" && format != "surge" {
-		return ""
+		return "", true
 	}
 
 	var config node.SqlConfig
 	if err := json.Unmarshal([]byte(configText), &config); err != nil {
-		return "config-error"
+		return "config-error", true
 	}
 
 	templatePath := config.Clash
@@ -159,22 +169,35 @@ func templateFingerprint(configText string, format string) string {
 	}
 	templatePath = strings.TrimSpace(templatePath)
 	if templatePath == "" {
-		return "empty-template"
+		return "empty-template", true
 	}
 	if strings.Contains(templatePath, "://") {
-		return "remote:" + templatePath
+		return "", false
 	}
 
-	info, err := os.Stat(templatePath)
+	content, err := os.ReadFile(templatePath)
 	if err != nil {
-		return "missing:" + templatePath
+		return "missing:" + templatePath, true
 	}
-	return fmt.Sprintf(
-		"local:%s:%d:%d",
-		templatePath,
-		info.ModTime().UnixNano(),
-		info.Size(),
-	)
+	return "local:" + templatePath + ":" + Md5(string(content)), true
+}
+
+func subscriptionNodesFingerprint(nodes []models.Node) string {
+	ordered := append([]models.Node(nil), nodes...)
+	sort.Slice(ordered, func(i, j int) bool { return ordered[i].ID < ordered[j].ID })
+	var value strings.Builder
+	for _, item := range ordered {
+		fmt.Fprintf(
+			&value,
+			"%d\x00%s\x00%s\x00%t\x00%d\x00",
+			item.ID,
+			item.Name,
+			item.Link,
+			item.Disabled,
+			item.UpdatedAt.UnixNano(),
+		)
+	}
+	return Md5(value.String())
 }
 
 func getSubscriptionCache(key string) (subscriptionCacheEntry, bool) {
@@ -204,7 +227,7 @@ func clearSubscriptionCache() {
 
 func writeSubscriptionResponse(c *gin.Context, resp subscriptionCacheEntry) {
 	encodedFilename := url.QueryEscape(resp.filename)
-	c.Writer.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+	c.Writer.Header().Set("Cache-Control", "private, no-store, no-cache, must-revalidate, max-age=0, s-maxage=0")
 	c.Writer.Header().Set("CDN-Cache-Control", "no-store")
 	c.Writer.Header().Set("Cloudflare-CDN-Cache-Control", "no-store")
 	c.Writer.Header().Set("Content-Disposition", "inline; filename*=utf-8''"+encodedFilename)

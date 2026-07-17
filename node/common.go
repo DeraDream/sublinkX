@@ -3,9 +3,12 @@ package node
 import (
 	"encoding/base64"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"regexp"
 	"strings"
+	"time"
 )
 
 type SqlConfig struct {
@@ -13,6 +16,30 @@ type SqlConfig struct {
 	Surge string `json:"surge"`
 	Udp   bool   `json:"udp"`
 	Cert  bool   `json:"cert"`
+}
+
+var templateHTTPClient = &http.Client{Timeout: 20 * time.Second}
+
+func ReadTemplateSource(source string) ([]byte, error) {
+	if !strings.Contains(source, "://") {
+		return os.ReadFile(source)
+	}
+
+	request, err := http.NewRequest(http.MethodGet, source, nil)
+	if err != nil {
+		return nil, err
+	}
+	request.Header.Set("Cache-Control", "no-cache, no-store, max-age=0")
+	request.Header.Set("Pragma", "no-cache")
+	response, err := templateHTTPClient.Do(request)
+	if err != nil {
+		return nil, err
+	}
+	defer response.Body.Close()
+	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
+		return nil, fmt.Errorf("template request failed: %s", response.Status)
+	}
+	return io.ReadAll(response.Body)
 }
 
 // ipv6地址匹配规则

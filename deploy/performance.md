@@ -51,12 +51,4 @@ systemctl restart systemd-journald
 
 ## Cloudflare 订阅缓存
 
-如果要把 `/c/` 订阅结果缓存到 Cloudflare，规则必须包含完整 query string：
-
-- Hostname equals `sublink.your-domain.com`
-- Path starts with `/c/`
-- Cache eligibility: Eligible for cache
-- Edge TTL: 30-120 seconds
-- Cache key: Include full query string
-
-不要忽略查询参数，否则不同 token 的订阅可能串缓存。
+`/c/` 返回包含密钥的动态订阅，而且模板、节点修改后必须立即生效。Cloudflare Cache Rule 应对 `/c/*` 设置 `Bypass cache`，不要设置 Edge TTL 或 `Cache Everything`。应用只在本机短期缓存可安全识别变更的本地模板；远程模板不缓存。

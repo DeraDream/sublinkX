@@ -2,10 +2,7 @@ package node
 
 import (
 	"fmt"
-	"io"
 	"log"
-	"net/http"
-	"os"
 	"strconv"
 	"strings"
 
@@ -360,26 +357,10 @@ func EncodeClash(urls []string, sqlconfig SqlConfig) ([]byte, error) {
 // DecodeClash 用于解析 Clash 配置文件
 func DecodeClash(proxys []Proxy, yamlfile string) ([]byte, error) {
 	// 读取 YAML 文件
-	var data []byte
-	var err error
-	if strings.Contains(yamlfile, "://") {
-		resp, err := http.Get(yamlfile)
-		if err != nil {
-			log.Println("http.Get error", err)
-			return nil, err
-		}
-		defer resp.Body.Close()
-		data, err = io.ReadAll(resp.Body)
-		if err != nil {
-			log.Printf("error: %v", err)
-			return nil, err
-		}
-	} else {
-		data, err = os.ReadFile(yamlfile)
-		if err != nil {
-			log.Printf("error: %v", err)
-			return nil, err
-		}
+	data, err := ReadTemplateSource(yamlfile)
+	if err != nil {
+		log.Printf("error: %v", err)
+		return nil, err
 	}
 	// 解析 YAML 文件
 	config := make(map[interface{}]interface{})

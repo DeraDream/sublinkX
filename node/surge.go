@@ -2,10 +2,7 @@ package node
 
 import (
 	"fmt"
-	"io"
 	"log"
-	"net/http"
-	"os"
 	"regexp"
 	"strings"
 )
@@ -140,26 +137,10 @@ func EncodeSurge(urls []string, sqlconfig SqlConfig) (string, error) {
 	return DecodeSurge(proxys, groups, sqlconfig.Surge)
 }
 func DecodeSurge(proxys, groups []string, file string) (string, error) {
-	var surge []byte
-	var err error
-	if strings.Contains(file, "://") {
-		resp, err := http.Get(file)
-		if err != nil {
-			log.Println("http.Get error", err)
-			return "", err
-		}
-		defer resp.Body.Close()
-		surge, err = io.ReadAll(resp.Body)
-		if err != nil {
-			log.Printf("error: %v", err)
-			return "", err
-		}
-	} else {
-		surge, err = os.ReadFile(file)
-		if err != nil {
-			log.Println(err)
-			return "", err
-		}
+	surge, err := ReadTemplateSource(file)
+	if err != nil {
+		log.Println(err)
+		return "", err
 	}
 
 	proxyReg := regexp.MustCompile(`(?s)\[Proxy\](.*?)\[*]`)
