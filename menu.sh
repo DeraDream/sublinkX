@@ -1,7 +1,6 @@
 #!/bin/bash
 
 REPO="DeraDream/sublinkX"
-MENU_VERSION="4.24"
 INSTALL_DIR="/usr/local/bin/sublink"
 BIN_PATH="$INSTALL_DIR/sublink"
 MENU_PATH="/usr/bin/sublink"
@@ -144,27 +143,11 @@ function update_sublink {
     fi
 
     version="$(current_version)"
-    echo "当前版本: $version"
-    echo "最新版本: $latest"
-    if [ "$version" = "$latest" ]; then
-        echo "当前已经是最新版本。"
-        return 0
-    fi
-
     file_name="$(detect_arch)" || return 1
+    updated_binary=0
     tmp_bin="$(mktemp)"
     tmp_menu="$(mktemp)"
     trap 'rm -f "$tmp_bin" "$tmp_menu"' RETURN
-
-    log_step "下载主程序: $file_name"
-    echo "下载进度："
-    curl --fail --show-error --location --retry 3 --progress-bar \
-        "https://github.com/$REPO/releases/download/$latest/$file_name" \
-        -o "$tmp_bin" || {
-            rm -f "$tmp_bin" "$tmp_menu"
-            echo "主程序下载失败，服务未更新。"
-            return 1
-        }
 
     log_step "下载最新菜单脚本"
     echo "下载进度："
@@ -178,18 +161,48 @@ function update_sublink {
             return 1
         }
 
-    log_step "替换文件并重启服务"
-    chmod 755 "$tmp_bin" "$tmp_menu"
-    if is_running; then
-        systemctl stop sublink
+    echo "当前版本: $version"
+    echo "最新版本: $latest"
+    if [ "$version" != "$latest" ]; then
+        log_step "下载主程序: $file_name"
+        echo "下载进度："
+        curl --fail --show-error --location --retry 3 --progress-bar \
+            "https://github.com/$REPO/releases/download/$latest/$file_name" \
+            -o "$tmp_bin" || {
+                rm -f "$tmp_bin" "$tmp_menu"
+                echo "主程序下载失败，服务未更新。"
+                return 1
+            }
+        updated_binary=1
+    else
+        echo "主程序已是最新版本，仅刷新菜单脚本。"
     fi
-    install -m 755 "$tmp_bin" "$BIN_PATH"
+
+    log_step "替换文件"
+    chmod 755 "$tmp_menu"
+    if [ "$updated_binary" = "1" ]; then
+        chmod 755 "$tmp_bin"
+    fi
+    if [ "$updated_binary" = "1" ]; then
+        if is_running; then
+            systemctl stop sublink
+        fi
+        install -m 755 "$tmp_bin" "$BIN_PATH"
+    fi
     install -m 755 "$tmp_menu" "$MENU_PATH"
-    systemctl daemon-reload
-    systemctl start sublink
+
+    if [ "$updated_binary" = "1" ]; then
+        systemctl daemon-reload
+        systemctl start sublink
+    fi
 
     rm -f "$tmp_bin" "$tmp_menu"
     trap - RETURN
+    if [ "$updated_binary" != "1" ]; then
+        echo "菜单脚本更新完成，当前版本: $version"
+        return 0
+    fi
+
     if is_running; then
         echo "更新完成，当前版本: $("$BIN_PATH" --version)"
         echo "最近服务日志："
@@ -294,7 +307,6 @@ function Select {
     clear
     echo "SublinkX 管理菜单"
     echo "----------------"
-    echo "菜单版本: $MENU_VERSION"
     echo "最新版本: ${latest:-获取失败}"
     echo "当前版本: $version"
     echo "当前状态: $status"
@@ -304,20 +316,20 @@ function Select {
     if ! is_installed; then
         echo "1. 安装"
     else
-        if is_running; then
-            echo "1. 停止服务"
-        else
-            echo "1. 启动服务"
-        fi
+        echo "1. 完整卸载"
     fi
     echo "2. 更新"
-    echo "3. 查看服务状态"
-    echo "4. 查看运行目录"
-    echo "5. 修改端口"
-    echo "6. 重置账号密码"
     if is_installed; then
-        echo "7. 完整卸载"
+        if is_running; then
+            echo "3. 停止服务"
+        else
+            echo "3. 启动服务"
+        fi
     fi
+    echo "4. 查看服务状态"
+    echo "5. 查看运行目录"
+    echo "6. 修改端口"
+    echo "7. 重置账号密码"
     echo "0. 退出"
     echo -n "请选择一个选项: "
     read option
@@ -326,33 +338,33 @@ function Select {
         1)
             if ! is_installed; then
                 install_sublink
-            elif is_running; then
-                stop_sublink
             else
-                start_sublink
+                uninstall_sublink
             fi
             ;;
         2)
             update_sublink
             ;;
         3)
-            service_status
+            if ! is_installed; then
+                echo "当前未安装 SublinkX。"
+            elif is_running; then
+                stop_sublink
+            else
+                start_sublink
+            fi
             ;;
         4)
-            show_workdir
+            service_status
             ;;
         5)
-            change_port
+            show_workdir
             ;;
         6)
-            reset_account
+            change_port
             ;;
         7)
-            if is_installed; then
-                uninstall_sublink
-            else
-                echo "当前未安装 SublinkX。"
-            fi
+            reset_account
             ;;
         0)
             exit 0
