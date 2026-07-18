@@ -124,6 +124,17 @@ func NodeUpdadte(c *gin.Context) {
 		Newlink = replacement.Link
 	}
 	id := c.PostForm("id")
+	subscriptionIDs, updateSubscriptions, err := nodeSubscriptionIDs(c)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"msg": err.Error()})
+		return
+	}
+	if updateSubscriptions {
+		if err := models.ValidateSubscriptionIDs(subscriptionIDs); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"msg": err.Error()})
+			return
+		}
+	}
 	group := c.PostForm("group")        // 分组
 	groups := strings.Split(group, ",") // 分组列表
 	index, err := strconv.Atoi(id)
@@ -170,6 +181,12 @@ func NodeUpdadte(c *gin.Context) {
 			"msg": fmt.Sprintf("更新失败: %s", err.Error()),
 		})
 		return
+	}
+	if updateSubscriptions {
+		if err := models.SetNodeSubscriptions(index, subscriptionIDs); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"msg": fmt.Sprintf("更新订阅关联失败: %s", err.Error())})
+			return
+		}
 	}
 	clearSubscriptionCache()
 
@@ -458,12 +475,47 @@ func GroupNodeSet(c *gin.Context) {
 	})
 }
 
+func nodeSubscriptionIDs(c *gin.Context) ([]int, bool, error) {
+	raw, exists := c.GetPostForm("subscription_ids")
+	if !exists {
+		return nil, false, nil
+	}
+	ids := make([]int, 0)
+	seen := make(map[int]bool)
+	for _, value := range strings.Split(raw, ",") {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		id, err := strconv.Atoi(value)
+		if err != nil || id <= 0 {
+			return nil, true, fmt.Errorf("订阅 ID 格式不正确: %s", value)
+		}
+		if !seen[id] {
+			ids = append(ids, id)
+			seen[id] = true
+		}
+	}
+	return ids, true, nil
+}
+
 // 添加节点
 func NodeAdd(c *gin.Context) {
 	var n models.Node
 	link := strings.TrimSpace(c.PostForm("link"))
 	name := strings.TrimSpace(c.PostForm("name"))
 	group := c.PostForm("group")
+	subscriptionIDs, updateSubscriptions, err := nodeSubscriptionIDs(c)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"msg": err.Error()})
+		return
+	}
+	if updateSubscriptions {
+		if err := models.ValidateSubscriptionIDs(subscriptionIDs); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"msg": err.Error()})
+			return
+		}
+	}
 	if replacementID := strings.TrimSpace(c.PostForm("replace_ip_id")); replacementID != "" {
 		entry, ok := findReplacementIP(c, replacementID)
 		if !ok {
@@ -487,7 +539,7 @@ func NodeAdd(c *gin.Context) {
 		return
 	}
 	// 解码节点名称
-	n, err := DocodeNodeName(&n)
+	n, err = DocodeNodeName(&n)
 	if err != nil {
 		log.Println("解码节点名称错误:", err)
 		c.JSON(400, gin.H{
@@ -534,6 +586,12 @@ func NodeAdd(c *gin.Context) {
 		}
 	}
 	//关联分组结束
+	if updateSubscriptions {
+		if err := models.SetNodeSubscriptions(n.ID, subscriptionIDs); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"msg": "关联订阅失败: " + err.Error()})
+			return
+		}
+	}
 	clearSubscriptionCache()
 
 	c.JSON(200, gin.H{

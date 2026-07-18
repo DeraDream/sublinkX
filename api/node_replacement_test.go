@@ -23,6 +23,7 @@ func TestNodeAddReplacesServerBeforeSaving(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	closeTestDatabase(t, database)
 	if err := database.AutoMigrate(&models.Node{}, &models.IPEntry{}); err != nil {
 		t.Fatal(err)
 	}
@@ -66,6 +67,7 @@ func TestNodeUpdateReplacesServerBeforeSaving(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	closeTestDatabase(t, database)
 	if err := database.AutoMigrate(&models.Node{}, &models.GroupNode{}, &models.IPEntry{}); err != nil {
 		t.Fatal(err)
 	}

@@ -5,6 +5,13 @@ import {
   testTelegramBot,
   updateTelegramConfig,
 } from "@/api/telegram";
+import {
+  checkSystemUpdate,
+  getSystemUpdateStatus,
+  startSystemUpdate,
+  SystemUpdateInfo,
+  SystemUpdateStatus,
+} from "@/api/system/update";
 
 defineOptions({
   name: "TelegramBot",
@@ -13,6 +20,23 @@ defineOptions({
 const loading = ref(false);
 const saving = ref(false);
 const testing = ref(false);
+const updateChecking = ref(false);
+const updateStarting = ref(false);
+const updateCheckFailed = ref(false);
+const updateInfo = ref<SystemUpdateInfo>();
+const updateStatus = ref<SystemUpdateStatus>();
+let updatePollTimer: ReturnType<typeof setTimeout> | undefined;
+let updateReloadTimer: ReturnType<typeof setTimeout> | undefined;
+let updatePollStartedAt = 0;
+
+const updateInProgress = computed(() =>
+  ["queued", "downloading", "installing", "restarting"].includes(
+    updateStatus.value?.state || ""
+  )
+);
+const updateMessage = computed(
+  () => updateStatus.value?.message || "正在准备在线更新"
+);
 
 const form = reactive<TelegramConfig>({
   enabled: false,
@@ -45,7 +69,11 @@ function validate(requireToken = false) {
     ElMessage.warning("请输入管理员聊天 ID");
     return false;
   }
-  if ((form.enabled || requireToken) && !form.token.trim() && !form.token_configured) {
+  if (
+    (form.enabled || requireToken) &&
+    !form.token.trim() &&
+    !form.token_configured
+  ) {
     ElMessage.warning("请输入 Telegram Token");
     return false;
   }
@@ -90,21 +118,177 @@ async function sendTestMessage() {
   }
 }
 
-onMounted(loadConfig);
+function stopUpdatePolling() {
+  if (updatePollTimer) clearTimeout(updatePollTimer);
+  updatePollTimer = undefined;
+}
+
+function scheduleUpdatePoll(delay = 1500) {
+  stopUpdatePolling();
+  updatePollTimer = setTimeout(pollUpdateStatus, delay);
+}
+
+async function pollUpdateStatus() {
+  if (
+    updatePollStartedAt &&
+    Date.now() - updatePollStartedAt > 15 * 60 * 1000
+  ) {
+    stopUpdatePolling();
+    updateStatus.value = {
+      ...(updateStatus.value as SystemUpdateStatus),
+      state: "failed",
+      message: "更新超时，请检查服务状态和后台日志",
+    };
+    ElMessage.error(updateStatus.value.message);
+    return;
+  }
+  try {
+    const { data } = await getSystemUpdateStatus();
+    updateStatus.value = data;
+    if (data.state === "completed") {
+      stopUpdatePolling();
+      ElMessage.success("在线更新完成，正在刷新页面");
+      updateReloadTimer = setTimeout(() => window.location.reload(), 1200);
+      return;
+    }
+    if (data.state === "failed") {
+      stopUpdatePolling();
+      ElMessage.error(data.message || "在线更新失败");
+      return;
+    }
+  } catch {
+    // 服务重启期间连接会短暂中断，继续轮询即可恢复进度。
+  }
+  scheduleUpdatePoll(updateStatus.value?.state === "restarting" ? 2000 : 1500);
+}
+
+async function loadUpdateInfo(showResult = false) {
+  updateChecking.value = true;
+  updateCheckFailed.value = false;
+  try {
+    const { data } = await checkSystemUpdate();
+    updateInfo.value = data;
+    updateStatus.value = data.status;
+    if (updateInProgress.value) {
+      updatePollStartedAt = Date.now();
+      scheduleUpdatePoll(500);
+    } else if (showResult) {
+      ElMessage.success(
+        data.update_available
+          ? `发现新版本 ${data.latest_version}`
+          : "当前已是最新版本"
+      );
+    }
+  } catch {
+    updateCheckFailed.value = true;
+    if (showResult) ElMessage.error("检查更新失败，请稍后重试");
+  } finally {
+    updateChecking.value = false;
+  }
+}
+
+async function beginSystemUpdate() {
+  if (!updateInfo.value?.update_available) return;
+  try {
+    await ElMessageBox.confirm(
+      `将从 ${updateInfo.value.current_version} 更新到 ${updateInfo.value.latest_version}，期间服务会短暂重启。`,
+      "确认在线更新",
+      {
+        type: "warning",
+        confirmButtonText: "开始更新",
+        cancelButtonText: "取消",
+      }
+    );
+  } catch {
+    return;
+  }
+  updateStarting.value = true;
+  try {
+    const { data } = await startSystemUpdate();
+    updateStatus.value = data;
+    updatePollStartedAt = Date.now();
+    scheduleUpdatePoll(500);
+  } catch {
+    await loadUpdateInfo(false);
+  } finally {
+    updateStarting.value = false;
+  }
+}
+
+onMounted(() => {
+  loadConfig();
+  loadUpdateInfo(false);
+});
+
+onBeforeUnmount(() => {
+  stopUpdatePolling();
+  if (updateReloadTimer) clearTimeout(updateReloadTimer);
+});
 </script>
 
 <template>
   <div v-loading="loading" class="page-workspace telegram-page">
     <div class="page-heading">
       <div>
-        <h1>Telegram 机器人</h1>
-        <p>通过 Telegram 管理 SublinkX 节点与订阅</p>
+        <h1>系统设置</h1>
+        <p>管理 SublinkX 在线更新与 Telegram 机器人</p>
       </div>
       <span class="bot-status" :class="{ active: form.enabled }">
         <i />
         {{ form.enabled ? "已启用" : "未启用" }}
       </span>
     </div>
+
+    <section class="work-surface system-update-settings">
+      <div class="section-heading">
+        <svg-icon icon-class="refresh" size="17px" />
+        <span>系统更新</span>
+      </div>
+
+      <div class="setting-row update-row">
+        <div class="setting-copy">
+          <strong>在线升级</strong>
+          <span v-if="updateInfo">
+            当前版本 {{ updateInfo.current_version }}，最新版本
+            {{ updateInfo.latest_version }}
+          </span>
+          <span v-else-if="updateCheckFailed">
+            版本信息获取失败，可点击按钮重新检查
+          </span>
+          <span v-else>正在获取版本信息</span>
+        </div>
+        <div class="update-control">
+          <el-tag
+            v-if="updateInfo?.update_available"
+            type="warning"
+            effect="plain"
+          >
+            发现 {{ updateInfo.latest_version }}
+          </el-tag>
+          <el-tag v-else-if="updateInfo" type="success" effect="plain">
+            已是最新版本
+          </el-tag>
+          <el-button :loading="updateChecking" @click="loadUpdateInfo(true)">
+            检查更新
+          </el-button>
+          <el-button
+            v-if="updateInfo?.update_available"
+            type="primary"
+            :loading="updateStarting"
+            :disabled="!updateInfo.supported"
+            @click="beginSystemUpdate"
+          >
+            在线更新
+          </el-button>
+        </div>
+      </div>
+      <div
+        v-if="updateInfo && !updateInfo.supported"
+        class="update-unsupported"
+      >
+        {{ updateInfo.unsupported_reason }}
+      </div>
+    </section>
 
     <section class="work-surface telegram-settings">
       <div class="section-heading">
@@ -172,7 +356,10 @@ onMounted(loadConfig);
       <div class="setting-row">
         <div class="setting-copy">
           <strong>主控公网地址</strong>
-          <span>Telegram 生成订阅链接时使用，例如 https://sublink.yforward7.com</span>
+          <span
+            >Telegram 生成订阅链接时使用，例如
+            https://sublink.yforward7.com</span
+          >
         </div>
         <el-input
           v-model="form.public_base_url"
@@ -227,6 +414,22 @@ onMounted(loadConfig);
         </div>
       </div>
     </section>
+
+    <div v-if="updateInProgress" class="update-loading-overlay">
+      <div class="update-loading-dialog" role="status" aria-live="polite">
+        <span class="update-spinner" />
+        <strong>{{ updateMessage }}</strong>
+        <span>
+          {{ updateStatus?.current_version }} →
+          {{ updateStatus?.target_version }}
+        </span>
+        <el-progress
+          :percentage="Math.max(1, updateStatus?.progress || 1)"
+          :stroke-width="8"
+          :show-text="true"
+        />
+      </div>
+    </div>
   </div>
 </template>
 
@@ -260,10 +463,12 @@ onMounted(loadConfig);
 }
 
 .telegram-settings,
-.bot-capabilities {
+.bot-capabilities,
+.system-update-settings {
   padding: 0 24px;
 }
 
+.telegram-settings,
 .bot-capabilities {
   margin-top: 18px;
   padding-bottom: 24px;
@@ -313,6 +518,69 @@ onMounted(loadConfig);
 
 .setting-control {
   width: 100%;
+}
+
+.update-control {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.update-control .el-button + .el-button {
+  margin-left: 0;
+}
+
+.update-unsupported {
+  padding: 12px 20px 16px;
+  color: var(--el-color-warning);
+  font-size: 13px;
+}
+
+.update-loading-overlay {
+  position: fixed;
+  z-index: 3000;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgb(15 23 42 / 52%);
+  backdrop-filter: blur(2px);
+}
+
+.update-loading-dialog {
+  display: grid;
+  width: min(420px, 100%);
+  gap: 14px;
+  padding: 26px;
+  color: var(--el-text-color-primary);
+  text-align: center;
+  background: var(--el-bg-color);
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 8px;
+  box-shadow: var(--el-box-shadow-dark);
+}
+
+.update-loading-dialog > span:not(.update-spinner) {
+  color: var(--el-text-color-secondary);
+  font-size: 13px;
+}
+
+.update-spinner {
+  width: 34px;
+  height: 34px;
+  margin: 0 auto;
+  border: 3px solid var(--el-color-primary-light-8);
+  border-top-color: var(--el-color-primary);
+  border-radius: 50%;
+  animation: update-spin 0.8s linear infinite;
+}
+
+@keyframes update-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .settings-actions {
@@ -371,7 +639,8 @@ html.dark .bot-status.active {
 
 @media (max-width: 640px) {
   .telegram-settings,
-  .bot-capabilities {
+  .bot-capabilities,
+  .system-update-settings {
     padding-right: 14px;
     padding-left: 14px;
   }

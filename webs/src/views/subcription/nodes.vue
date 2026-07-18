@@ -28,6 +28,7 @@ import {
   previewNodeReplacement,
   updateIPEntry,
 } from "@/api/subcription/ip-library";
+import { getSubs } from "@/api/subcription/subs";
 import { formatBeijingTime } from "@/utils/time";
 import { useDraggableTableRows } from "@/utils/table-drag";
 import { useAppStore } from "@/store";
@@ -53,6 +54,12 @@ interface NodeInfo {
   Link: string;
   GroupName?: string[]; // 分组名称
 }
+interface SubscriptionSummary {
+  ID: number;
+  Name: string;
+  Revoked?: boolean;
+  Nodes?: Array<{ ID: number }>;
+}
 onMounted(async () => {
   await refreshNodePageData();
 });
@@ -72,6 +79,11 @@ const selectedIPEntryID = ref<number>();
 const replacementPreview = ref<NodeReplacementPreview>();
 const replacementLoading = ref(false);
 const replacementError = ref("");
+const allSubscriptions = ref<SubscriptionSummary[]>([]);
+const selectedSubscriptionIDs = ref<number[]>([]);
+const subscriptionsLoading = ref(false);
+const subscriptionsLoadError = ref(false);
+let latestSubscriptionRequest = 0;
 let replacementTimer: ReturnType<typeof setTimeout> | undefined;
 let replacementRequestID = 0;
 
@@ -179,6 +191,8 @@ function ClearInput() {
   };
   NodeGroupInput.value = ""; // 清空创建分组输入框
   SelectionNodeGroups.value = []; // 清空选中的分组
+  selectedSubscriptionIDs.value = [];
+  subscriptionsLoadError.value = false;
   nodelistShow.value = false; // 隐藏节点列表
   Nodedialog.value = false; // 关闭节点添加弹窗
   Groupdialog.value = false; // 关闭分组绑定弹窗
@@ -216,6 +230,32 @@ async function GetGroups() {
   allGroupNames.value = Array.isArray(data) ? data : [];
   RadioGroup.value = allGroupNames.value.length > 0 ? "1" : "2"; // 自动选择单选框值
   // console.log("单选框",RadioGroup.value);
+}
+
+async function loadNodeSubscriptions(nodeID?: number) {
+  const requestID = ++latestSubscriptionRequest;
+  subscriptionsLoading.value = true;
+  subscriptionsLoadError.value = false;
+  selectedSubscriptionIDs.value = [];
+  try {
+    const { data } = await getSubs();
+    if (requestID !== latestSubscriptionRequest) return;
+    allSubscriptions.value = Array.isArray(data) ? data : [];
+    if (nodeID) {
+      selectedSubscriptionIDs.value = allSubscriptions.value
+        .filter((sub) => sub.Nodes?.some((node) => node.ID === nodeID))
+        .map((sub) => sub.ID);
+    }
+  } catch {
+    if (requestID !== latestSubscriptionRequest) return;
+    allSubscriptions.value = [];
+    subscriptionsLoadError.value = true;
+    ElMessage.error("订阅列表加载失败，请稍后重试");
+  } finally {
+    if (requestID === latestSubscriptionRequest) {
+      subscriptionsLoading.value = false;
+    }
+  }
 }
 
 async function loadIPEntries() {
@@ -379,7 +419,7 @@ async function refreshFirstPage() {
   await refreshNodePageData();
 }
 
-const handleAddNode = () => {
+const handleAddNode = async () => {
   resetReplacement();
   const defaultGroups =
     activeName.value !== "全部" &&
@@ -397,6 +437,7 @@ const handleAddNode = () => {
   };
   SelectionNodeGroups.value = defaultGroups;
   NodeGroupInput.value = "";
+  await loadNodeSubscriptions();
 };
 
 const closeGroupSelect = () => {
@@ -448,7 +489,7 @@ const uploadNodeBackup = async (event: Event) => {
   }
 };
 
-const handleEditNode = (row: any) => {
+const handleEditNode = async (row: any) => {
   resetReplacement();
   // NodeNewNameInput.value = row.Name; // 编辑时使用原名称
   // NodeNewLinkInput.value = row.Link; // 编辑时使用原链接
@@ -463,6 +504,7 @@ const handleEditNode = (row: any) => {
   };
   SelectionNodeGroups.value = NodeForm.value.GroupName || [];
   SelectionNode.value = row.Name;
+  await loadNodeSubscriptions(row.ID);
 };
 const SubmitNodeForm = async (row: any) => {
   const isAdd = dialogMode.value === "add";
@@ -489,6 +531,10 @@ const SubmitNodeForm = async (row: any) => {
       return;
     }
   }
+  if (subscriptionsLoading.value || subscriptionsLoadError.value) {
+    ElMessage.warning("请等待订阅列表加载成功后再保存");
+    return;
+  }
 
   try {
     if (isAdd) {
@@ -503,6 +549,7 @@ const SubmitNodeForm = async (row: any) => {
             RadioGroup.value === "1"
               ? SelectionNodeGroups.value.join(",")
               : NodeGroupInput.value,
+          subscription_ids: selectedSubscriptionIDs.value.join(","),
         });
       }
       ElMessage.success("节点添加成功");
@@ -518,6 +565,7 @@ const SubmitNodeForm = async (row: any) => {
           RadioGroup.value === "1"
             ? SelectionNodeGroups.value.join(",")
             : NodeGroupInput.value,
+        subscription_ids: selectedSubscriptionIDs.value.join(","),
       });
       ElMessage.success("节点更新成功");
     }
@@ -1106,6 +1154,45 @@ onBeforeUnmount(() => {
           <span class="field-label">新分组名称</span>
           <el-input v-model="NodeGroupInput" placeholder="例如：香港节点" />
         </label>
+
+        <label class="field">
+          <span class="field-label">所属订阅</span>
+          <el-select
+            v-model="selectedSubscriptionIDs"
+            multiple
+            filterable
+            class="field-control"
+            placeholder="可选择多个订阅"
+            :loading="subscriptionsLoading"
+            :disabled="subscriptionsLoadError"
+          >
+            <el-option
+              v-for="sub in allSubscriptions"
+              :key="sub.ID"
+              :label="sub.Name"
+              :value="sub.ID"
+            >
+              <div class="subscription-option">
+                <span>{{ sub.Name }}</span>
+                <el-tag
+                  v-if="sub.Revoked"
+                  size="small"
+                  type="danger"
+                  effect="plain"
+                >
+                  已失效
+                </el-tag>
+              </div>
+            </el-option>
+          </el-select>
+          <span v-if="subscriptionsLoadError" class="replacement-error">
+            订阅列表加载失败，请关闭弹窗后重试。
+          </span>
+          <span v-else class="field-help">
+            当前已关联
+            {{ selectedSubscriptionIDs.length }} 个订阅，可同时选择多个。
+          </span>
+        </label>
       </div>
 
       <template #footer>
@@ -1113,7 +1200,7 @@ onBeforeUnmount(() => {
           <el-button @click="Nodedialog = false">取消</el-button>
           <el-button
             type="primary"
-            :loading="replacementLoading"
+            :loading="replacementLoading || subscriptionsLoading"
             @click="SubmitNodeForm"
           >
             {{ dialogMode === "add" ? "添加节点" : "保存修改" }}
@@ -1414,7 +1501,8 @@ onBeforeUnmount(() => {
   color: var(--el-text-color-secondary);
 }
 
-.ip-option {
+.ip-option,
+.subscription-option {
   display: flex;
   gap: 16px;
   align-items: center;

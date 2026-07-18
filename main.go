@@ -30,7 +30,7 @@ var embeddedFiles embed.FS
 var Template embed.FS
 
 // 版本号
-const version = "4.28"
+const version = "4.29"
 
 func Templateinit() {
 	// 设置template路径
@@ -162,6 +162,7 @@ func Run(port int) {
 	routers.Templates(r)
 	routers.Telegram(r)
 	routers.Version(r, version)
+	routers.SystemUpdate(r, version)
 	// 启动服务
 	r.Run(fmt.Sprintf("0.0.0.0:%d", port))
 }

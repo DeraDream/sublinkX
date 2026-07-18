@@ -4,6 +4,7 @@ import (
 	"crypto/md5"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"strconv"
 	"strings" // 用于处理逗号分隔的字符串
 	"time"
@@ -14,10 +15,10 @@ import (
 // Subcription 结构体
 type Subcription struct {
 	gorm.Model
-	ID          int
-	Name        string
-	Config      string `gorm:"type:text"` // Config 存储为 JSON 字符串
-	NodeOrder   string `gorm:"type:text"`
+	ID                  int
+	Name                string
+	Config              string `gorm:"type:text"` // Config 存储为 JSON 字符串
+	NodeOrder           string `gorm:"type:text"`
 	Token               string `gorm:"index"`
 	LegacyTokenDisabled bool
 	Revoked             bool
@@ -106,6 +107,78 @@ func applySubscriptionNodeOrder(nodes []Node, order string) []Node {
 		}
 	}
 	return reordered
+}
+
+func ValidateSubscriptionIDs(ids []int) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	var count int64
+	if err := DB.Model(&Subcription{}).Where("id IN ?", ids).Count(&count).Error; err != nil {
+		return err
+	}
+	if count != int64(len(ids)) {
+		return errors.New("选择的订阅不存在或已被删除")
+	}
+	return nil
+}
+
+func SetNodeSubscriptions(nodeID int, subscriptionIDs []int) error {
+	selected := make(map[int]bool, len(subscriptionIDs))
+	for _, id := range subscriptionIDs {
+		selected[id] = true
+	}
+
+	return DB.Transaction(func(tx *gorm.DB) error {
+		var node Node
+		if err := tx.First(&node, nodeID).Error; err != nil {
+			return err
+		}
+		var subscriptions []Subcription
+		if err := tx.Preload("Nodes").Find(&subscriptions).Error; err != nil {
+			return err
+		}
+		availableSelected := 0
+		for _, sub := range subscriptions {
+			if selected[sub.ID] {
+				availableSelected++
+			}
+		}
+		if availableSelected != len(selected) {
+			return errors.New("选择的订阅不存在或已被删除")
+		}
+
+		for index := range subscriptions {
+			sub := &subscriptions[index]
+			sub.Nodes = applySubscriptionNodeOrder(sub.Nodes, sub.NodeOrder)
+			containsNode := false
+			nextNodes := make([]Node, 0, len(sub.Nodes)+1)
+			for _, current := range sub.Nodes {
+				if current.ID == nodeID {
+					containsNode = true
+					if !selected[sub.ID] {
+						continue
+					}
+				}
+				nextNodes = append(nextNodes, current)
+			}
+			if selected[sub.ID] && !containsNode {
+				nextNodes = append(nextNodes, node)
+			}
+			if containsNode == selected[sub.ID] {
+				continue
+			}
+
+			nodeOrder := subscriptionNodeOrderValue(nextNodes)
+			if err := tx.Model(sub).Update("node_order", nodeOrder).Error; err != nil {
+				return err
+			}
+			if err := tx.Model(sub).Association("Nodes").Replace(nextNodes); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
 
 func (sub *Subcription) IsAvailable(now time.Time) (bool, string) {
