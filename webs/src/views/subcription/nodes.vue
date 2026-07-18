@@ -107,6 +107,7 @@ const NodeForm = ref<NodeInfo>({
 const allGroupNames = ref<string[]>([]); // 所有分组名称
 const nodelistShow = ref(false); // 节点列表
 const SelectionNodeGroups = ref<string[]>([]); // 选中的分组
+const groupSelectRef = ref<any>();
 const SelectionNode = ref(""); // 选中的节点
 
 // const SelectionNodes = ref([]); // 选中的节点
@@ -380,16 +381,26 @@ async function refreshFirstPage() {
 
 const handleAddNode = () => {
   resetReplacement();
+  const defaultGroups =
+    activeName.value !== "全部" &&
+    allGroupNames.value.includes(activeName.value)
+      ? [activeName.value]
+      : [];
   dialogMode.value = "add";
   Nodedialog.value = true;
+  RadioGroup.value = allGroupNames.value.length > 0 ? "1" : "2";
   NodeForm.value = {
     Title: "添加节点",
     Name: "",
     Link: "",
-    GroupName: [],
+    GroupName: defaultGroups,
   };
-  SelectionNodeGroups.value = [];
+  SelectionNodeGroups.value = defaultGroups;
   NodeGroupInput.value = "";
+};
+
+const closeGroupSelect = () => {
+  nextTick(() => groupSelectRef.value?.blur());
 };
 
 const downloadNodeBackup = async () => {
@@ -1075,10 +1086,12 @@ onBeforeUnmount(() => {
         >
           <span class="field-label">选择分组</span>
           <el-select
+            ref="groupSelectRef"
             v-model="SelectionNodeGroups"
             multiple
             placeholder="可选择多个分组"
             class="field-control"
+            @change="closeGroupSelect"
           >
             <el-option
               v-for="item in allGroupNames"
