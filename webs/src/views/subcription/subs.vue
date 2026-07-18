@@ -87,6 +87,8 @@ const accessLimit = ref<number | undefined>();
 
 const Clash = ref("");
 const Surge = ref("");
+const clashTemplateSelectRef = ref<{ blur: () => void }>();
+const surgeTemplateSelectRef = ref<{ blur: () => void }>();
 const clashTemplateMode = ref<"local" | "url">("local");
 const surgeTemplateMode = ref<"local" | "url">("local");
 const checkList = ref<string[]>([]);
@@ -106,6 +108,14 @@ const ClientList = ["v2ray", "clash", "surge"];
 const ClientUrls = ref<Record<string, string>>({});
 const ClientUrl = ref("");
 const ClientSubName = ref("");
+
+const closeClashTemplateSelect = () => {
+  nextTick(() => clashTemplateSelectRef.value?.blur());
+};
+
+const closeSurgeTemplateSelect = () => {
+  nextTick(() => surgeTemplateSelectRef.value?.blur());
+};
 
 async function getsubs() {
   const { data } = await getSubs();
@@ -717,8 +727,10 @@ const OpenUrl = (url: string) => {
             </div>
             <el-select
               v-if="clashTemplateMode === 'local'"
+              ref="clashTemplateSelectRef"
               v-model="Clash"
               placeholder="选择 Clash 模板"
+              @change="closeClashTemplateSelect"
             >
               <el-option
                 v-for="template in templist"
@@ -748,8 +760,10 @@ const OpenUrl = (url: string) => {
             </div>
             <el-select
               v-if="surgeTemplateMode === 'local'"
+              ref="surgeTemplateSelectRef"
               v-model="Surge"
               placeholder="选择 Surge 模板"
+              @change="closeSurgeTemplateSelect"
             >
               <el-option
                 v-for="template in templist"

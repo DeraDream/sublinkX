@@ -1011,10 +1011,12 @@ html.dark .el-dialog {
   height: 44px;
   font-weight: 600;
   color: #475569;
+  text-align: center !important;
 }
 
 .el-table td.el-table__cell {
   height: 48px;
+  text-align: center !important;
 }
 
 .row-drag-handle {

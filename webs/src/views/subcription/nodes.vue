@@ -76,6 +76,8 @@ const ipForm = ref<{ ID?: number; Alias: string; Address: string }>({
 });
 const replaceIPEnabled = ref(false);
 const selectedIPEntryID = ref<number>();
+const ipEntrySelectRef = ref<{ blur: () => void }>();
+const subscriptionSelectRef = ref<{ blur: () => void }>();
 const replacementPreview = ref<NodeReplacementPreview>();
 const replacementLoading = ref(false);
 const replacementError = ref("");
@@ -444,6 +446,14 @@ const closeGroupSelect = () => {
   nextTick(() => groupSelectRef.value?.blur());
 };
 
+const closeIPEntrySelect = () => {
+  nextTick(() => ipEntrySelectRef.value?.blur());
+};
+
+const closeSubscriptionSelect = () => {
+  nextTick(() => subscriptionSelectRef.value?.blur());
+};
+
 const downloadNodeBackup = async () => {
   try {
     const response: any = await exportNodes();
@@ -667,11 +677,6 @@ const Groupformatter = (row: any, cellValue: any) => {
     return "未分组"; // 如果没有分组，返回默认值
   }
   return data.map((group: any) => group.Name).join(", ");
-};
-const maskMiddle = (value: string, head = 32, tail = 18) => {
-  if (!value) return "";
-  if (value.length <= head + tail + 3) return value;
-  return `${value.slice(0, head)}...${value.slice(-tail)}`;
 };
 // --- 复制链接 (保持不变) ---
 const copyUrl = (url: string) => {
@@ -1028,11 +1033,13 @@ onBeforeUnmount(() => {
             <label class="field">
               <span class="field-label">选择入口 IP</span>
               <el-select
+                ref="ipEntrySelectRef"
                 v-model="selectedIPEntryID"
                 class="field-control"
                 filterable
                 placeholder="选择 IP 库中的入口地址"
                 :loading="ipEntriesLoading"
+                @change="closeIPEntrySelect"
               >
                 <el-option
                   v-for="entry in ipEntries"
@@ -1158,6 +1165,7 @@ onBeforeUnmount(() => {
         <label class="field">
           <span class="field-label">所属订阅</span>
           <el-select
+            ref="subscriptionSelectRef"
             v-model="selectedSubscriptionIDs"
             multiple
             filterable
@@ -1165,6 +1173,7 @@ onBeforeUnmount(() => {
             placeholder="可选择多个订阅"
             :loading="subscriptionsLoading"
             :disabled="subscriptionsLoadError"
+            @change="closeSubscriptionSelect"
           >
             <el-option
               v-for="sub in allSubscriptions"
@@ -1289,7 +1298,7 @@ onBeforeUnmount(() => {
         >
           <template #default="{ row }">
             <code class="node-link" :title="row.Link">
-              {{ maskMiddle(row.Link) }}
+              {{ row.Link }}
             </code>
           </template>
         </el-table-column>
@@ -1574,13 +1583,20 @@ onBeforeUnmount(() => {
 .node-link {
   display: block;
   max-width: 100%;
-  overflow: hidden;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 12px;
   color: var(--el-text-color-secondary);
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  white-space: normal;
   background: transparent;
+}
+
+@media (width <= 1280px) {
+  .node-link {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
 }
 
 .desktop-action-grid {

@@ -20,6 +20,7 @@ defineOptions({
 const loading = ref(false);
 const saving = ref(false);
 const testing = ref(false);
+const languageSelectRef = ref<{ blur: () => void }>();
 const updateChecking = ref(false);
 const updateStarting = ref(false);
 const updateCheckFailed = ref(false);
@@ -37,6 +38,10 @@ const updateInProgress = computed(() =>
 const updateMessage = computed(
   () => updateStatus.value?.message || "正在准备在线更新"
 );
+
+const closeLanguageSelect = () => {
+  nextTick(() => languageSelectRef.value?.blur());
+};
 
 const form = reactive<TelegramConfig>({
   enabled: false,
@@ -336,7 +341,12 @@ onBeforeUnmount(() => {
           <strong>机器人语言</strong>
           <span>机器人菜单和回复消息使用的语言</span>
         </div>
-        <el-select v-model="form.language" class="setting-control">
+        <el-select
+          ref="languageSelectRef"
+          v-model="form.language"
+          class="setting-control"
+          @change="closeLanguageSelect"
+        >
           <el-option label="简体中文" value="zh-CN" />
         </el-select>
       </div>

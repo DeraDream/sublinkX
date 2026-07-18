@@ -1,5 +1,6 @@
 <template>
   <el-select
+    ref="selectRef"
     v-model="selectedValue"
     :placeholder="placeholder"
     :disabled="disabled"
@@ -44,6 +45,7 @@ const emits = defineEmits(["update:modelValue"]); // 父组件监听事件，同
 const options: Ref<OptionType[]> = ref([]); // 字典下拉数据源
 
 const selectedValue = ref<string | number | undefined>();
+const selectRef = ref<{ blur: () => void }>();
 
 watch([options, () => props.modelValue], ([newOptions, newModelValue]) => {
   if (newOptions.length === 0) return; // 下拉数据源加载未完成不回显
@@ -62,6 +64,7 @@ watch([options, () => props.modelValue], ([newOptions, newModelValue]) => {
 
 function handleChange(val?: string | number | undefined) {
   emits("update:modelValue", val);
+  nextTick(() => selectRef.value?.blur());
 }
 
 onBeforeMount(() => {
