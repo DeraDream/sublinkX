@@ -12,11 +12,12 @@ import (
 )
 
 type SqlConfig struct {
-	Clash      string                         `json:"clash"`
-	Surge      string                         `json:"surge"`
-	Udp        bool                           `json:"udp"`
-	Cert       bool                           `json:"cert"`
-	GroupNodes map[string]PolicyGroupNodeRule `json:"group_nodes"`
+	Clash              string                         `json:"clash"`
+	Surge              string                         `json:"surge"`
+	Udp                bool                           `json:"udp"`
+	Cert               bool                           `json:"cert"`
+	GroupNodes         map[string]PolicyGroupNodeRule `json:"group_nodes"`
+	GroupNodesTemplate string                         `json:"group_nodes_template"`
 }
 
 type PolicyGroupNodeRule struct {
@@ -51,6 +52,14 @@ func selectedProxyNamesForGroup(groupName string, allProxyNames []string, rules 
 	default:
 		return allProxyNames
 	}
+}
+
+func policyGroupRulesForTemplate(sqlconfig SqlConfig, templateSource string) map[string]PolicyGroupNodeRule {
+	configuredSource := strings.TrimSpace(sqlconfig.GroupNodesTemplate)
+	if configuredSource != "" && configuredSource != strings.TrimSpace(templateSource) {
+		return nil
+	}
+	return sqlconfig.GroupNodes
 }
 
 func appendUniqueProxyNames(existing []interface{}, names []string) []interface{} {

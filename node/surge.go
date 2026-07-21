@@ -158,7 +158,7 @@ func DecodeSurge(proxys, groups []string, sqlconfig SqlConfig) (string, error) {
 			if strings.Contains(line, "=") {
 				parts := strings.SplitN(line, "=", 2)
 				groupName := strings.TrimSpace(parts[0])
-				groupNames := selectedProxyNamesForGroup(groupName, groups, sqlconfig.GroupNodes)
+				groupNames := selectedProxyNamesForGroup(groupName, groups, policyGroupRulesForTemplate(sqlconfig, sqlconfig.Surge))
 				if len(groupNames) == 0 {
 					lines[i] = strings.TrimSpace(line)
 					continue

@@ -46,6 +46,7 @@ interface Config {
   udp: boolean | string;
   cert: boolean | string;
   group_nodes?: Record<string, PolicyGroupNodeRule>;
+  group_nodes_template?: string;
 }
 
 interface PolicyGroupNodeRule {
@@ -102,6 +103,8 @@ const checkList = ref<string[]>([]);
 const value1 = ref<number[]>([]);
 const nodeKeyword = ref("");
 const groupNodeRules = ref<Record<string, PolicyGroupNodeRule>>({});
+const groupNodesTemplate = ref("");
+const manualGroupNames = ref<string[]>([]);
 const manualGroupName = ref("");
 
 const iplogsdialog = ref(false);
@@ -224,6 +227,12 @@ const localTemplateText = (value: string) => {
   return templist.value.find((item) => item.file === filename)?.text || "";
 };
 
+const templateDisplayName = (value: string) => {
+  if (!value) return "未选择模板";
+  if (/^https?:\/\//i.test(value)) return value;
+  return value.replace(/^\.\/template\//, "");
+};
+
 const uniqueStrings = (items: string[]) =>
   Array.from(new Set(items.map((item) => item.trim()).filter(Boolean)));
 
@@ -278,13 +287,35 @@ const parseSurgeGroupNames = (text: string) => {
   return uniqueStrings(groups);
 };
 
+const groupTemplateOptions = computed(() =>
+  uniqueStrings([Clash.value.trim(), Surge.value.trim()]).map((value) => ({
+    label: templateDisplayName(value),
+    value,
+  }))
+);
+
+const ensureGroupNodesTemplate = () => {
+  const optionValues = groupTemplateOptions.value.map((item) => item.value);
+  if (!optionValues.length) {
+    groupNodesTemplate.value = "";
+    return;
+  }
+  if (!optionValues.includes(groupNodesTemplate.value)) {
+    groupNodesTemplate.value = optionValues[0];
+  }
+};
+
 const templateGroupNames = computed(() => {
-  const clashText = localTemplateText(Clash.value);
-  const surgeText = localTemplateText(Surge.value);
+  const templateText = localTemplateText(groupNodesTemplate.value);
+  const parsedGroups = uniqueStrings([
+    ...parseClashGroupNames(templateText),
+    ...parseSurgeGroupNames(templateText),
+  ]);
+  const fallbackGroups = templateText ? [] : Object.keys(groupNodeRules.value);
   return uniqueStrings([
-    ...parseClashGroupNames(clashText),
-    ...parseSurgeGroupNames(surgeText),
-    ...Object.keys(groupNodeRules.value),
+    ...parsedGroups,
+    ...fallbackGroups,
+    ...manualGroupNames.value,
   ]);
 });
 
@@ -349,6 +380,9 @@ const addManualGroup = () => {
   const name = manualGroupName.value.trim();
   if (!name) return;
   ensureGroupRule(name);
+  if (!manualGroupNames.value.includes(name)) {
+    manualGroupNames.value = [...manualGroupNames.value, name];
+  }
   manualGroupName.value = "";
 };
 
@@ -356,6 +390,9 @@ const resetGroupRule = (name: string) => {
   const nextRules = { ...groupNodeRules.value };
   delete nextRules[name];
   groupNodeRules.value = nextRules;
+  manualGroupNames.value = manualGroupNames.value.filter(
+    (item) => item !== name
+  );
 };
 
 const parseConfig = (value: Config | string): Config => {
@@ -383,10 +420,12 @@ const resetWizardForm = () => {
   Surge.value = defaultTemplate("surge", "./template/surge.conf");
   clashTemplateMode.value = inferTemplateMode(Clash.value);
   surgeTemplateMode.value = inferTemplateMode(Surge.value);
+  groupNodesTemplate.value = Clash.value;
   value1.value = [];
   nodeKeyword.value = "";
   groupNodeRules.value = {};
   manualGroupName.value = "";
+  manualGroupNames.value = [];
 };
 
 const handleAddSub = () => {
@@ -415,10 +454,12 @@ const handleEdit = (row: any) => {
     config.surge || defaultTemplate("surge", "./template/surge.conf");
   clashTemplateMode.value = inferTemplateMode(Clash.value);
   surgeTemplateMode.value = inferTemplateMode(Surge.value);
+  groupNodesTemplate.value = config.group_nodes_template || Clash.value;
   value1.value = (row.Nodes || []).map((item: Node) => item.ID);
   nodeKeyword.value = "";
   groupNodeRules.value = { ...(config.group_nodes || {}) };
   manualGroupName.value = "";
+  manualGroupNames.value = [];
   dialogVisible.value = true;
 };
 
@@ -486,6 +527,8 @@ watch(value1, () => {
   });
 });
 
+watch([Clash, Surge], ensureGroupNodesTemplate);
+
 const serializedGroupRules = () => {
   const result: Record<string, PolicyGroupNodeRule> = {};
   templateGroupNames.value.forEach((name) => {
@@ -513,6 +556,7 @@ const buildConfig = () =>
     udp: checkList.value.includes("udp"),
     cert: checkList.value.includes("cert"),
     group_nodes: serializedGroupRules(),
+    group_nodes_template: groupNodesTemplate.value.trim(),
   });
 
 const addSubs = async () => {
@@ -1066,9 +1110,27 @@ const OpenUrl = (url: string) => {
         <div class="panel-copy">
           <h3>策略组节点分配</h3>
           <p>
-            默认每个策略组都会加入全部已选节点；需要精细控制时，可以改为指定节点或不自动添加。
+            只读取当前订阅使用的一个模板；默认每个策略组都会加入全部已选节点。
           </p>
         </div>
+
+        <label class="field group-template-source">
+          <span class="field-label">当前读取模板</span>
+          <el-select
+            v-model="groupNodesTemplate"
+            placeholder="选择当前订阅实际使用的模板"
+          >
+            <el-option
+              v-for="template in groupTemplateOptions"
+              :key="template.value"
+              :label="template.label"
+              :value="template.value"
+            />
+          </el-select>
+          <small>
+            下方策略组只从这个模板解析；不会再混入当前订阅里另一个模板的策略组。
+          </small>
+        </label>
 
         <div class="manual-group-bar">
           <el-input
@@ -1205,6 +1267,7 @@ const OpenUrl = (url: string) => {
         </div>
         <div class="summary-block">
           <strong>策略组分配</strong>
+          <p>读取模板：{{ templateDisplayName(groupNodesTemplate) }}</p>
           <p>{{ selectedGroupSummary }}</p>
         </div>
       </section>
@@ -1555,6 +1618,15 @@ const OpenUrl = (url: string) => {
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 10px;
   margin-bottom: 12px;
+}
+
+.group-template-source {
+  margin-bottom: 12px;
+}
+
+.group-template-source small {
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
 }
 
 .group-rule-list {

@@ -403,7 +403,7 @@ func DecodeClash(proxys []Proxy, sqlconfig SqlConfig) ([]byte, error) {
 		if proxyGroup["type"] == "relay" {
 			continue
 		}
-		groupProxyNames := selectedProxyNamesForGroup(groupName, ProxiesNameList, sqlconfig.GroupNodes)
+		groupProxyNames := selectedProxyNamesForGroup(groupName, ProxiesNameList, policyGroupRulesForTemplate(sqlconfig, sqlconfig.Clash))
 		proxyGroup["proxies"] = appendUniqueProxyNames(proxyGroup["proxies"].([]interface{}), groupProxyNames)
 		proxyGroups[i] = proxyGroup
 	}

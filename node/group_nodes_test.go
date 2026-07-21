@@ -44,3 +44,19 @@ func TestAppendUniqueNames(t *testing.T) {
 		}
 	}
 }
+
+func TestPolicyGroupRulesForTemplateOnlyAppliesMatchingTemplate(t *testing.T) {
+	rules := map[string]PolicyGroupNodeRule{
+		"🚀 节点选择": {Mode: "none"},
+	}
+	config := SqlConfig{
+		GroupNodes:         rules,
+		GroupNodesTemplate: "./template/clash.yaml",
+	}
+	if got := policyGroupRulesForTemplate(config, "./template/clash.yaml"); len(got) != 1 {
+		t.Fatalf("policyGroupRulesForTemplate() = %#v, want configured rules", got)
+	}
+	if got := policyGroupRulesForTemplate(config, "./template/surge.conf"); got != nil {
+		t.Fatalf("policyGroupRulesForTemplate() = %#v, want nil for another template", got)
+	}
+}
