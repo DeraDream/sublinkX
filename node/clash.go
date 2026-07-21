@@ -351,13 +351,13 @@ func EncodeClash(urls []string, sqlconfig SqlConfig) ([]byte, error) {
 		}
 	}
 	// 生成Clash配置文件
-	return DecodeClash(proxys, sqlconfig.Clash)
+	return DecodeClash(proxys, sqlconfig)
 }
 
 // DecodeClash 用于解析 Clash 配置文件
-func DecodeClash(proxys []Proxy, yamlfile string) ([]byte, error) {
+func DecodeClash(proxys []Proxy, sqlconfig SqlConfig) ([]byte, error) {
 	// 读取 YAML 文件
-	data, err := ReadTemplateSource(yamlfile)
+	data, err := ReadTemplateSource(sqlconfig.Clash)
 	if err != nil {
 		log.Printf("error: %v", err)
 		return nil, err
@@ -397,23 +397,14 @@ func DecodeClash(proxys []Proxy, yamlfile string) ([]byte, error) {
 		if proxyGroup["proxies"] == nil {
 			proxyGroup["proxies"] = []interface{}{}
 		}
-		// 如果为链式代理的话则不插入返回
+		groupName, _ := proxyGroup["name"].(string)
+		// 如果为链式代理的话则跳过当前组
 		// log.Print("代理类型为:", proxyGroup["type"])
 		if proxyGroup["type"] == "relay" {
-			break
+			continue
 		}
-		// 清除 nil 值
-		var validProxies []interface{}
-		for _, p := range proxyGroup["proxies"].([]interface{}) {
-			if p != nil {
-				validProxies = append(validProxies, p)
-			}
-		}
-		// 添加新代理
-		for _, newProxy := range ProxiesNameList {
-			validProxies = append(validProxies, newProxy)
-		}
-		proxyGroup["proxies"] = validProxies
+		groupProxyNames := selectedProxyNamesForGroup(groupName, ProxiesNameList, sqlconfig.GroupNodes)
+		proxyGroup["proxies"] = appendUniqueProxyNames(proxyGroup["proxies"].([]interface{}), groupProxyNames)
 		proxyGroups[i] = proxyGroup
 	}
 

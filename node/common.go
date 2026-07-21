@@ -12,10 +12,89 @@ import (
 )
 
 type SqlConfig struct {
-	Clash string `json:"clash"`
-	Surge string `json:"surge"`
-	Udp   bool   `json:"udp"`
-	Cert  bool   `json:"cert"`
+	Clash      string                         `json:"clash"`
+	Surge      string                         `json:"surge"`
+	Udp        bool                           `json:"udp"`
+	Cert       bool                           `json:"cert"`
+	GroupNodes map[string]PolicyGroupNodeRule `json:"group_nodes"`
+}
+
+type PolicyGroupNodeRule struct {
+	Mode  string   `json:"mode"`
+	Nodes []string `json:"nodes"`
+}
+
+func selectedProxyNamesForGroup(groupName string, allProxyNames []string, rules map[string]PolicyGroupNodeRule) []string {
+	rule, ok := rules[groupName]
+	if !ok || strings.TrimSpace(rule.Mode) == "" || rule.Mode == "all" {
+		return allProxyNames
+	}
+
+	switch rule.Mode {
+	case "none":
+		return []string{}
+	case "include":
+		allowed := make(map[string]bool, len(rule.Nodes))
+		for _, name := range rule.Nodes {
+			trimmed := strings.TrimSpace(name)
+			if trimmed != "" {
+				allowed[trimmed] = true
+			}
+		}
+		selected := make([]string, 0, len(rule.Nodes))
+		for _, name := range allProxyNames {
+			if allowed[name] {
+				selected = append(selected, name)
+			}
+		}
+		return selected
+	default:
+		return allProxyNames
+	}
+}
+
+func appendUniqueProxyNames(existing []interface{}, names []string) []interface{} {
+	seen := make(map[string]bool, len(existing)+len(names))
+	valid := make([]interface{}, 0, len(existing)+len(names))
+	for _, item := range existing {
+		if item == nil {
+			continue
+		}
+		if name, ok := item.(string); ok {
+			seen[name] = true
+		}
+		valid = append(valid, item)
+	}
+	for _, name := range names {
+		if strings.TrimSpace(name) == "" || seen[name] {
+			continue
+		}
+		valid = append(valid, name)
+		seen[name] = true
+	}
+	return valid
+}
+
+func appendUniqueStringNames(existing []string, names []string) []string {
+	seen := make(map[string]bool, len(existing)+len(names))
+	valid := make([]string, 0, len(existing)+len(names))
+	for _, item := range existing {
+		trimmed := strings.TrimSpace(item)
+		if trimmed == "" {
+			continue
+		}
+		valid = append(valid, trimmed)
+		seen[trimmed] = true
+	}
+	for _, name := range names {
+		trimmed := strings.TrimSpace(name)
+		if trimmed == "" || seen[trimmed] {
+			continue
+		}
+		valid = append(valid, trimmed)
+		seen[trimmed] = true
+	}
+	return valid
 }
 
 var templateHTTPClient = &http.Client{Timeout: 20 * time.Second}

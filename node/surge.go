@@ -134,10 +134,10 @@ func EncodeSurge(urls []string, sqlconfig SqlConfig) (string, error) {
 			proxys = append(proxys, tuicproxy)
 		}
 	}
-	return DecodeSurge(proxys, groups, sqlconfig.Surge)
+	return DecodeSurge(proxys, groups, sqlconfig)
 }
-func DecodeSurge(proxys, groups []string, file string) (string, error) {
-	surge, err := ReadTemplateSource(file)
+func DecodeSurge(proxys, groups []string, sqlconfig SqlConfig) (string, error) {
+	surge, err := ReadTemplateSource(sqlconfig.Surge)
 	if err != nil {
 		log.Println(err)
 		return "", err
@@ -153,11 +153,19 @@ func DecodeSurge(proxys, groups []string, file string) (string, error) {
 	})
 	groupPart := groupReg.ReplaceAllStringFunc(proxyPart, func(s string) string {
 		lines := strings.Split(s, "\n")
-		grouplist := strings.Join(groups, ",")
 		for i, line := range lines {
 
 			if strings.Contains(line, "=") {
-				lines[i] = strings.TrimSpace(line) + ", " + grouplist
+				parts := strings.SplitN(line, "=", 2)
+				groupName := strings.TrimSpace(parts[0])
+				groupNames := selectedProxyNamesForGroup(groupName, groups, sqlconfig.GroupNodes)
+				if len(groupNames) == 0 {
+					lines[i] = strings.TrimSpace(line)
+					continue
+				}
+				existingItems := strings.Split(parts[1], ",")
+				mergedItems := appendUniqueStringNames(existingItems, groupNames)
+				lines[i] = groupName + " = " + strings.Join(mergedItems, ", ")
 				// lines[i] = line + "," + grouplist
 			}
 		}

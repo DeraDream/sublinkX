@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref } from "vue";
+import { computed, nextTick, onMounted, ref, watch } from "vue";
 import {
   getSubs,
   AddSub,
@@ -45,6 +45,12 @@ interface Config {
   surge: string;
   udp: boolean | string;
   cert: boolean | string;
+  group_nodes?: Record<string, PolicyGroupNodeRule>;
+}
+
+interface PolicyGroupNodeRule {
+  mode: "all" | "include" | "none";
+  nodes?: string[];
 }
 
 interface SubLogs {
@@ -95,6 +101,8 @@ const checkList = ref<string[]>([]);
 
 const value1 = ref<number[]>([]);
 const nodeKeyword = ref("");
+const groupNodeRules = ref<Record<string, PolicyGroupNodeRule>>({});
+const manualGroupName = ref("");
 
 const iplogsdialog = ref(false);
 const IplogsList = ref<SubLogs[]>([]);
@@ -183,6 +191,18 @@ const selectedNodes = computed(() =>
   })
 );
 
+const selectedNodeNames = computed(() =>
+  selectedNodes.value.map((node) => node.Name)
+);
+
+const wizardTitles = [
+  "基本信息",
+  "输出模板",
+  "选择节点",
+  "策略组分配",
+  "确认保存",
+];
+
 const nodeNameById = (id: number) =>
   NodesList.value.find((node) => node.ID === id)?.Name || String(id);
 
@@ -197,6 +217,145 @@ const defaultTemplate = (keyword: string, fallback: string) => {
     item.file.toLowerCase().includes(keyword)
   );
   return hit ? `./template/${hit.file}` : fallback;
+};
+
+const localTemplateText = (value: string) => {
+  const filename = value.replace(/^\.\/template\//, "");
+  return templist.value.find((item) => item.file === filename)?.text || "";
+};
+
+const uniqueStrings = (items: string[]) =>
+  Array.from(new Set(items.map((item) => item.trim()).filter(Boolean)));
+
+const parseClashGroupNames = (text: string) => {
+  const groups: string[] = [];
+  const lines = text.split(/\r?\n/);
+  let inProxyGroups = false;
+  let proxyGroupIndent = 0;
+  let currentItemIndent = 0;
+
+  lines.forEach((line) => {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) return;
+    const indent = line.search(/\S|$/);
+    if (/^proxy-groups\s*:/.test(trimmed)) {
+      inProxyGroups = true;
+      proxyGroupIndent = indent;
+      currentItemIndent = indent + 2;
+      return;
+    }
+    if (
+      inProxyGroups &&
+      indent <= proxyGroupIndent &&
+      !trimmed.startsWith("-")
+    ) {
+      inProxyGroups = false;
+    }
+    if (!inProxyGroups) return;
+    const inlineName = trimmed.match(/^-\s*name\s*:\s*["']?(.+?)["']?\s*$/);
+    const blockName = trimmed.match(/^name\s*:\s*["']?(.+?)["']?\s*$/);
+    if (inlineName) {
+      currentItemIndent = indent;
+      groups.push(inlineName[1]);
+      return;
+    }
+    if (blockName && indent > currentItemIndent) {
+      groups.push(blockName[1]);
+    }
+  });
+
+  return uniqueStrings(groups);
+};
+
+const parseSurgeGroupNames = (text: string) => {
+  const groups: string[] = [];
+  const section = text.match(/\[Proxy Group\]([\s\S]*?)(?:\n\[|$)/i)?.[1] || "";
+  section.split(/\r?\n/).forEach((line) => {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#") || !trimmed.includes("=")) return;
+    groups.push(trimmed.split("=")[0].trim());
+  });
+  return uniqueStrings(groups);
+};
+
+const templateGroupNames = computed(() => {
+  const clashText = localTemplateText(Clash.value);
+  const surgeText = localTemplateText(Surge.value);
+  return uniqueStrings([
+    ...parseClashGroupNames(clashText),
+    ...parseSurgeGroupNames(surgeText),
+    ...Object.keys(groupNodeRules.value),
+  ]);
+});
+
+const groupRuleRows = computed(() =>
+  templateGroupNames.value.map((name) => ({
+    name,
+    rule: groupNodeRules.value[name] || { mode: "all", nodes: [] },
+  }))
+);
+
+const selectedGroupSummary = computed(() => {
+  const rows = groupRuleRows.value;
+  if (!rows.length)
+    return "未识别到策略组，生成时未配置的策略组仍默认加入全部节点";
+  const includeCount = rows.filter(
+    (item) => item.rule.mode === "include"
+  ).length;
+  const noneCount = rows.filter((item) => item.rule.mode === "none").length;
+  return `共 ${rows.length} 个策略组，${includeCount} 个指定节点，${noneCount} 个不自动添加，其余默认全部节点`;
+});
+
+const ensureGroupRule = (name: string) => {
+  if (!groupNodeRules.value[name]) {
+    groupNodeRules.value[name] = { mode: "all", nodes: [] };
+  }
+  return groupNodeRules.value[name];
+};
+
+const updateGroupMode = (
+  name: string,
+  mode: string | number | boolean | undefined
+) => {
+  const rule = ensureGroupRule(name);
+  const nextMode = ["include", "none"].includes(String(mode))
+    ? (String(mode) as PolicyGroupNodeRule["mode"])
+    : "all";
+  rule.mode = nextMode;
+  if (nextMode !== "include") {
+    rule.nodes = [];
+  } else {
+    rule.nodes = (rule.nodes || []).filter((node) =>
+      selectedNodeNames.value.includes(node)
+    );
+  }
+};
+
+const updateGroupNodes = (name: string, nodes: string[]) => {
+  const rule = ensureGroupRule(name);
+  rule.mode = "include";
+  rule.nodes = nodes.filter((node) => selectedNodeNames.value.includes(node));
+};
+
+const onNativeGroupNodesChange = (name: string, event: Event) => {
+  const target = event.target as HTMLSelectElement;
+  updateGroupNodes(
+    name,
+    Array.from(target.selectedOptions).map((option) => option.value)
+  );
+};
+
+const addManualGroup = () => {
+  const name = manualGroupName.value.trim();
+  if (!name) return;
+  ensureGroupRule(name);
+  manualGroupName.value = "";
+};
+
+const resetGroupRule = (name: string) => {
+  const nextRules = { ...groupNodeRules.value };
+  delete nextRules[name];
+  groupNodeRules.value = nextRules;
 };
 
 const parseConfig = (value: Config | string): Config => {
@@ -226,6 +385,8 @@ const resetWizardForm = () => {
   surgeTemplateMode.value = inferTemplateMode(Surge.value);
   value1.value = [];
   nodeKeyword.value = "";
+  groupNodeRules.value = {};
+  manualGroupName.value = "";
 };
 
 const handleAddSub = () => {
@@ -256,6 +417,8 @@ const handleEdit = (row: any) => {
   surgeTemplateMode.value = inferTemplateMode(Surge.value);
   value1.value = (row.Nodes || []).map((item: Node) => item.ID);
   nodeKeyword.value = "";
+  groupNodeRules.value = { ...(config.group_nodes || {}) };
+  manualGroupName.value = "";
   dialogVisible.value = true;
 };
 
@@ -283,7 +446,7 @@ const validateStep = (step: number) => {
 
 const nextStep = () => {
   if (!validateStep(wizardStep.value)) return;
-  wizardStep.value = Math.min(wizardStep.value + 1, 3);
+  wizardStep.value = Math.min(wizardStep.value + 1, 4);
 };
 
 const prevStep = () => {
@@ -314,12 +477,42 @@ const clearSelectedNodes = () => {
   value1.value = [];
 };
 
+watch(value1, () => {
+  const selected = new Set(selectedNodeNames.value);
+  Object.values(groupNodeRules.value).forEach((rule) => {
+    if (rule.mode === "include") {
+      rule.nodes = (rule.nodes || []).filter((node) => selected.has(node));
+    }
+  });
+});
+
+const serializedGroupRules = () => {
+  const result: Record<string, PolicyGroupNodeRule> = {};
+  templateGroupNames.value.forEach((name) => {
+    const rule = groupNodeRules.value[name];
+    if (!rule) {
+      return;
+    }
+    result[name] = {
+      mode: rule.mode || "all",
+      nodes:
+        rule.mode === "include"
+          ? (rule.nodes || []).filter((node) =>
+              selectedNodeNames.value.includes(node)
+            )
+          : [],
+    };
+  });
+  return result;
+};
+
 const buildConfig = () =>
   JSON.stringify({
     clash: Clash.value.trim(),
     surge: Surge.value.trim(),
     udp: checkList.value.includes("udp"),
     cert: checkList.value.includes("cert"),
+    group_nodes: serializedGroupRules(),
   });
 
 const addSubs = async () => {
@@ -406,7 +599,10 @@ const subStatusClass = (row: Sub) => ({
 const subNodeSummary = (row: Sub) => {
   const nodes = row.Nodes || [];
   if (!nodes.length) return "未选择节点";
-  const head = nodes.slice(0, 3).map((node) => node.Name).join(" / ");
+  const head = nodes
+    .slice(0, 3)
+    .map((node) => node.Name)
+    .join(" / ");
   return nodes.length > 3 ? `${head} 等 ${nodes.length} 个` : head;
 };
 
@@ -613,7 +809,11 @@ const OpenUrl = (url: string) => {
       title="访问记录"
       width="min(880px, calc(100vw - 32px))"
     >
-      <el-table class="desktop-data-table" :data="IplogsList" style="width: 100%">
+      <el-table
+        class="desktop-data-table"
+        :data="IplogsList"
+        style="width: 100%"
+      >
         <el-table-column prop="IP" label="IP" />
         <el-table-column prop="Count" label="总访问次数" />
         <el-table-column prop="Addr" label="来源" />
@@ -633,7 +833,9 @@ const OpenUrl = (url: string) => {
               <strong>{{ log.IP || log.ip || "未知 IP" }}</strong>
               <small>{{ log.Date || log.date || "未知时间" }}</small>
             </div>
-            <span class="mobile-status">{{ log.Count || log.count || 0 }} 次</span>
+            <span class="mobile-status"
+              >{{ log.Count || log.count || 0 }} 次</span
+            >
           </div>
           <div class="mobile-field">
             <span>来源</span>
@@ -653,7 +855,7 @@ const OpenUrl = (url: string) => {
       <template #header>
         <div class="dialog-heading">
           <h2>{{ SubTitle }}</h2>
-          <p>按步骤配置订阅信息、输出模板、节点顺序，最后确认保存。</p>
+          <p>按步骤配置订阅信息、输出模板、节点顺序和策略组节点分配。</p>
         </div>
       </template>
 
@@ -666,12 +868,13 @@ const OpenUrl = (url: string) => {
         <el-step title="基本信息" @click="jumpStep(0)" />
         <el-step title="输出模板" @click="jumpStep(1)" />
         <el-step title="选择节点" @click="jumpStep(2)" />
-        <el-step title="确认保存" @click="jumpStep(3)" />
+        <el-step title="策略组分配" @click="jumpStep(3)" />
+        <el-step title="确认保存" @click="jumpStep(4)" />
       </el-steps>
 
       <div class="mobile-wizard-status">
-        <span>步骤 {{ wizardStep + 1 }} / 4</span>
-        <strong>{{ ["基本信息", "输出模板", "选择节点", "确认保存"][wizardStep] }}</strong>
+        <span>步骤 {{ wizardStep + 1 }} / 5</span>
+        <strong>{{ wizardTitles[wizardStep] }}</strong>
       </div>
 
       <section v-show="wizardStep === 0" class="wizard-panel">
@@ -861,6 +1064,104 @@ const OpenUrl = (url: string) => {
 
       <section v-show="wizardStep === 3" class="wizard-panel">
         <div class="panel-copy">
+          <h3>策略组节点分配</h3>
+          <p>
+            默认每个策略组都会加入全部已选节点；需要精细控制时，可以改为指定节点或不自动添加。
+          </p>
+        </div>
+
+        <div class="manual-group-bar">
+          <el-input
+            v-model="manualGroupName"
+            clearable
+            placeholder="URL 模板无法识别时，可手动输入策略组名"
+            @keyup.enter="addManualGroup"
+          />
+          <el-button type="primary" plain @click="addManualGroup"
+            >添加策略组</el-button
+          >
+        </div>
+
+        <div class="group-rule-list">
+          <div v-if="groupRuleRows.length === 0" class="node-empty">
+            暂未从本地模板识别到策略组。未配置的策略组在生成时仍会默认加入全部节点。
+          </div>
+          <article
+            v-for="item in groupRuleRows"
+            :key="item.name"
+            class="group-rule-card"
+          >
+            <div class="group-rule-main">
+              <strong>{{ item.name }}</strong>
+              <small>
+                {{
+                  item.rule.mode === "include"
+                    ? `指定 ${item.rule.nodes?.length || 0} 个节点`
+                    : item.rule.mode === "none"
+                      ? "不自动添加节点"
+                      : "默认全部节点"
+                }}
+              </small>
+              <el-button
+                v-if="groupNodeRules[item.name]"
+                link
+                type="primary"
+                class="group-reset-button"
+                @click="resetGroupRule(item.name)"
+              >
+                重置默认
+              </el-button>
+            </div>
+            <el-radio-group
+              :model-value="item.rule.mode"
+              class="group-mode"
+              size="small"
+              @change="(mode) => updateGroupMode(item.name, mode)"
+            >
+              <el-radio-button value="all">全部节点</el-radio-button>
+              <el-radio-button value="include">指定节点</el-radio-button>
+              <el-radio-button value="none">不添加</el-radio-button>
+            </el-radio-group>
+            <el-select
+              v-if="item.rule.mode === 'include' && !isMobile"
+              :model-value="item.rule.nodes || []"
+              multiple
+              filterable
+              collapse-tags
+              collapse-tags-tooltip
+              placeholder="选择要放进该策略组的节点"
+              @change="
+                (nodes) => updateGroupNodes(item.name, nodes as string[])
+              "
+            >
+              <el-option
+                v-for="node in selectedNodes"
+                :key="node.ID"
+                :label="node.Name"
+                :value="node.Name"
+              />
+            </el-select>
+            <select
+              v-else-if="item.rule.mode === 'include'"
+              class="native-node-select"
+              multiple
+              :value="item.rule.nodes || []"
+              @change="(event) => onNativeGroupNodesChange(item.name, event)"
+            >
+              <option
+                v-for="node in selectedNodes"
+                :key="node.ID"
+                :value="node.Name"
+              >
+                {{ node.Name }}
+              </option>
+            </select>
+          </article>
+        </div>
+      </section>
+
+      <section v-show="wizardStep === 4" class="wizard-panel">
+        <div class="panel-copy">
           <h3>确认保存</h3>
           <p>确认无误后保存。保存成功后会直接打开订阅链接弹窗。</p>
         </div>
@@ -902,6 +1203,10 @@ const OpenUrl = (url: string) => {
           <strong>节点顺序</strong>
           <p>{{ selectedNodePreview }}</p>
         </div>
+        <div class="summary-block">
+          <strong>策略组分配</strong>
+          <p>{{ selectedGroupSummary }}</p>
+        </div>
       </section>
 
       <template #footer>
@@ -911,7 +1216,7 @@ const OpenUrl = (url: string) => {
             <el-button v-if="wizardStep > 0" @click="prevStep"
               >上一步</el-button
             >
-            <el-button v-if="wizardStep < 3" type="primary" @click="nextStep"
+            <el-button v-if="wizardStep < 4" type="primary" @click="nextStep"
               >下一步</el-button
             >
             <el-button v-else type="primary" @click="addSubs"
@@ -1015,12 +1320,18 @@ const OpenUrl = (url: string) => {
           <template #default="scope">
             <div v-if="scope.row.Nodes" class="subscription-action-grid">
               <el-button link @click="handleIplogs(scope.row)">记录</el-button>
-              <el-button link @click="handleResetToken(scope.row)">重置 token</el-button>
+              <el-button link @click="handleResetToken(scope.row)"
+                >重置 token</el-button
+              >
               <el-button link @click="handleToggleRevoked(scope.row)">
                 {{ scope.row.Revoked ? "恢复" : "失效" }}
               </el-button>
-              <el-button link type="primary" @click="handleEdit(scope.row)">编辑</el-button>
-              <el-button link type="danger" @click="handleDel(scope.row)">删除</el-button>
+              <el-button link type="primary" @click="handleEdit(scope.row)"
+                >编辑</el-button
+              >
+              <el-button link type="danger" @click="handleDel(scope.row)"
+                >删除</el-button
+              >
             </div>
             <el-button v-else link type="primary" @click="copyInfo(scope.row)">
               复制
@@ -1062,12 +1373,18 @@ const OpenUrl = (url: string) => {
             </div>
             <div class="mobile-field">
               <span>访问</span>
-              <strong>{{ row.AccessCount || 0 }}/{{ row.AccessLimit || "不限" }}</strong>
+              <strong
+                >{{ row.AccessCount || 0 }}/{{
+                  row.AccessLimit || "不限"
+                }}</strong
+              >
             </div>
           </div>
 
           <div class="mobile-card-actions">
-            <el-button type="primary" @click="handleClient(row)">客户端</el-button>
+            <el-button type="primary" @click="handleClient(row)"
+              >客户端</el-button
+            >
             <el-button @click="handleIplogs(row)">记录</el-button>
             <el-button type="warning" @click="handleResetToken(row)">
               重置
@@ -1231,6 +1548,71 @@ const OpenUrl = (url: string) => {
   display: grid;
   grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.05fr);
   gap: 14px;
+}
+
+.manual-group-bar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.group-rule-list {
+  display: grid;
+  max-height: 390px;
+  gap: 10px;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.group-rule-card {
+  display: grid;
+  grid-template-columns: minmax(160px, 1fr) auto minmax(240px, 0.9fr);
+  gap: 12px;
+  align-items: center;
+  padding: 14px;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 12px;
+  background: var(--el-bg-color);
+}
+
+.group-rule-main {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.group-rule-main strong {
+  overflow: hidden;
+  color: var(--el-text-color-primary);
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.group-rule-main small {
+  color: var(--el-text-color-secondary);
+}
+
+.group-reset-button {
+  justify-self: start;
+  min-height: 20px;
+  padding: 0;
+}
+
+.group-mode {
+  white-space: nowrap;
+}
+
+.native-node-select {
+  width: 100%;
+  min-height: 108px;
+  padding: 8px;
+  border: 1px solid var(--el-border-color);
+  border-radius: 8px;
+  background: var(--el-bg-color);
+  color: var(--el-text-color-primary);
+  font: inherit;
 }
 
 .node-column {
@@ -1428,8 +1810,17 @@ const OpenUrl = (url: string) => {
   .form-grid,
   .template-grid,
   .node-picker,
+  .group-rule-card,
   .summary-grid {
     grid-template-columns: 1fr;
+  }
+
+  .manual-group-bar {
+    grid-template-columns: 1fr;
+  }
+
+  .group-rule-list {
+    max-height: none;
   }
 
   .wizard-panel {
@@ -1501,9 +1892,15 @@ const OpenUrl = (url: string) => {
   }
 
   .template-card-head,
-  .node-column-head {
+  .node-column-head,
+  .group-mode {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .group-rule-card {
+    gap: 10px;
+    padding: 12px;
   }
 
   .node-column {
