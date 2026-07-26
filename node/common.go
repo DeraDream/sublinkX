@@ -12,6 +12,7 @@ import (
 )
 
 type SqlConfig struct {
+	OutputType         string                         `json:"output_type"`
 	Clash              string                         `json:"clash"`
 	Surge              string                         `json:"surge"`
 	Egern              string                         `json:"egern"`

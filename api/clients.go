@@ -67,7 +67,13 @@ func GetClient(c *gin.Context) {
 	c.Set("subscription_id", sub.ID)
 	c.Set("subscription_start", start)
 
-	format := subscriptionFormat(c, clientIndex)
+	outputType := subscriptionOutputType(sub)
+	format, allowed := subscriptionFormatForType(c, clientIndex, outputType)
+	if !allowed {
+		c.Writer.WriteHeader(http.StatusBadRequest)
+		c.Writer.WriteString(fmt.Sprintf("%s 订阅不支持 %s 格式", outputType, clientIndex))
+		return
+	}
 	cacheKey, cacheable := subscriptionCacheKey(sub, format)
 	if cacheable {
 		if cached, ok := getSubscriptionCache(cacheKey); ok {
@@ -140,6 +146,61 @@ func subscriptionFormat(c *gin.Context, clientIndex string) string {
 		}
 	}
 	return "v2ray"
+}
+
+func subscriptionOutputType(sub models.Subcription) string {
+	var config node.SqlConfig
+	if json.Unmarshal([]byte(sub.Config), &config) == nil {
+		switch strings.ToLower(strings.TrimSpace(config.OutputType)) {
+		case "clash", "surge", "egern":
+			return strings.ToLower(strings.TrimSpace(config.OutputType))
+		}
+	}
+
+	// Older records did not store an output type. Preserve Clash as the
+	// default while recognizing clearly named Surge and Egern subscriptions.
+	name := strings.ToLower(strings.TrimSpace(sub.Name))
+	if strings.Contains(name, "egern") {
+		return "egern"
+	}
+	if strings.Contains(name, "surge") {
+		return "surge"
+	}
+	return "clash"
+}
+
+func subscriptionFormatForType(c *gin.Context, requested, outputType string) (string, bool) {
+	requested = strings.ToLower(strings.TrimSpace(requested))
+	if requested == "" {
+		switch outputType {
+		case "surge", "egern":
+			return outputType, true
+		default:
+			format := subscriptionFormat(c, "")
+			if format == "clash" {
+				return "clash", true
+			}
+			return "v2ray", true
+		}
+	}
+
+	switch requested {
+	case "clash", "surge", "egern", "v2ray":
+	default:
+		return requested, false
+	}
+
+	format := requested
+	switch outputType {
+	case "clash":
+		return format, format == "clash" || format == "v2ray"
+	case "surge":
+		return format, format == "surge"
+	case "egern":
+		return format, format == "egern"
+	default:
+		return format, false
+	}
 }
 
 func subscriptionCacheKey(sub models.Subcription, format string) (string, bool) {

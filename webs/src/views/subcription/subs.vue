@@ -41,6 +41,7 @@ interface Node {
 }
 
 interface Config {
+  output_type?: SubscriptionOutputType;
   clash: string;
   surge: string;
   egern: string;
@@ -49,6 +50,8 @@ interface Config {
   group_nodes?: Record<string, PolicyGroupNodeRule>;
   group_nodes_template?: string;
 }
+
+type SubscriptionOutputType = "clash" | "surge" | "egern";
 
 interface PolicyGroupNodeRule {
   mode: "all" | "include" | "none";
@@ -92,6 +95,7 @@ const Subname = ref("");
 const oldSubname = ref("");
 const expireAt = ref("");
 const accessLimit = ref<number | undefined>();
+const OutputType = ref<SubscriptionOutputType>("clash");
 
 const Clash = ref("");
 const Surge = ref("");
@@ -119,9 +123,7 @@ const Qrdialog = ref(false);
 const QrTitle = ref("");
 
 const ClientDiaLog = ref(false);
-const ClientList = ["v2ray", "clash", "surge", "egern"];
 const ClientUrls = ref<Record<string, string>>({});
-const ClientUrl = ref("");
 const ClientSubName = ref("");
 
 const closeClashTemplateSelect = () => {
@@ -325,12 +327,19 @@ const parseEgernGroupNames = (text: string) => {
   return uniqueStrings(groups);
 };
 
+const selectedTemplateSource = computed(() => {
+  switch (OutputType.value) {
+    case "surge":
+      return Surge.value.trim();
+    case "egern":
+      return Egern.value.trim();
+    default:
+      return Clash.value.trim();
+  }
+});
+
 const groupTemplateOptions = computed(() =>
-  uniqueStrings([
-    Clash.value.trim(),
-    Surge.value.trim(),
-    Egern.value.trim(),
-  ]).map((value) => ({
+  uniqueStrings([selectedTemplateSource.value]).map((value) => ({
     label: templateDisplayName(value),
     value,
   }))
@@ -457,6 +466,19 @@ const parseConfig = (value: Config | string): Config => {
   );
 };
 
+const inferSubscriptionOutputType = (
+  config: Config,
+  subscriptionName = ""
+): SubscriptionOutputType => {
+  if (["clash", "surge", "egern"].includes(config.output_type || "")) {
+    return config.output_type as SubscriptionOutputType;
+  }
+  const normalizedName = subscriptionName.trim().toLowerCase();
+  if (normalizedName.includes("egern")) return "egern";
+  if (normalizedName.includes("surge")) return "surge";
+  return "clash";
+};
+
 const inferTemplateMode = (value: string) =>
   /^https?:\/\//i.test(value) ? "url" : "local";
 
@@ -466,6 +488,7 @@ const resetWizardForm = () => {
   oldSubname.value = "";
   expireAt.value = "";
   accessLimit.value = undefined;
+  OutputType.value = "clash";
   checkList.value = [];
   Clash.value = defaultTemplate("clash", "./template/clash.yaml");
   Surge.value = defaultTemplate("surge", "./template/surge.conf");
@@ -473,7 +496,7 @@ const resetWizardForm = () => {
   clashTemplateMode.value = inferTemplateMode(Clash.value);
   surgeTemplateMode.value = inferTemplateMode(Surge.value);
   egernTemplateMode.value = inferTemplateMode(Egern.value);
-  groupNodesTemplate.value = Clash.value;
+  groupNodesTemplate.value = selectedTemplateSource.value;
   value1.value = [];
   nodeKeyword.value = "";
   groupNodeRules.value = {};
@@ -497,6 +520,7 @@ const handleEdit = (row: any) => {
     ? new Date(row.ExpireAt).toISOString().slice(0, 19).replace("T", " ")
     : "";
   accessLimit.value = row.AccessLimit || undefined;
+  OutputType.value = inferSubscriptionOutputType(config, row.Name);
   checkList.value = [];
   if (config.udp === true || config.udp === "true") checkList.value.push("udp");
   if (config.cert === true || config.cert === "true")
@@ -510,7 +534,10 @@ const handleEdit = (row: any) => {
   clashTemplateMode.value = inferTemplateMode(Clash.value);
   surgeTemplateMode.value = inferTemplateMode(Surge.value);
   egernTemplateMode.value = inferTemplateMode(Egern.value);
-  groupNodesTemplate.value = config.group_nodes_template || Clash.value;
+  groupNodesTemplate.value =
+    config.group_nodes_template === selectedTemplateSource.value
+      ? config.group_nodes_template
+      : selectedTemplateSource.value;
   value1.value = (row.Nodes || []).map((item: Node) => item.ID);
   nodeKeyword.value = "";
   groupNodeRules.value = { ...(config.group_nodes || {}) };
@@ -527,8 +554,8 @@ const validateStep = (step: number) => {
     }
   }
   if (step === 1) {
-    if (!Clash.value.trim() || !Surge.value.trim() || !Egern.value.trim()) {
-      ElMessage.warning("请选择或填写 Clash / Surge / Egern 模板");
+    if (!selectedTemplateSource.value) {
+      ElMessage.warning(`请选择或填写 ${OutputType.value} 模板`);
       return false;
     }
   }
@@ -583,7 +610,7 @@ watch(value1, () => {
   });
 });
 
-watch([Clash, Surge, Egern], ensureGroupNodesTemplate);
+watch([Clash, Surge, Egern, OutputType], ensureGroupNodesTemplate);
 
 const serializedGroupRules = () => {
   const result: Record<string, PolicyGroupNodeRule> = {};
@@ -607,9 +634,10 @@ const serializedGroupRules = () => {
 
 const buildConfig = () =>
   JSON.stringify({
-    clash: Clash.value.trim(),
-    surge: Surge.value.trim(),
-    egern: Egern.value.trim(),
+    output_type: OutputType.value,
+    clash: OutputType.value === "clash" ? Clash.value.trim() : "",
+    surge: OutputType.value === "surge" ? Surge.value.trim() : "",
+    egern: OutputType.value === "egern" ? Egern.value.trim() : "",
     udp: checkList.value.includes("udp"),
     cert: checkList.value.includes("cert"),
     group_nodes: serializedGroupRules(),
@@ -800,8 +828,10 @@ const handleClient = (row: any) => {
   ClientDiaLog.value = true;
   ClientSubName.value = row.Name;
   ClientUrls.value = {};
-  ClientUrl.value = `${serverAddress}/c/?token=${row.Token}`;
-  ClientList.forEach((item: string) => {
+  const config = parseConfig(row.Config);
+  const outputType = inferSubscriptionOutputType(config, row.Name);
+  const clients = outputType === "clash" ? ["clash", "v2ray"] : [outputType];
+  clients.forEach((item: string) => {
     ClientUrls.value[item] =
       `${serverAddress}/c/?token=${row.Token}&client=${item}`;
   });
@@ -850,36 +880,11 @@ const OpenUrl = (url: string) => {
     >
       <div class="client-dialog-head">
         <div>
-          <p class="dialog-intro">直接复制完整订阅地址，二维码作为备用入口。</p>
+          <p class="dialog-intro">仅显示当前订阅类型支持的链接。</p>
           <strong>{{ ClientSubName }}</strong>
         </div>
-        <el-button type="primary" plain @click="copyUrl(ClientUrl)"
-          >复制自动识别</el-button
-        >
       </div>
       <div class="client-card-list">
-        <article class="client-card">
-          <div class="client-card-title">
-            <span>自动识别</span>
-            <el-tag size="small" effect="plain">推荐</el-tag>
-          </div>
-          <p>客户端根据请求头自动判断订阅格式。</p>
-          <el-input
-            :model-value="ClientUrl"
-            readonly
-            class="client-url-input"
-          />
-          <div class="client-actions">
-            <el-button @click="copyUrl(ClientUrl)">复制链接</el-button>
-            <el-button @click="handleQrcode(ClientUrl, '自动识别客户端')"
-              >二维码</el-button
-            >
-            <el-button link type="primary" @click="OpenUrl(ClientUrl)"
-              >打开</el-button
-            >
-          </div>
-        </article>
-
         <article
           v-for="(item, index) in ClientUrls"
           :key="index"
@@ -1014,10 +1019,18 @@ const OpenUrl = (url: string) => {
       <section v-show="wizardStep === 1" class="wizard-panel">
         <div class="panel-copy">
           <h3>输出模板</h3>
-          <p>分别为 Clash、Surge 和 Egern 选择本地模板或填写远程 URL。</p>
+          <p>选择订阅类型后，只需配置该类型对应的模板。</p>
+        </div>
+        <div class="field">
+          <span class="field-label">订阅类型</span>
+          <el-radio-group v-model="OutputType" class="flat-segmented">
+            <el-radio-button value="clash">Clash / V2Ray</el-radio-button>
+            <el-radio-button value="surge">Surge</el-radio-button>
+            <el-radio-button value="egern">Egern</el-radio-button>
+          </el-radio-group>
         </div>
         <div class="template-grid">
-          <article class="template-card">
+          <article v-if="OutputType === 'clash'" class="template-card">
             <div class="template-card-head">
               <strong>Clash</strong>
               <el-radio-group
@@ -1050,7 +1063,7 @@ const OpenUrl = (url: string) => {
             />
           </article>
 
-          <article class="template-card">
+          <article v-if="OutputType === 'surge'" class="template-card">
             <div class="template-card-head">
               <strong>Surge</strong>
               <el-radio-group
@@ -1083,7 +1096,7 @@ const OpenUrl = (url: string) => {
             />
           </article>
 
-          <article class="template-card">
+          <article v-if="OutputType === 'egern'" class="template-card">
             <div class="template-card-head">
               <strong>Egern</strong>
               <el-radio-group
@@ -1340,9 +1353,8 @@ const OpenUrl = (url: string) => {
         </div>
         <div class="summary-block">
           <strong>模板</strong>
-          <p>Clash：{{ Clash || "未配置" }}</p>
-          <p>Surge：{{ Surge || "未配置" }}</p>
-          <p>Egern：{{ Egern || "未配置" }}</p>
+          <p>订阅类型：{{ OutputType }}</p>
+          <p>{{ templateDisplayName(selectedTemplateSource) }}</p>
         </div>
         <div class="summary-block">
           <strong>连接选项</strong>
