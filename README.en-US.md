@@ -30,13 +30,15 @@ High degree of freedom and security, the ability to record access to the subscri
 
 Binary compilation without Docker container.
 
-Currently only supports the client: v2ray clash surge
+Currently supported clients: v2ray clash surge egern
 
 v2ray is a base64 universal format
 
 clash supported protocols: ss ssr trojan vmess vless hy hy2 tuic
 
 surge support protocol:ss trojan vmess hy2 tuic
+
+egern supported protocols: ss trojan vmess vless hy2 tuic
 
 ## [Project Preview]
 

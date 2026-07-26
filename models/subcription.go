@@ -34,6 +34,7 @@ type Subcription struct {
 type SubscriptionConfig struct { // <--- 这里重命名了
 	Clash string `json:"clash"`
 	Surge string `json:"surge"`
+	Egern string `json:"egern"`
 	UDP   bool   `json:"udp"`
 	Cert  bool   `json:"cert"`
 }

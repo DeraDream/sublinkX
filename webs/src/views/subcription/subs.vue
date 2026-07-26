@@ -43,6 +43,7 @@ interface Node {
 interface Config {
   clash: string;
   surge: string;
+  egern: string;
   udp: boolean | string;
   cert: boolean | string;
   group_nodes?: Record<string, PolicyGroupNodeRule>;
@@ -94,10 +95,13 @@ const accessLimit = ref<number | undefined>();
 
 const Clash = ref("");
 const Surge = ref("");
+const Egern = ref("");
 const clashTemplateSelectRef = ref<{ blur: () => void }>();
 const surgeTemplateSelectRef = ref<{ blur: () => void }>();
+const egernTemplateSelectRef = ref<{ blur: () => void }>();
 const clashTemplateMode = ref<"local" | "url">("local");
 const surgeTemplateMode = ref<"local" | "url">("local");
+const egernTemplateMode = ref<"local" | "url">("local");
 const checkList = ref<string[]>([]);
 
 const value1 = ref<number[]>([]);
@@ -115,7 +119,7 @@ const Qrdialog = ref(false);
 const QrTitle = ref("");
 
 const ClientDiaLog = ref(false);
-const ClientList = ["v2ray", "clash", "surge"];
+const ClientList = ["v2ray", "clash", "surge", "egern"];
 const ClientUrls = ref<Record<string, string>>({});
 const ClientUrl = ref("");
 const ClientSubName = ref("");
@@ -126,6 +130,10 @@ const closeClashTemplateSelect = () => {
 
 const closeSurgeTemplateSelect = () => {
   nextTick(() => surgeTemplateSelectRef.value?.blur());
+};
+
+const closeEgernTemplateSelect = () => {
+  nextTick(() => egernTemplateSelectRef.value?.blur());
 };
 
 async function getsubs() {
@@ -287,8 +295,42 @@ const parseSurgeGroupNames = (text: string) => {
   return uniqueStrings(groups);
 };
 
+const parseEgernGroupNames = (text: string) => {
+  const groups: string[] = [];
+  const lines = text.split(/\r?\n/);
+  let inPolicyGroups = false;
+  let policyGroupsIndent = 0;
+
+  lines.forEach((line) => {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) return;
+    const indent = line.search(/\S|$/);
+    if (/^policy_groups\s*:/.test(trimmed)) {
+      inPolicyGroups = true;
+      policyGroupsIndent = indent;
+      return;
+    }
+    if (
+      inPolicyGroups &&
+      indent <= policyGroupsIndent &&
+      !trimmed.startsWith("-")
+    ) {
+      inPolicyGroups = false;
+    }
+    if (!inPolicyGroups) return;
+    const name = trimmed.match(/^name\s*:\s*["']?(.+?)["']?\s*$/);
+    if (name) groups.push(name[1]);
+  });
+
+  return uniqueStrings(groups);
+};
+
 const groupTemplateOptions = computed(() =>
-  uniqueStrings([Clash.value.trim(), Surge.value.trim()]).map((value) => ({
+  uniqueStrings([
+    Clash.value.trim(),
+    Surge.value.trim(),
+    Egern.value.trim(),
+  ]).map((value) => ({
     label: templateDisplayName(value),
     value,
   }))
@@ -310,6 +352,7 @@ const templateGroupNames = computed(() => {
   const parsedGroups = uniqueStrings([
     ...parseClashGroupNames(templateText),
     ...parseSurgeGroupNames(templateText),
+    ...parseEgernGroupNames(templateText),
   ]);
   const fallbackGroups = templateText ? [] : Object.keys(groupNodeRules.value);
   return uniqueStrings([
@@ -400,10 +443,18 @@ const parseConfig = (value: Config | string): Config => {
     try {
       return JSON.parse(value) as Config;
     } catch {
-      return { clash: "", surge: "", udp: false, cert: false };
+      return { clash: "", surge: "", egern: "", udp: false, cert: false };
     }
   }
-  return value || { clash: "", surge: "", udp: false, cert: false };
+  return (
+    value || {
+      clash: "",
+      surge: "",
+      egern: "",
+      udp: false,
+      cert: false,
+    }
+  );
 };
 
 const inferTemplateMode = (value: string) =>
@@ -418,8 +469,10 @@ const resetWizardForm = () => {
   checkList.value = [];
   Clash.value = defaultTemplate("clash", "./template/clash.yaml");
   Surge.value = defaultTemplate("surge", "./template/surge.conf");
+  Egern.value = defaultTemplate("egern", "./template/egern.yaml");
   clashTemplateMode.value = inferTemplateMode(Clash.value);
   surgeTemplateMode.value = inferTemplateMode(Surge.value);
+  egernTemplateMode.value = inferTemplateMode(Egern.value);
   groupNodesTemplate.value = Clash.value;
   value1.value = [];
   nodeKeyword.value = "";
@@ -452,8 +505,11 @@ const handleEdit = (row: any) => {
     config.clash || defaultTemplate("clash", "./template/clash.yaml");
   Surge.value =
     config.surge || defaultTemplate("surge", "./template/surge.conf");
+  Egern.value =
+    config.egern || defaultTemplate("egern", "./template/egern.yaml");
   clashTemplateMode.value = inferTemplateMode(Clash.value);
   surgeTemplateMode.value = inferTemplateMode(Surge.value);
+  egernTemplateMode.value = inferTemplateMode(Egern.value);
   groupNodesTemplate.value = config.group_nodes_template || Clash.value;
   value1.value = (row.Nodes || []).map((item: Node) => item.ID);
   nodeKeyword.value = "";
@@ -471,8 +527,8 @@ const validateStep = (step: number) => {
     }
   }
   if (step === 1) {
-    if (!Clash.value.trim() || !Surge.value.trim()) {
-      ElMessage.warning("请选择或填写 Clash / Surge 模板");
+    if (!Clash.value.trim() || !Surge.value.trim() || !Egern.value.trim()) {
+      ElMessage.warning("请选择或填写 Clash / Surge / Egern 模板");
       return false;
     }
   }
@@ -527,7 +583,7 @@ watch(value1, () => {
   });
 });
 
-watch([Clash, Surge], ensureGroupNodesTemplate);
+watch([Clash, Surge, Egern], ensureGroupNodesTemplate);
 
 const serializedGroupRules = () => {
   const result: Record<string, PolicyGroupNodeRule> = {};
@@ -553,6 +609,7 @@ const buildConfig = () =>
   JSON.stringify({
     clash: Clash.value.trim(),
     surge: Surge.value.trim(),
+    egern: Egern.value.trim(),
     udp: checkList.value.includes("udp"),
     cert: checkList.value.includes("cert"),
     group_nodes: serializedGroupRules(),
@@ -957,7 +1014,7 @@ const OpenUrl = (url: string) => {
       <section v-show="wizardStep === 1" class="wizard-panel">
         <div class="panel-copy">
           <h3>输出模板</h3>
-          <p>分别为 Clash 和 Surge 选择本地模板或填写远程 URL。</p>
+          <p>分别为 Clash、Surge 和 Egern 选择本地模板或填写远程 URL。</p>
         </div>
         <div class="template-grid">
           <article class="template-card">
@@ -1023,6 +1080,39 @@ const OpenUrl = (url: string) => {
               v-else
               v-model="Surge"
               placeholder="输入 Surge 模板 URL"
+            />
+          </article>
+
+          <article class="template-card">
+            <div class="template-card-head">
+              <strong>Egern</strong>
+              <el-radio-group
+                v-model="egernTemplateMode"
+                class="flat-segmented"
+                size="small"
+              >
+                <el-radio-button value="local">本地模板</el-radio-button>
+                <el-radio-button value="url">URL</el-radio-button>
+              </el-radio-group>
+            </div>
+            <el-select
+              v-if="egernTemplateMode === 'local'"
+              ref="egernTemplateSelectRef"
+              v-model="Egern"
+              placeholder="选择 Egern 模板"
+              @change="closeEgernTemplateSelect"
+            >
+              <el-option
+                v-for="template in templist"
+                :key="template.file"
+                :label="template.file"
+                :value="'./template/' + template.file"
+              />
+            </el-select>
+            <el-input
+              v-else
+              v-model="Egern"
+              placeholder="输入 Egern 模板 URL"
             />
           </article>
         </div>
@@ -1252,6 +1342,7 @@ const OpenUrl = (url: string) => {
           <strong>模板</strong>
           <p>Clash：{{ Clash || "未配置" }}</p>
           <p>Surge：{{ Surge || "未配置" }}</p>
+          <p>Egern：{{ Egern || "未配置" }}</p>
         </div>
         <div class="summary-block">
           <strong>连接选项</strong>

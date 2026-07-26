@@ -84,6 +84,8 @@ func GetClient(c *gin.Context) {
 		resp, err = buildClashSubscription(c)
 	case "surge":
 		resp, err = buildSurgeSubscription(c)
+	case "egern":
+		resp, err = buildEgernSubscription(c)
 	case "v2ray":
 		resp, err = buildV2raySubscription(c)
 	default:
@@ -122,7 +124,7 @@ func logSubscriptionGenerated(c *gin.Context, subID int, nodeCount int, format s
 
 func subscriptionFormat(c *gin.Context, clientIndex string) string {
 	switch clientIndex {
-	case "clash", "surge", "v2ray":
+	case "clash", "surge", "egern", "v2ray":
 		return clientIndex
 	}
 	for _, userAgent := range c.Request.Header.Values("User-Agent") {
@@ -132,6 +134,9 @@ func subscriptionFormat(c *gin.Context, clientIndex string) string {
 		}
 		if strings.Contains(ua, "surge") {
 			return "surge"
+		}
+		if strings.Contains(ua, "egern") {
+			return "egern"
 		}
 	}
 	return "v2ray"
@@ -154,7 +159,7 @@ func subscriptionCacheKey(sub models.Subcription, format string) (string, bool) 
 }
 
 func templateFingerprint(configText string, format string) (string, bool) {
-	if format != "clash" && format != "surge" {
+	if format != "clash" && format != "surge" && format != "egern" {
 		return "", true
 	}
 
@@ -166,6 +171,8 @@ func templateFingerprint(configText string, format string) (string, bool) {
 	templatePath := config.Clash
 	if format == "surge" {
 		templatePath = config.Surge
+	} else if format == "egern" {
+		templatePath = config.Egern
 	}
 	templatePath = strings.TrimSpace(templatePath)
 	if templatePath == "" {
@@ -488,6 +495,66 @@ func GetSurge(c *gin.Context) {
 		return
 	}
 	writeSubscriptionResponse(c, resp)
+}
+
+func GetEgern(c *gin.Context) {
+	resp, err := buildEgernSubscription(c)
+	if err != nil {
+		c.Writer.WriteString(err.Error())
+		return
+	}
+	writeSubscriptionResponse(c, resp)
+}
+
+func buildEgernSubscription(c *gin.Context) (subscriptionCacheEntry, error) {
+	var sub models.Subcription
+	subName, ok := subscriptionNameFromContext(c)
+	if !ok {
+		return subscriptionCacheEntry{}, fmt.Errorf("订阅名为空")
+	}
+	sub.Name = subName
+	if err := sub.Find(); err != nil {
+		return subscriptionCacheEntry{}, fmt.Errorf("找不到这个订阅:%s", subName)
+	}
+
+	urls := []string{}
+	for _, item := range sub.ActiveNodes() {
+		nodeLinks := subscriptionNodeLinks(item)
+		switch {
+		case strings.Contains(item.Link, ","):
+			urls = append(urls, nodeLinks...)
+		case strings.Contains(item.Link, "http://") || strings.Contains(item.Link, "https://"):
+			resp, err := http.Get(item.Link)
+			if err != nil {
+				log.Println(err)
+				return subscriptionCacheEntry{}, err
+			}
+			body, readErr := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			if readErr != nil {
+				return subscriptionCacheEntry{}, readErr
+			}
+			nodes := node.Base64Decode(string(body))
+			urls = append(urls, strings.Split(nodes, "\n")...)
+		default:
+			urls = append(urls, nodeLinks...)
+		}
+	}
+
+	var configs node.SqlConfig
+	if err := json.Unmarshal([]byte(sub.Config), &configs); err != nil {
+		return subscriptionCacheEntry{}, fmt.Errorf("配置读取错误")
+	}
+	output, err := node.EncodeEgern(urls, configs)
+	if err != nil {
+		return subscriptionCacheEntry{}, err
+	}
+	return subscriptionCacheEntry{
+		contentType: "text/yaml; charset=utf-8",
+		filename:    fmt.Sprintf("%s.yaml", subName),
+		nodeCount:   len(urls),
+		body:        output,
+	}, nil
 }
 
 func buildSurgeSubscription(c *gin.Context) (subscriptionCacheEntry, error) {

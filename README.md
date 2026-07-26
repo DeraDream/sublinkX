@@ -31,13 +31,15 @@
 
 二进制编译无需Docker容器
 
-目前仅支持客户端：v2ray clash surge
+目前支持客户端：v2ray clash surge egern
 
 v2ray为base64通用格式
 
 clash支持协议:ss ssr trojan vmess vless hy hy2 tuic
 
 surge支持协议:ss trojan vmess hy2 tuic
+
+egern支持协议:ss trojan vmess vless hy2 tuic
 
 ## [项目预览]
 

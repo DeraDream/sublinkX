@@ -39,6 +39,26 @@ func TestRemoteTemplateDisablesSubscriptionCache(t *testing.T) {
 	}
 }
 
+func TestEgernTemplateFingerprintTracksLocalContent(t *testing.T) {
+	templatePath := filepath.Join(t.TempDir(), "egern.yaml")
+	if err := os.WriteFile(templatePath, []byte("proxies: []\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	config := fmt.Sprintf(`{"egern":%q}`, templatePath)
+
+	first, cacheable := templateFingerprint(config, "egern")
+	if !cacheable {
+		t.Fatal("local Egern template should be cacheable")
+	}
+	if err := os.WriteFile(templatePath, []byte("proxies: []\nipv6: false\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	second, cacheable := templateFingerprint(config, "egern")
+	if !cacheable || first == second {
+		t.Fatal("Egern template fingerprint did not change with local content")
+	}
+}
+
 func TestNodeFingerprintTracksNodeChanges(t *testing.T) {
 	nodes := []models.Node{{ID: 1, Name: "node", Link: "ss://first"}}
 	first := subscriptionNodesFingerprint(nodes)

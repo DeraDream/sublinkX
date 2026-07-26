@@ -14,6 +14,7 @@ import (
 type SqlConfig struct {
 	Clash              string                         `json:"clash"`
 	Surge              string                         `json:"surge"`
+	Egern              string                         `json:"egern"`
 	Udp                bool                           `json:"udp"`
 	Cert               bool                           `json:"cert"`
 	GroupNodes         map[string]PolicyGroupNodeRule `json:"group_nodes"`

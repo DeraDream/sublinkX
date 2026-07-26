@@ -344,7 +344,7 @@ const toggleMobileTemplateSelection = (row: Temp, checked: boolean) => {
     <div class="page-heading">
       <div>
         <h1>模板列表</h1>
-        <p>维护 Clash、Surge 等订阅输出模板</p>
+        <p>维护 Clash、Surge、Egern 等订阅输出模板</p>
       </div>
       <div class="heading-actions">
         <el-button class="import-file-button" @click="openFilePicker">

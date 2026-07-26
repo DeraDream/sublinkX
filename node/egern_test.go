@@ -1,0 +1,167 @@
+package node
+
+import (
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"testing"
+
+	"gopkg.in/yaml.v3"
+)
+
+func writeEgernTestTemplate(t *testing.T) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "egern.yaml")
+	template := `proxies: []
+policy_groups:
+  - select:
+      name: Proxy
+      policies:
+        - DIRECT
+  - external:
+      name: External
+      type: select
+      urls:
+        - https://example.com/subscription
+rules:
+  - default:
+      policy: Proxy
+`
+	if err := os.WriteFile(path, []byte(template), 0600); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func TestEncodeEgernUsesNativeProxyShape(t *testing.T) {
+	vmessJSON, err := json.Marshal(Vmess{
+		V:    "2",
+		Ps:   "VMess Node",
+		Add:  "vmess.example.com",
+		Port: "443",
+		Id:   "27848739-7e62-4138-9fd3-098a63964b6b",
+		Scy:  "auto",
+		Net:  "ws",
+		Path: "/ws",
+		Host: "cdn.example.com",
+		Tls:  "tls",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	links := []string{
+		EncodeSSURL(Ss{
+			Name:   "SS Node",
+			Server: "ss.example.com",
+			Port:   8388,
+			Param: Param{
+				Cipher:   "aes-256-gcm",
+				Password: "secret",
+			},
+		}),
+		"vmess://" + Base64Encode(string(vmessJSON)),
+		"trojan://password@trojan.example.com:443?sni=trojan.example.com#Trojan%20Node",
+		"vless://27848739-7e62-4138-9fd3-098a63964b6b@vless.example.com:443?security=tls&sni=vless.example.com&type=tcp#VLESS%20Node",
+		"hy2://password@hy2.example.com:443?sni=hy2.example.com&obfs=salamander&obfs-password=obfs#HY2%20Node",
+		"tuic://27848739-7e62-4138-9fd3-098a63964b6b:password@tuic.example.com:443?sni=tuic.example.com#TUIC%20Node",
+	}
+
+	output, err := EncodeEgern(links, SqlConfig{
+		Egern: writeEgernTestTemplate(t),
+		Udp:   true,
+		Cert:  true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var profile map[string]interface{}
+	if err := yaml.Unmarshal(output, &profile); err != nil {
+		t.Fatal(err)
+	}
+	proxies, ok := profile["proxies"].([]interface{})
+	if !ok || len(proxies) != len(links) {
+		t.Fatalf("proxies = %#v, want %d native Egern proxies", profile["proxies"], len(links))
+	}
+
+	wantProtocols := []string{"shadowsocks", "vmess", "trojan", "vless", "hysteria2", "tuic"}
+	for index, protocol := range wantProtocols {
+		item, ok := proxies[index].(map[string]interface{})
+		if !ok {
+			t.Fatalf("proxy %d = %#v", index, proxies[index])
+		}
+		if _, ok := item[protocol].(map[string]interface{}); !ok {
+			t.Fatalf("proxy %d does not use Egern %q wrapper: %#v", index, protocol, item)
+		}
+		if _, exists := item["type"]; exists {
+			t.Fatalf("proxy %d unexpectedly uses Clash type field", index)
+		}
+	}
+
+	vmess := proxies[1].(map[string]interface{})["vmess"].(map[string]interface{})
+	transport := vmess["transport"].(map[string]interface{})
+	if _, ok := transport["wss"]; !ok {
+		t.Fatalf("vmess transport = %#v, want wss", transport)
+	}
+}
+
+func TestEncodeEgernInjectsSelectedNodesIntoPolicyGroups(t *testing.T) {
+	links := []string{
+		EncodeSSURL(Ss{
+			Name:   "Node A",
+			Server: "a.example.com",
+			Port:   8388,
+			Param:  Param{Cipher: "aes-128-gcm", Password: "a"},
+		}),
+		EncodeSSURL(Ss{
+			Name:   "Node B",
+			Server: "b.example.com",
+			Port:   8388,
+			Param:  Param{Cipher: "aes-128-gcm", Password: "b"},
+		}),
+	}
+	template := writeEgernTestTemplate(t)
+	output, err := EncodeEgern(links, SqlConfig{
+		Egern:              template,
+		GroupNodesTemplate: template,
+		GroupNodes: map[string]PolicyGroupNodeRule{
+			"Proxy": {Mode: "include", Nodes: []string{"Node B"}},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var profile map[string]interface{}
+	if err := yaml.Unmarshal(output, &profile); err != nil {
+		t.Fatal(err)
+	}
+	groups := profile["policy_groups"].([]interface{})
+	selectGroup := groups[0].(map[string]interface{})["select"].(map[string]interface{})
+	policies := selectGroup["policies"].([]interface{})
+	if len(policies) != 2 || policies[0] != "DIRECT" || policies[1] != "Node B" {
+		t.Fatalf("policies = %#v, want [DIRECT Node B]", policies)
+	}
+	externalGroup := groups[1].(map[string]interface{})["external"].(map[string]interface{})
+	if _, exists := externalGroup["policies"]; exists {
+		t.Fatalf("local nodes were injected into external group: %#v", externalGroup)
+	}
+}
+
+func TestEncodeEgernSkipsUnsupportedProtocols(t *testing.T) {
+	output, err := EncodeEgern([]string{
+		"ssr://unsupported",
+		"vless://id@reality.example.com:443?security=reality#Reality",
+	}, SqlConfig{Egern: writeEgernTestTemplate(t)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var profile map[string]interface{}
+	if err := yaml.Unmarshal(output, &profile); err != nil {
+		t.Fatal(err)
+	}
+	if proxies := profile["proxies"].([]interface{}); len(proxies) != 0 {
+		t.Fatalf("unsupported proxies were not skipped: %#v", proxies)
+	}
+}
