@@ -29,8 +29,8 @@ var embeddedFiles embed.FS
 //go:embed template
 var Template embed.FS
 
-// 版本号
-const version = "4.32"
+// version is overridden from the release tag by GitHub Actions.
+var version = "4.34"
 
 func Templateinit() {
 	// 设置template路径

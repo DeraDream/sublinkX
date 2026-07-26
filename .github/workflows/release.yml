@@ -61,7 +61,7 @@ jobs:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
           CGO_ENABLED: 0
-        run: go build -trimpath -ldflags="-s -w" -o "${{ matrix.output }}" .
+        run: go build -trimpath -ldflags="-s -w -X main.version=${{ github.ref_name }}" -o "${{ matrix.output }}" .
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
