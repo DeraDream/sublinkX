@@ -422,12 +422,18 @@ const updateGroupNodes = (name: string, nodes: string[]) => {
   rule.nodes = nodes.filter((node) => selectedNodeNames.value.includes(node));
 };
 
-const onNativeGroupNodesChange = (name: string, event: Event) => {
-  const target = event.target as HTMLSelectElement;
-  updateGroupNodes(
-    name,
-    Array.from(target.selectedOptions).map((option) => option.value)
-  );
+const toggleMobileGroupNode = (
+  groupName: string,
+  nodeName: string,
+  selected: boolean
+) => {
+  const nodes = new Set(ensureGroupRule(groupName).nodes || []);
+  if (selected) {
+    nodes.add(nodeName);
+  } else {
+    nodes.delete(nodeName);
+  }
+  updateGroupNodes(groupName, Array.from(nodes));
 };
 
 const addManualGroup = () => {
@@ -1338,21 +1344,33 @@ const OpenUrl = (url: string) => {
                 :value="node.Name"
               />
             </el-select>
-            <select
+            <div
               v-else-if="item.rule.mode === 'include'"
-              class="native-node-select"
-              multiple
-              :value="item.rule.nodes || []"
-              @change="(event) => onNativeGroupNodesChange(item.name, event)"
+              class="mobile-node-choice-list"
             >
-              <option
+              <label
                 v-for="node in selectedNodes"
                 :key="node.ID"
-                :value="node.Name"
+                class="mobile-node-choice"
+                :class="{
+                  'is-selected': (item.rule.nodes || []).includes(node.Name),
+                }"
               >
-                {{ node.Name }}
-              </option>
-            </select>
+                <input
+                  type="checkbox"
+                  :checked="(item.rule.nodes || []).includes(node.Name)"
+                  @change="
+                    (event) =>
+                      toggleMobileGroupNode(
+                        item.name,
+                        node.Name,
+                        (event.target as HTMLInputElement).checked
+                      )
+                  "
+                />
+                <span>{{ node.Name }}</span>
+              </label>
+            </div>
           </article>
         </div>
       </section>
@@ -1413,7 +1431,7 @@ const OpenUrl = (url: string) => {
       <template #footer>
         <div class="wizard-footer">
           <el-button @click="dialogVisible = false">取消</el-button>
-          <div>
+          <div class="wizard-navigation">
             <el-button v-if="wizardStep > 0" @click="prevStep"
               >上一步</el-button
             >
@@ -1819,15 +1837,43 @@ const OpenUrl = (url: string) => {
   white-space: nowrap;
 }
 
-.native-node-select {
-  width: 100%;
-  min-height: 108px;
-  padding: 8px;
+.mobile-node-choice-list {
+  display: grid;
+  max-height: 280px;
+  gap: 8px;
+  overflow-y: auto;
+}
+
+.mobile-node-choice {
+  display: flex;
+  min-height: 46px;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
   border: 1px solid var(--el-border-color);
   border-radius: 8px;
   background: var(--el-bg-color);
   color: var(--el-text-color-primary);
-  font: inherit;
+  cursor: pointer;
+}
+
+.mobile-node-choice.is-selected {
+  border-color: var(--el-color-primary-light-5);
+  background: var(--el-color-primary-light-9);
+  color: var(--el-color-primary);
+}
+
+.mobile-node-choice input {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  margin: 0;
+  accent-color: var(--el-color-primary);
+}
+
+.mobile-node-choice span {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .node-column {
@@ -1924,6 +1970,15 @@ const OpenUrl = (url: string) => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.wizard-navigation {
+  display: flex;
+  gap: 10px;
+}
+
+.wizard-navigation :deep(.el-button + .el-button) {
+  margin-left: 0;
 }
 
 .summary-grid {
@@ -2106,36 +2161,129 @@ const OpenUrl = (url: string) => {
     border-radius: 10px;
   }
 
-  .template-card-head,
-  .node-column-head,
-  .group-mode {
+  .template-card-head {
     align-items: flex-start;
     flex-direction: column;
   }
 
   .group-rule-card {
-    gap: 10px;
-    padding: 12px;
+    gap: 14px;
+    padding: 14px;
+  }
+
+  .group-rule-main {
+    gap: 6px;
+  }
+
+  .group-rule-main strong {
+    font-size: 15px;
+  }
+
+  .group-reset-button {
+    min-height: 36px;
+  }
+
+  .group-mode {
+    display: grid;
+    width: 100%;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    white-space: normal;
+  }
+
+  :deep(.group-mode .el-radio-button) {
+    width: 100%;
+  }
+
+  :deep(.group-mode .el-radio-button__inner) {
+    display: flex;
+    width: 100%;
+    min-height: 42px;
+    align-items: center;
+    justify-content: center;
+    padding: 0 6px;
   }
 
   .node-column {
     min-height: auto;
   }
 
-  .node-list,
+  .node-picker {
+    gap: 18px;
+  }
+
+  .node-column-head {
+    min-height: 54px;
+    padding: 0 12px;
+  }
+
+  .node-column-head :deep(.el-button) {
+    min-height: 40px;
+    padding: 0 8px;
+  }
+
+  .node-list {
+    max-height: min(38vh, 300px);
+  }
+
   .selected-nodes {
-    max-height: 220px;
+    max-height: min(48vh, 380px);
   }
 
   .draggable-item {
-    grid-template-columns: 18px 24px minmax(0, 1fr);
-    padding: 8px 10px;
+    grid-template-columns: 24px 24px minmax(0, 1fr) auto;
+    gap: 8px;
+    min-height: 58px;
+    padding: 6px 10px;
   }
 
   .draggable-item .el-button {
-    grid-column: 3;
-    justify-self: start;
-    padding: 0;
+    min-width: 52px;
+    min-height: 40px;
+    justify-self: end;
+    padding: 0 8px;
+  }
+
+  .drag-handle {
+    font-size: 16px;
+  }
+
+  .node-name {
+    font-size: 14px;
+  }
+
+  .option-list {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .option-list :deep(.el-checkbox) {
+    width: 100%;
+    min-height: 44px;
+    margin-right: 0;
+  }
+
+  .wizard-footer {
+    align-items: stretch;
+    flex-direction: column-reverse;
+    gap: 12px;
+  }
+
+  .wizard-footer > :deep(.el-button) {
+    width: 100%;
+    min-height: 44px;
+    margin-left: 0;
+  }
+
+  .wizard-navigation {
+    width: 100%;
+    gap: 10px;
+  }
+
+  .wizard-navigation :deep(.el-button) {
+    min-width: 0;
+    min-height: 44px;
+    flex: 1 1 0;
+    margin-left: 0;
   }
 
   .client-dialog-head {
