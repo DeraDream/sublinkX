@@ -45,6 +45,7 @@ interface Config {
   clash: string;
   surge: string;
   egern: string;
+  egern_update_interval?: number;
   udp: boolean | string;
   cert: boolean | string;
   group_nodes?: Record<string, PolicyGroupNodeRule>;
@@ -96,6 +97,7 @@ const oldSubname = ref("");
 const expireAt = ref("");
 const accessLimit = ref<number | undefined>();
 const OutputType = ref<SubscriptionOutputType>("clash");
+const EgernUpdateInterval = ref(1440);
 
 const Clash = ref("");
 const Surge = ref("");
@@ -489,6 +491,7 @@ const resetWizardForm = () => {
   expireAt.value = "";
   accessLimit.value = undefined;
   OutputType.value = "clash";
+  EgernUpdateInterval.value = 1440;
   checkList.value = [];
   Clash.value = defaultTemplate("clash", "./template/clash.yaml");
   Surge.value = defaultTemplate("surge", "./template/surge.conf");
@@ -521,6 +524,10 @@ const handleEdit = (row: any) => {
     : "";
   accessLimit.value = row.AccessLimit || undefined;
   OutputType.value = inferSubscriptionOutputType(config, row.Name);
+  EgernUpdateInterval.value =
+    Number(config.egern_update_interval) > 0
+      ? Number(config.egern_update_interval)
+      : 1440;
   checkList.value = [];
   if (config.udp === true || config.udp === "true") checkList.value.push("udp");
   if (config.cert === true || config.cert === "true")
@@ -556,6 +563,14 @@ const validateStep = (step: number) => {
   if (step === 1) {
     if (!selectedTemplateSource.value) {
       ElMessage.warning(`请选择或填写 ${OutputType.value} 模板`);
+      return false;
+    }
+    if (
+      OutputType.value === "egern" &&
+      (!Number.isInteger(EgernUpdateInterval.value) ||
+        EgernUpdateInterval.value < 1)
+    ) {
+      ElMessage.warning("Egern 自动更新间隔必须是大于 0 的整数分钟");
       return false;
     }
   }
@@ -638,6 +653,8 @@ const buildConfig = () =>
     clash: OutputType.value === "clash" ? Clash.value.trim() : "",
     surge: OutputType.value === "surge" ? Surge.value.trim() : "",
     egern: OutputType.value === "egern" ? Egern.value.trim() : "",
+    egern_update_interval:
+      OutputType.value === "egern" ? EgernUpdateInterval.value : 0,
     udp: checkList.value.includes("udp"),
     cert: checkList.value.includes("cert"),
     group_nodes: serializedGroupRules(),
@@ -1127,6 +1144,21 @@ const OpenUrl = (url: string) => {
               v-model="Egern"
               placeholder="输入 Egern 模板 URL"
             />
+            <label class="field">
+              <span class="field-label">自动更新间隔（分钟）</span>
+              <el-input-number
+                v-model="EgernUpdateInterval"
+                :min="1"
+                :max="525600"
+                :step="1"
+                controls-position="right"
+                style="width: 100%"
+              />
+              <small class="field-hint">
+                生成时自动写入当前订阅链接，并转换为
+                {{ EgernUpdateInterval * 60 }} 秒。
+              </small>
+            </label>
           </article>
         </div>
         <div class="field">
@@ -1355,6 +1387,9 @@ const OpenUrl = (url: string) => {
           <strong>模板</strong>
           <p>订阅类型：{{ OutputType }}</p>
           <p>{{ templateDisplayName(selectedTemplateSource) }}</p>
+          <p v-if="OutputType === 'egern'">
+            自动更新：每 {{ EgernUpdateInterval }} 分钟
+          </p>
         </div>
         <div class="summary-block">
           <strong>连接选项</strong>
@@ -1670,6 +1705,11 @@ const OpenUrl = (url: string) => {
   color: var(--el-text-color-primary);
   font-size: 13px;
   font-weight: 650;
+}
+
+.field-hint {
+  color: var(--el-text-color-secondary);
+  line-height: 1.5;
 }
 
 .template-grid {

@@ -32,12 +32,13 @@ type Subcription struct {
 // Config 结构体，用于解析 Subcription.Config 字段的 JSON 内容
 // 命名为 SubscriptionConfig 以避免与其他可能的 Config 冲突
 type SubscriptionConfig struct { // <--- 这里重命名了
-	OutputType string `json:"output_type"`
-	Clash      string `json:"clash"`
-	Surge      string `json:"surge"`
-	Egern      string `json:"egern"`
-	UDP        bool   `json:"udp"`
-	Cert       bool   `json:"cert"`
+	OutputType                 string `json:"output_type"`
+	Clash                      string `json:"clash"`
+	Surge                      string `json:"surge"`
+	Egern                      string `json:"egern"`
+	EgernUpdateIntervalMinutes int    `json:"egern_update_interval"`
+	UDP                        bool   `json:"udp"`
+	Cert                       bool   `json:"cert"`
 }
 
 func GenerateSubscriptionToken() string {

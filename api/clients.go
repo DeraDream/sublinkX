@@ -74,7 +74,7 @@ func GetClient(c *gin.Context) {
 		c.Writer.WriteString(fmt.Sprintf("%s 订阅不支持 %s 格式", outputType, clientIndex))
 		return
 	}
-	cacheKey, cacheable := subscriptionCacheKey(sub, format)
+	cacheKey, cacheable := subscriptionCacheKey(c, sub, format)
 	if cacheable {
 		if cached, ok := getSubscriptionCache(cacheKey); ok {
 			writeSubscriptionResponse(c, cached)
@@ -203,20 +203,50 @@ func subscriptionFormatForType(c *gin.Context, requested, outputType string) (st
 	}
 }
 
-func subscriptionCacheKey(sub models.Subcription, format string) (string, bool) {
+func subscriptionCacheKey(c *gin.Context, sub models.Subcription, format string) (string, bool) {
 	templateHash, cacheable := templateFingerprint(sub.Config, format)
 	if !cacheable {
 		return "", false
 	}
+	requestFingerprint := ""
+	if format == "egern" {
+		requestFingerprint = Md5(egernSubscriptionURL(c))
+	}
 	return fmt.Sprintf(
-		"%d:%s:%s:%s:%s:%s",
+		"%d:%s:%s:%s:%s:%s:%s",
 		sub.ID,
 		format,
 		sub.NodeOrder,
 		Md5(sub.Config),
 		templateHash,
 		subscriptionNodesFingerprint(sub.Nodes),
+		requestFingerprint,
 	), true
+}
+
+func egernSubscriptionURL(c *gin.Context) string {
+	requestURL := *c.Request.URL
+	requestURL.Scheme = strings.ToLower(forwardedHeaderValue(c.GetHeader("X-Forwarded-Proto")))
+	if requestURL.Scheme != "http" && requestURL.Scheme != "https" {
+		if c.Request.TLS != nil {
+			requestURL.Scheme = "https"
+		} else {
+			requestURL.Scheme = "http"
+		}
+	}
+	requestURL.Host = forwardedHeaderValue(c.GetHeader("X-Forwarded-Host"))
+	if requestURL.Host == "" {
+		requestURL.Host = c.Request.Host
+	}
+	query := requestURL.Query()
+	query.Set("client", "egern")
+	requestURL.RawQuery = query.Encode()
+	requestURL.Fragment = ""
+	return requestURL.String()
+}
+
+func forwardedHeaderValue(value string) string {
+	return strings.TrimSpace(strings.SplitN(value, ",", 2)[0])
 }
 
 func templateFingerprint(configText string, format string) (string, bool) {
@@ -606,6 +636,7 @@ func buildEgernSubscription(c *gin.Context) (subscriptionCacheEntry, error) {
 	if err := json.Unmarshal([]byte(sub.Config), &configs); err != nil {
 		return subscriptionCacheEntry{}, fmt.Errorf("配置读取错误")
 	}
+	configs.EgernUpdateURL = egernSubscriptionURL(c)
 	output, err := node.EncodeEgern(urls, configs)
 	if err != nil {
 		return subscriptionCacheEntry{}, err

@@ -8,6 +8,8 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+const DefaultEgernUpdateIntervalMinutes = 1440
+
 // EncodeEgern generates an Egern Profile.yaml independently from the Clash
 // and Surge encoders. Only the existing URI parsers are shared.
 func EncodeEgern(urls []string, sqlconfig SqlConfig) ([]byte, error) {
@@ -232,6 +234,16 @@ func decodeEgern(proxies []interface{}, proxyNames []string, sqlconfig SqlConfig
 	var config map[string]interface{}
 	if err := yaml.Unmarshal(template, &config); err != nil {
 		return nil, fmt.Errorf("invalid Egern template: %w", err)
+	}
+	if updateURL := strings.TrimSpace(sqlconfig.EgernUpdateURL); updateURL != "" {
+		intervalMinutes := sqlconfig.EgernUpdateIntervalMinutes
+		if intervalMinutes <= 0 {
+			intervalMinutes = DefaultEgernUpdateIntervalMinutes
+		}
+		config["auto_update"] = map[string]interface{}{
+			"url":      updateURL,
+			"interval": int64(intervalMinutes) * 60,
+		}
 	}
 	config["proxies"] = proxies
 

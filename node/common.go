@@ -12,14 +12,16 @@ import (
 )
 
 type SqlConfig struct {
-	OutputType         string                         `json:"output_type"`
-	Clash              string                         `json:"clash"`
-	Surge              string                         `json:"surge"`
-	Egern              string                         `json:"egern"`
-	Udp                bool                           `json:"udp"`
-	Cert               bool                           `json:"cert"`
-	GroupNodes         map[string]PolicyGroupNodeRule `json:"group_nodes"`
-	GroupNodesTemplate string                         `json:"group_nodes_template"`
+	OutputType                 string                         `json:"output_type"`
+	Clash                      string                         `json:"clash"`
+	Surge                      string                         `json:"surge"`
+	Egern                      string                         `json:"egern"`
+	EgernUpdateIntervalMinutes int                            `json:"egern_update_interval"`
+	EgernUpdateURL             string                         `json:"-"`
+	Udp                        bool                           `json:"udp"`
+	Cert                       bool                           `json:"cert"`
+	GroupNodes                 map[string]PolicyGroupNodeRule `json:"group_nodes"`
+	GroupNodesTemplate         string                         `json:"group_nodes_template"`
 }
 
 type PolicyGroupNodeRule struct {

@@ -99,3 +99,33 @@ func TestSubscriptionFormatDefaultsToSingleOutputType(t *testing.T) {
 		}
 	}
 }
+
+func TestEgernSubscriptionURLUsesPublicForwardedOrigin(t *testing.T) {
+	context, _ := gin.CreateTestContext(httptest.NewRecorder())
+	context.Request = httptest.NewRequest(
+		"GET",
+		"http://internal:8080/c/?token=abc&client=clash",
+		nil,
+	)
+	context.Request.Header.Set("X-Forwarded-Proto", "HTTPS, http")
+	context.Request.Header.Set("X-Forwarded-Host", "sub.example.com")
+
+	want := "https://sub.example.com/c/?client=egern&token=abc"
+	if got := egernSubscriptionURL(context); got != want {
+		t.Fatalf("egernSubscriptionURL() = %q, want %q", got, want)
+	}
+}
+
+func TestEgernSubscriptionURLUsesRequestOrigin(t *testing.T) {
+	context, _ := gin.CreateTestContext(httptest.NewRecorder())
+	context.Request = httptest.NewRequest(
+		"GET",
+		"https://sub.example.com/c/?token=abc",
+		nil,
+	)
+
+	want := "https://sub.example.com/c/?client=egern&token=abc"
+	if got := egernSubscriptionURL(context); got != want {
+		t.Fatalf("egernSubscriptionURL() = %q, want %q", got, want)
+	}
+}

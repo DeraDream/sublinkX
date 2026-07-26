@@ -2,11 +2,14 @@ package api
 
 import (
 	"fmt"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"sublink/models"
+
+	"github.com/gin-gonic/gin"
 )
 
 func TestTemplateFingerprintTracksLocalContent(t *testing.T) {
@@ -66,5 +69,35 @@ func TestNodeFingerprintTracksNodeChanges(t *testing.T) {
 	second := subscriptionNodesFingerprint(nodes)
 	if first == second {
 		t.Fatal("node fingerprint did not change with node content")
+	}
+}
+
+func TestEgernCacheKeyTracksPublicSubscriptionURL(t *testing.T) {
+	templatePath := filepath.Join(t.TempDir(), "egern.yaml")
+	if err := os.WriteFile(templatePath, []byte("proxies: []\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	sub := models.Subcription{
+		ID:     1,
+		Config: fmt.Sprintf(`{"egern":%q}`, templatePath),
+	}
+
+	contextA, _ := gin.CreateTestContext(httptest.NewRecorder())
+	contextA.Request = httptest.NewRequest("GET", "http://internal/c/?token=abc", nil)
+	contextA.Request.Header.Set("X-Forwarded-Proto", "https")
+	contextA.Request.Header.Set("X-Forwarded-Host", "a.example.com")
+
+	contextB, _ := gin.CreateTestContext(httptest.NewRecorder())
+	contextB.Request = httptest.NewRequest("GET", "http://internal/c/?token=abc", nil)
+	contextB.Request.Header.Set("X-Forwarded-Proto", "https")
+	contextB.Request.Header.Set("X-Forwarded-Host", "b.example.com")
+
+	keyA, cacheableA := subscriptionCacheKey(contextA, sub, "egern")
+	keyB, cacheableB := subscriptionCacheKey(contextB, sub, "egern")
+	if !cacheableA || !cacheableB {
+		t.Fatal("local Egern subscriptions should be cacheable")
+	}
+	if keyA == keyB {
+		t.Fatal("Egern cache key did not change with the public subscription URL")
 	}
 }

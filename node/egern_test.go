@@ -149,6 +149,65 @@ func TestEncodeEgernInjectsSelectedNodesIntoPolicyGroups(t *testing.T) {
 	}
 }
 
+func TestEncodeEgernInjectsDynamicAutoUpdate(t *testing.T) {
+	templatePath := filepath.Join(t.TempDir(), "egern-auto-update.yaml")
+	template := `auto_update:
+  url: https://stale.example.com/old
+  interval: 60
+proxies: []
+policy_groups:
+  - select:
+      name: Proxy
+      policies:
+        - DIRECT
+`
+	if err := os.WriteFile(templatePath, []byte(template), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	output, err := EncodeEgern(nil, SqlConfig{
+		Egern:                      templatePath,
+		EgernUpdateURL:             "https://sub.example.com/c/?token=abc&client=egern",
+		EgernUpdateIntervalMinutes: 30,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var profile map[string]interface{}
+	if err := yaml.Unmarshal(output, &profile); err != nil {
+		t.Fatal(err)
+	}
+	autoUpdate, ok := profile["auto_update"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("auto_update = %#v", profile["auto_update"])
+	}
+	if autoUpdate["url"] != "https://sub.example.com/c/?token=abc&client=egern" {
+		t.Fatalf("auto_update.url = %#v", autoUpdate["url"])
+	}
+	if autoUpdate["interval"] != 1800 {
+		t.Fatalf("auto_update.interval = %#v, want 1800", autoUpdate["interval"])
+	}
+}
+
+func TestEncodeEgernDefaultsAutoUpdateToOneDay(t *testing.T) {
+	output, err := EncodeEgern(nil, SqlConfig{
+		Egern:          writeEgernTestTemplate(t),
+		EgernUpdateURL: "https://sub.example.com/c/?token=abc&client=egern",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var profile map[string]interface{}
+	if err := yaml.Unmarshal(output, &profile); err != nil {
+		t.Fatal(err)
+	}
+	autoUpdate := profile["auto_update"].(map[string]interface{})
+	if autoUpdate["interval"] != 86400 {
+		t.Fatalf("auto_update.interval = %#v, want 86400", autoUpdate["interval"])
+	}
+}
+
 func TestEncodeEgernSkipsUnsupportedProtocols(t *testing.T) {
 	output, err := EncodeEgern([]string{
 		"ssr://unsupported",
