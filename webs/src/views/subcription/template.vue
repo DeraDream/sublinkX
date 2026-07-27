@@ -25,6 +25,7 @@ const TempTitle = ref("");
 const editorMode = ref<"add" | "edit" | "import">("add");
 const fileInput = ref<HTMLInputElement>();
 const isDragging = ref(false);
+const yamlEditor = ref<InstanceType<typeof YamlEditor>>();
 
 async function gettemps() {
   const { data } = await getTemp();
@@ -315,10 +316,19 @@ const toggleMobileTemplateSelection = (row: Temp, checked: boolean) => {
         <section class="editor-panel">
           <div class="panel-heading">
             <span>YAML 编辑</span>
-            <span class="panel-hint">Tab 缩进 2 个空格</span>
+            <div class="editor-heading-actions">
+              <span class="panel-hint">Tab 缩进 2 个空格</span>
+              <el-button
+                class="search-button"
+                size="small"
+                @click="yamlEditor?.showSearchPanel()"
+              >
+                查找替换
+              </el-button>
+            </div>
           </div>
           <div class="editor-content">
-            <YamlEditor v-model="TempText" />
+            <YamlEditor ref="yamlEditor" v-model="TempText" />
           </div>
         </section>
 
@@ -612,6 +622,16 @@ const toggleMobileTemplateSelection = (row: Temp, checked: boolean) => {
   color: var(--el-text-color-placeholder);
   font-size: 12px;
   font-weight: 400;
+}
+
+.editor-heading-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.search-button {
+  font-weight: 500;
 }
 
 .editor-content {

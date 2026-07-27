@@ -4,8 +4,21 @@ import { basicSetup } from "codemirror";
 import { indentWithTab } from "@codemirror/commands";
 import { yaml } from "@codemirror/lang-yaml";
 import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
+import {
+  highlightSelectionMatches,
+  openSearchPanel,
+  search,
+  searchKeymap,
+} from "@codemirror/search";
 import { EditorState } from "@codemirror/state";
-import { EditorView, keymap } from "@codemirror/view";
+import {
+  Decoration,
+  type DecorationSet,
+  EditorView,
+  keymap,
+  ViewPlugin,
+  type ViewUpdate,
+} from "@codemirror/view";
 import { tags } from "@lezer/highlight";
 
 const props = defineProps<{
@@ -19,6 +32,64 @@ const emit = defineEmits<{
 const editorElement = ref<HTMLElement>();
 let editorView: EditorView | undefined;
 
+const indentationGuides = ViewPlugin.fromClass(
+  class {
+    decorations: DecorationSet;
+
+    constructor(view: EditorView) {
+      this.decorations = this.buildDecorations(view);
+    }
+
+    update(update: ViewUpdate) {
+      if (update.docChanged || update.viewportChanged) {
+        this.decorations = this.buildDecorations(update.view);
+      }
+    }
+
+    buildDecorations(view: EditorView) {
+      const ranges = [];
+
+      for (const { from, to } of view.visibleRanges) {
+        let line = view.state.doc.lineAt(from);
+        while (line.from <= to) {
+          const spaces = line.text.match(/^ +/)?.[0].length ?? 0;
+          for (let offset = 0; offset < spaces; offset += 2) {
+            ranges.push(
+              Decoration.mark({ class: "cm-indent-guide" }).range(
+                line.from + offset,
+                line.from + offset + 1
+              )
+            );
+          }
+          if (line.to >= to || line.number === view.state.doc.lines) break;
+          line = view.state.doc.line(line.number + 1);
+        }
+      }
+
+      return Decoration.set(ranges, true);
+    }
+  },
+  {
+    decorations: (value) => value.decorations,
+  }
+);
+
+const chinesePhrases = EditorState.phrases.of({
+  Find: "查找",
+  Replace: "替换为",
+  next: "下一个",
+  previous: "上一个",
+  all: "全部",
+  "match case": "区分大小写",
+  regexp: "正则表达式",
+  "by word": "全字匹配",
+  replace: "替换",
+  "replace all": "全部替换",
+  close: "关闭",
+  "current match": "当前匹配",
+  "replaced $ matches": "已替换 $ 处",
+});
+
 onMounted(() => {
   editorView = new EditorView({
     parent: editorElement.value,
@@ -27,6 +98,14 @@ onMounted(() => {
       extensions: [
         basicSetup,
         yaml(),
+        search({
+          top: true,
+        }),
+        highlightSelectionMatches({
+          wholeWords: false,
+        }),
+        indentationGuides,
+        chinesePhrases,
         syntaxHighlighting(
           HighlightStyle.define([
             {
@@ -48,7 +127,7 @@ onMounted(() => {
           ])
         ),
         EditorState.tabSize.of(2),
-        keymap.of([indentWithTab]),
+        keymap.of([indentWithTab, ...searchKeymap]),
         EditorView.lineWrapping,
         EditorView.updateListener.of((update) => {
           if (update.docChanged) {
@@ -69,6 +148,7 @@ onMounted(() => {
           },
           ".cm-content": {
             padding: "14px 0",
+            caretColor: "var(--el-color-primary)",
           },
           ".cm-line": {
             padding: "0 16px",
@@ -85,13 +165,96 @@ onMounted(() => {
             outline: "none",
           },
           ".cm-selectionBackground, &.cm-focused .cm-selectionBackground": {
-            backgroundColor: "var(--editor-selection)",
+            backgroundColor:
+              "color-mix(in srgb, var(--el-color-primary) 32%, transparent) !important",
+          },
+          ".cm-selectionMatch": {
+            backgroundColor:
+              "color-mix(in srgb, var(--el-color-warning) 28%, transparent)",
+            outline:
+              "1px solid color-mix(in srgb, var(--el-color-warning) 65%, transparent)",
+          },
+          ".cm-searchMatch": {
+            backgroundColor:
+              "color-mix(in srgb, var(--el-color-warning) 34%, transparent)",
+            outline:
+              "1px solid color-mix(in srgb, var(--el-color-warning) 70%, transparent)",
+          },
+          ".cm-searchMatch.cm-searchMatch-selected": {
+            backgroundColor:
+              "color-mix(in srgb, var(--el-color-primary) 38%, transparent)",
+            outline: "1px solid var(--el-color-primary)",
+          },
+          ".cm-indent-guide": {
+            borderLeft:
+              "1px solid color-mix(in srgb, var(--el-text-color-placeholder) 30%, transparent)",
+          },
+          ".cm-panels": {
+            color: "var(--el-text-color-primary)",
+            backgroundColor: "var(--el-fill-color-light)",
+          },
+          ".cm-panels.cm-panels-top": {
+            borderBottom: "1px solid var(--el-border-color)",
+          },
+          ".cm-search": {
+            display: "flex",
+            flexWrap: "wrap",
+            alignItems: "center",
+            gap: "6px",
+            padding: "10px 38px 10px 12px",
+          },
+          ".cm-search input": {
+            height: "30px",
+            boxSizing: "border-box",
+            border: "1px solid var(--el-border-color)",
+            borderRadius: "4px",
+            padding: "0 9px",
+            color: "var(--el-text-color-primary)",
+            backgroundColor: "var(--el-bg-color)",
+            fontFamily: "inherit",
+          },
+          ".cm-search input:focus": {
+            borderColor: "var(--el-color-primary)",
+            outline: "none",
+          },
+          ".cm-search button": {
+            height: "30px",
+            border: "1px solid var(--el-border-color)",
+            borderRadius: "4px",
+            padding: "0 10px",
+            color: "var(--el-text-color-regular)",
+            backgroundColor: "var(--el-bg-color)",
+            cursor: "pointer",
+          },
+          ".cm-search button:hover": {
+            color: "var(--el-color-primary)",
+            borderColor: "var(--el-color-primary)",
+          },
+          ".cm-search label": {
+            display: "inline-flex",
+            alignItems: "center",
+            gap: "3px",
+            whiteSpace: "nowrap",
+          },
+          ".cm-search .cm-button[name=close]": {
+            position: "absolute",
+            top: "9px",
+            right: "10px",
           },
         }),
       ],
     }),
   });
 });
+
+const showSearchPanel = () => {
+  if (editorView) {
+    openSearchPanel(editorView);
+    editorView.focus();
+  }
+};
+
+defineExpose({ showSearchPanel });
 
 watch(
   () => props.modelValue,
