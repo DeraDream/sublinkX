@@ -590,7 +590,7 @@ const toggleMobileTemplateSelection = (row: Temp, checked: boolean) => {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 16px;
-  height: calc(100vh - 270px);
+  height: 100%;
   min-height: 440px;
 }
 
@@ -637,6 +637,7 @@ const toggleMobileTemplateSelection = (row: Temp, checked: boolean) => {
 .editor-content {
   min-height: 0;
   flex: 1;
+  overflow: hidden;
 }
 
 .yaml-preview {
@@ -653,6 +654,34 @@ const toggleMobileTemplateSelection = (row: Temp, checked: boolean) => {
   line-height: 1.55;
   tab-size: 2;
   white-space: pre;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+@media (min-width: 901px) {
+  :deep(.template-editor-dialog) {
+    display: flex;
+    height: calc(100dvh - 64px);
+    flex-direction: column;
+    margin-bottom: 0;
+  }
+
+  :deep(.template-editor-dialog .el-dialog__header),
+  :deep(.template-editor-dialog .el-dialog__footer) {
+    flex: none;
+  }
+
+  :deep(.template-editor-dialog .el-dialog__body) {
+    display: flex;
+    min-height: 0;
+    flex: 1;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .editor-layout {
+    min-height: 0;
+  }
 }
 
 @media (max-width: 900px) {

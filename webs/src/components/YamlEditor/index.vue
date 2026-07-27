@@ -31,6 +31,61 @@ const emit = defineEmits<{
 
 const editorElement = ref<HTMLElement>();
 let editorView: EditorView | undefined;
+let removeWheelGuard: (() => void) | undefined;
+
+const installWheelGuard = (view: EditorView) => {
+  const scroller = view.scrollDOM;
+  const handleWheel = (event: WheelEvent) => {
+    const atTop = scroller.scrollTop <= 0;
+    const atBottom =
+      Math.ceil(scroller.scrollTop + scroller.clientHeight) >=
+      scroller.scrollHeight;
+
+    if (
+      (event.deltaY < 0 && atTop) ||
+      (event.deltaY > 0 && atBottom)
+    ) {
+      event.preventDefault();
+    }
+    event.stopPropagation();
+  };
+
+  scroller.addEventListener("wheel", handleWheel, { passive: false });
+  return () => scroller.removeEventListener("wheel", handleWheel);
+};
+
+const explicitSelectionHighlight = ViewPlugin.fromClass(
+  class {
+    decorations: DecorationSet;
+
+    constructor(view: EditorView) {
+      this.decorations = this.buildDecorations(view);
+    }
+
+    update(update: ViewUpdate) {
+      if (update.docChanged || update.selectionSet) {
+        this.decorations = this.buildDecorations(update.view);
+      }
+    }
+
+    buildDecorations(view: EditorView) {
+      return Decoration.set(
+        view.state.selection.ranges
+          .filter((range) => !range.empty)
+          .map((range) =>
+            Decoration.mark({ class: "cm-explicit-selection" }).range(
+              range.from,
+              range.to
+            )
+          ),
+        true
+      );
+    }
+  },
+  {
+    decorations: (value) => value.decorations,
+  }
+);
 
 const indentationGuides = ViewPlugin.fromClass(
   class {
@@ -104,6 +159,7 @@ onMounted(() => {
         highlightSelectionMatches({
           wholeWords: false,
         }),
+        explicitSelectionHighlight,
         indentationGuides,
         chinesePhrases,
         syntaxHighlighting(
@@ -143,11 +199,16 @@ onMounted(() => {
           },
           ".cm-scroller": {
             overflow: "auto",
+            minHeight: "0",
+            overscrollBehavior: "contain",
+            scrollbarGutter: "stable",
             fontFamily:
               '"SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace',
           },
           ".cm-content": {
-            padding: "14px 0",
+            minHeight: "100%",
+            boxSizing: "border-box",
+            padding: "14px 0 22px",
             caretColor: "var(--el-color-primary)",
           },
           ".cm-line": {
@@ -166,7 +227,17 @@ onMounted(() => {
           },
           ".cm-selectionBackground, &.cm-focused .cm-selectionBackground": {
             backgroundColor:
-              "color-mix(in srgb, var(--el-color-primary) 32%, transparent) !important",
+              "color-mix(in srgb, var(--el-color-primary) 38%, transparent) !important",
+          },
+          ".cm-content ::selection": {
+            color: "inherit",
+            backgroundColor:
+              "color-mix(in srgb, var(--el-color-primary) 38%, transparent) !important",
+          },
+          ".cm-explicit-selection": {
+            backgroundColor:
+              "color-mix(in srgb, var(--el-color-primary) 38%, transparent)",
+            borderRadius: "2px",
           },
           ".cm-selectionMatch": {
             backgroundColor:
@@ -245,6 +316,7 @@ onMounted(() => {
       ],
     }),
   });
+  removeWheelGuard = installWheelGuard(editorView);
 });
 
 const showSearchPanel = () => {
@@ -274,6 +346,7 @@ watch(
 );
 
 onBeforeUnmount(() => {
+  removeWheelGuard?.();
   editorView?.destroy();
 });
 </script>
