@@ -252,7 +252,7 @@ func decodeEgern(proxies []interface{}, proxyNames []string, sqlconfig SqlConfig
 		return nil, fmt.Errorf("Egern template must contain a policy_groups list")
 	}
 	rules := policyGroupRulesForTemplate(sqlconfig, sqlconfig.Egern)
-	for _, item := range groups {
+	for i, item := range groups {
 		group, ok := item.(map[string]interface{})
 		if !ok {
 			continue
@@ -264,20 +264,24 @@ func decodeEgern(proxies []interface{}, proxyNames []string, sqlconfig SqlConfig
 				continue
 			}
 			if groupType == "external" {
-				if updateURL := strings.TrimSpace(sqlconfig.EgernUpdateURL); updateURL != "" {
-					existing, _ := settings["urls"].([]interface{})
-					settings["urls"] = injectEgernExternalURLs(existing, updateURL)
+				localType, _ := settings["type"].(string)
+				localType = strings.TrimSpace(localType)
+				if !isEgernLocalPolicyGroupType(localType) {
+					continue
 				}
-				continue
+				delete(settings, "type")
+				delete(settings, "urls")
+				delete(settings, "update_interval")
+				delete(settings, "filter")
+				groupType = localType
+				group = map[string]interface{}{groupType: settings}
+				groups[i] = group
 			}
 			if !isEgernLocalPolicyGroupType(groupType) {
 				continue
 			}
 			name, _ := settings["name"].(string)
 			selected := selectedProxyNamesForGroup(name, proxyNames, rules)
-			if len(selected) == 0 {
-				continue
-			}
 			existing, _ := settings["policies"].([]interface{})
 			settings["policies"] = appendUniqueProxyNames(existing, selected)
 		}
@@ -287,45 +291,6 @@ func decodeEgern(proxies []interface{}, proxyNames []string, sqlconfig SqlConfig
 	return yaml.Marshal(config)
 }
 
-func injectEgernExternalURLs(existing []interface{}, subscriptionURL string) []interface{} {
-	subscriptionURL = strings.TrimSpace(subscriptionURL)
-	if subscriptionURL == "" {
-		return existing
-	}
-	if len(existing) == 0 {
-		return []interface{}{subscriptionURL}
-	}
-
-	result := make([]interface{}, 0, len(existing))
-	hasSubscriptionURL := false
-	for _, item := range existing {
-		value, ok := item.(string)
-		if !ok {
-			result = append(result, item)
-			continue
-		}
-		value = strings.TrimSpace(value)
-		if value == subscriptionURL {
-			hasSubscriptionURL = true
-			result = append(result, value)
-			continue
-		}
-		if isEgernExternalURLPlaceholder(value) {
-			if !hasSubscriptionURL {
-				result = append(result, subscriptionURL)
-				hasSubscriptionURL = true
-			}
-			continue
-		}
-		result = append(result, value)
-	}
-
-	if !hasSubscriptionURL {
-		result = append(result, subscriptionURL)
-	}
-	return result
-}
-
 func isEgernLocalPolicyGroupType(groupType string) bool {
 	switch groupType {
 	case "select", "auto_test", "fallback", "load_balance":
@@ -333,16 +298,4 @@ func isEgernLocalPolicyGroupType(groupType string) bool {
 	default:
 		return false
 	}
-}
-
-func isEgernExternalURLPlaceholder(value string) bool {
-	value = strings.TrimSpace(value)
-	if value == "" {
-		return true
-	}
-	normalized := strings.ToLower(value)
-	return !strings.Contains(normalized, "://") ||
-		strings.Contains(normalized, "example.com") ||
-		strings.Contains(normalized, "placeholder") ||
-		strings.Contains(normalized, "your_")
 }

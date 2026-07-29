@@ -19,9 +19,19 @@ policy_groups:
       policies:
         - DIRECT
   - external:
-      name: External
-      type: select
+      name: External Auto
+      type: auto_test
+      filter: ".*"
+      update_interval: 86400
       urls: []
+  - external:
+      name: External Balance
+      type: load_balance
+      algorithm: hash
+      filter: ".*"
+      update_interval: 86400
+      urls:
+        - https://placeholder.example.com/subscription
   - conditional:
       name: Conditional
       rules:
@@ -134,7 +144,12 @@ func TestEncodeEgernInjectsSelectedNodesIntoPolicyGroups(t *testing.T) {
 		EgernUpdateIntervalMinutes: 30,
 		GroupNodesTemplate:         template,
 		GroupNodes: map[string]PolicyGroupNodeRule{
-			"Proxy": {Mode: "include", Nodes: []string{"Node B"}},
+			"Proxy":         {Mode: "include", Nodes: []string{"Node B"}},
+			"External Auto": {Mode: "include", Nodes: []string{"Node A"}},
+			"External Balance": {
+				Mode:  "include",
+				Nodes: []string{"Node B"},
+			},
 		},
 	})
 	if err != nil {
@@ -151,15 +166,38 @@ func TestEncodeEgernInjectsSelectedNodesIntoPolicyGroups(t *testing.T) {
 	if len(policies) != 2 || policies[0] != "DIRECT" || policies[1] != "Node B" {
 		t.Fatalf("policies = %#v, want [DIRECT Node B]", policies)
 	}
-	externalGroup := groups[1].(map[string]interface{})["external"].(map[string]interface{})
-	if _, exists := externalGroup["policies"]; exists {
-		t.Fatalf("local nodes were injected into external group: %#v", externalGroup)
+	autoGroupItem := groups[1].(map[string]interface{})
+	if _, exists := autoGroupItem["external"]; exists {
+		t.Fatalf("external group was not converted to a local group: %#v", autoGroupItem)
 	}
-	externalURLs := externalGroup["urls"].([]interface{})
-	if len(externalURLs) != 1 || externalURLs[0] != "https://sub.example.com/c/?token=abc&client=egern" {
-		t.Fatalf("external urls = %#v, want generated subscription URL", externalURLs)
+	autoGroup := autoGroupItem["auto_test"].(map[string]interface{})
+	autoPolicies := autoGroup["policies"].([]interface{})
+	if len(autoPolicies) != 1 || autoPolicies[0] != "Node A" {
+		t.Fatalf("auto_test policies = %#v, want [Node A]", autoPolicies)
 	}
-	conditionalGroup := groups[2].(map[string]interface{})["conditional"].(map[string]interface{})
+	for _, field := range []string{"type", "urls", "update_interval", "filter"} {
+		if _, exists := autoGroup[field]; exists {
+			t.Fatalf("converted auto_test group retained external-only field %q: %#v", field, autoGroup)
+		}
+	}
+	balanceGroupItem := groups[2].(map[string]interface{})
+	if _, exists := balanceGroupItem["external"]; exists {
+		t.Fatalf("external group was not converted to a local group: %#v", balanceGroupItem)
+	}
+	balanceGroup := balanceGroupItem["load_balance"].(map[string]interface{})
+	balancePolicies := balanceGroup["policies"].([]interface{})
+	if len(balancePolicies) != 1 || balancePolicies[0] != "Node B" {
+		t.Fatalf("load_balance policies = %#v, want [Node B]", balancePolicies)
+	}
+	if balanceGroup["algorithm"] != "hash" {
+		t.Fatalf("load_balance algorithm = %#v, want hash", balanceGroup["algorithm"])
+	}
+	for _, field := range []string{"type", "urls", "update_interval", "filter"} {
+		if _, exists := balanceGroup[field]; exists {
+			t.Fatalf("converted load_balance group retained external-only field %q: %#v", field, balanceGroup)
+		}
+	}
+	conditionalGroup := groups[3].(map[string]interface{})["conditional"].(map[string]interface{})
 	if _, exists := conditionalGroup["policies"]; exists {
 		t.Fatalf("conditional group should not receive local proxy policies: %#v", conditionalGroup)
 	}
