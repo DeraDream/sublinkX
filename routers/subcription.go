@@ -15,6 +15,7 @@ func Subcription(r *gin.Engine) {
 		SubcriptionGroup.POST("/update", api.SubUpdate)
 		SubcriptionGroup.POST("/reset-token", api.SubResetToken)
 		SubcriptionGroup.POST("/revoked", api.SubSetRevoked)
+		SubcriptionGroup.GET("/preview", api.SubPreview)
 	}
 
 }

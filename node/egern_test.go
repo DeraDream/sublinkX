@@ -21,8 +21,14 @@ policy_groups:
   - external:
       name: External
       type: select
-      urls:
-        - https://example.com/subscription
+      urls: []
+  - conditional:
+      name: Conditional
+      rules:
+        - ssid:
+            match: Home
+            policy: Proxy
+      default_policy: DIRECT
 rules:
   - default:
       policy: Proxy
@@ -123,8 +129,10 @@ func TestEncodeEgernInjectsSelectedNodesIntoPolicyGroups(t *testing.T) {
 	}
 	template := writeEgernTestTemplate(t)
 	output, err := EncodeEgern(links, SqlConfig{
-		Egern:              template,
-		GroupNodesTemplate: template,
+		Egern:                      template,
+		EgernUpdateURL:             "https://sub.example.com/c/?token=abc&client=egern",
+		EgernUpdateIntervalMinutes: 30,
+		GroupNodesTemplate:         template,
 		GroupNodes: map[string]PolicyGroupNodeRule{
 			"Proxy": {Mode: "include", Nodes: []string{"Node B"}},
 		},
@@ -146,6 +154,14 @@ func TestEncodeEgernInjectsSelectedNodesIntoPolicyGroups(t *testing.T) {
 	externalGroup := groups[1].(map[string]interface{})["external"].(map[string]interface{})
 	if _, exists := externalGroup["policies"]; exists {
 		t.Fatalf("local nodes were injected into external group: %#v", externalGroup)
+	}
+	externalURLs := externalGroup["urls"].([]interface{})
+	if len(externalURLs) != 1 || externalURLs[0] != "https://sub.example.com/c/?token=abc&client=egern" {
+		t.Fatalf("external urls = %#v, want generated subscription URL", externalURLs)
+	}
+	conditionalGroup := groups[2].(map[string]interface{})["conditional"].(map[string]interface{})
+	if _, exists := conditionalGroup["policies"]; exists {
+		t.Fatalf("conditional group should not receive local proxy policies: %#v", conditionalGroup)
 	}
 }
 

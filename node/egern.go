@@ -258,11 +258,19 @@ func decodeEgern(proxies []interface{}, proxyNames []string, sqlconfig SqlConfig
 			continue
 		}
 		for groupType, rawSettings := range group {
-			if groupType == "external" {
-				continue
-			}
+			groupType = strings.TrimSpace(groupType)
 			settings, ok := rawSettings.(map[string]interface{})
 			if !ok {
+				continue
+			}
+			if groupType == "external" {
+				if updateURL := strings.TrimSpace(sqlconfig.EgernUpdateURL); updateURL != "" {
+					existing, _ := settings["urls"].([]interface{})
+					settings["urls"] = injectEgernExternalURLs(existing, updateURL)
+				}
+				continue
+			}
+			if !isEgernLocalPolicyGroupType(groupType) {
 				continue
 			}
 			name, _ := settings["name"].(string)
@@ -277,4 +285,64 @@ func decodeEgern(proxies []interface{}, proxyNames []string, sqlconfig SqlConfig
 	config["policy_groups"] = groups
 
 	return yaml.Marshal(config)
+}
+
+func injectEgernExternalURLs(existing []interface{}, subscriptionURL string) []interface{} {
+	subscriptionURL = strings.TrimSpace(subscriptionURL)
+	if subscriptionURL == "" {
+		return existing
+	}
+	if len(existing) == 0 {
+		return []interface{}{subscriptionURL}
+	}
+
+	result := make([]interface{}, 0, len(existing))
+	hasSubscriptionURL := false
+	for _, item := range existing {
+		value, ok := item.(string)
+		if !ok {
+			result = append(result, item)
+			continue
+		}
+		value = strings.TrimSpace(value)
+		if value == subscriptionURL {
+			hasSubscriptionURL = true
+			result = append(result, value)
+			continue
+		}
+		if isEgernExternalURLPlaceholder(value) {
+			if !hasSubscriptionURL {
+				result = append(result, subscriptionURL)
+				hasSubscriptionURL = true
+			}
+			continue
+		}
+		result = append(result, value)
+	}
+
+	if !hasSubscriptionURL {
+		result = append(result, subscriptionURL)
+	}
+	return result
+}
+
+func isEgernLocalPolicyGroupType(groupType string) bool {
+	switch groupType {
+	case "select", "auto_test", "fallback", "load_balance":
+		return true
+	default:
+		return false
+	}
+}
+
+func isEgernExternalURLPlaceholder(value string) bool {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return true
+	}
+	normalized := strings.ToLower(value)
+	return !strings.Contains(normalized, "://") ||
+		strings.Contains(normalized, "example.com") ||
+		strings.Contains(normalized, "placeholder") ||
+		strings.Contains(normalized, "your_")
 }

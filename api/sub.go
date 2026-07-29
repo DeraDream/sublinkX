@@ -5,6 +5,8 @@ package api
 import (
 	// 导入 json 包，用于解析 config 字符串
 
+	"fmt"
+	"net/url"
 	"strconv"
 	"strings"
 	"sublink/models" // 导入 models 包
@@ -259,6 +261,76 @@ func SubSetRevoked(c *gin.Context) {
 	}
 	clearSubscriptionCache()
 	c.JSON(200, gin.H{"code": "00000", "msg": "状态已更新"})
+}
+
+func SubPreview(c *gin.Context) {
+	id, err := strconv.Atoi(c.Query("id"))
+	if err != nil || id <= 0 {
+		c.JSON(400, gin.H{"msg": "id 不能为空"})
+		return
+	}
+
+	var sub models.Subcription
+	sub.ID = id
+	if err := sub.Find(); err != nil {
+		c.JSON(404, gin.H{"msg": "订阅不存在"})
+		return
+	}
+
+	outputType := subscriptionOutputType(sub)
+	format := strings.ToLower(strings.TrimSpace(c.Query("client")))
+	if format == "" || format == "v2ray" {
+		format = outputType
+	}
+	format, allowed := subscriptionFormatForType(c, format, outputType)
+	if !allowed || format == "v2ray" {
+		c.JSON(400, gin.H{"msg": fmt.Sprintf("%s 订阅不支持查看 %s 源配置", outputType, format)})
+		return
+	}
+
+	originalURL := c.Request.URL
+	previewURL := *originalURL
+	previewURL.Path = "/c/"
+	previewURL.RawPath = ""
+	previewURL.RawQuery = url.Values{
+		"token":  []string{sub.Token},
+		"client": []string{format},
+	}.Encode()
+	previewURL.Fragment = ""
+	c.Request.URL = &previewURL
+	defer func() {
+		c.Request.URL = originalURL
+	}()
+
+	c.Set("subname", sub.Name)
+	var resp subscriptionCacheEntry
+	switch format {
+	case "clash":
+		resp, err = buildClashSubscription(c)
+	case "surge":
+		resp, err = buildSurgeSubscription(c)
+	case "egern":
+		resp, err = buildEgernSubscription(c)
+	default:
+		err = fmt.Errorf("不支持的订阅格式: %s", format)
+	}
+	if err != nil {
+		c.JSON(500, gin.H{"msg": err.Error()})
+		return
+	}
+
+	c.JSON(200, gin.H{
+		"code": "00000",
+		"data": gin.H{
+			"name":         sub.Name,
+			"format":       format,
+			"filename":     resp.filename,
+			"content_type": resp.contentType,
+			"node_count":   resp.nodeCount,
+			"content":      string(resp.body),
+		},
+		"msg": "订阅文件生成成功",
+	})
 }
 
 func parseOptionalInt(value string) (int, error) {

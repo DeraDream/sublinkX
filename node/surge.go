@@ -3,7 +3,6 @@ package node
 import (
 	"fmt"
 	"log"
-	"regexp"
 	"strings"
 )
 
@@ -143,34 +142,132 @@ func DecodeSurge(proxys, groups []string, sqlconfig SqlConfig) (string, error) {
 		return "", err
 	}
 
-	proxyReg := regexp.MustCompile(`(?s)\[Proxy\](.*?)\[*]`)
-	groupReg := regexp.MustCompile(`(?s)\[Proxy Group\](.*?)\[*]`)
-
-	proxyPart := proxyReg.ReplaceAllStringFunc(string(surge), func(s string) string {
-
+	proxyPart := replaceSurgeSection(string(surge), "Proxy", func(lines []string) []string {
 		text := strings.Join(proxys, "\n")
-		return "[Proxy]\n" + text + s[len("[Proxy]"):]
+		if strings.TrimSpace(text) == "" {
+			return lines
+		}
+		return append(strings.Split(text, "\n"), lines...)
 	})
-	groupPart := groupReg.ReplaceAllStringFunc(proxyPart, func(s string) string {
-		lines := strings.Split(s, "\n")
+	groupPart := replaceSurgeSection(proxyPart, "Proxy Group", func(lines []string) []string {
 		for i, line := range lines {
-
 			if strings.Contains(line, "=") {
-				parts := strings.SplitN(line, "=", 2)
-				groupName := strings.TrimSpace(parts[0])
-				groupNames := selectedProxyNamesForGroup(groupName, groups, policyGroupRulesForTemplate(sqlconfig, sqlconfig.Surge))
-				if len(groupNames) == 0 {
+				updatedLine, ok := injectSurgePolicyGroupLine(line, groups, policyGroupRulesForTemplate(sqlconfig, sqlconfig.Surge))
+				if !ok {
 					lines[i] = strings.TrimSpace(line)
 					continue
 				}
-				existingItems := strings.Split(parts[1], ",")
-				mergedItems := appendUniqueStringNames(existingItems, groupNames)
-				lines[i] = groupName + " = " + strings.Join(mergedItems, ", ")
-				// lines[i] = line + "," + grouplist
+				lines[i] = updatedLine
 			}
 		}
-		return strings.Join(lines, "\n") + s[len("[Proxy Group]"):]
+		return lines
 	})
 
 	return groupPart, nil
+}
+
+func replaceSurgeSection(profile string, sectionName string, transform func([]string) []string) string {
+	lines := strings.Split(profile, "\n")
+	header := "[" + sectionName + "]"
+	start := -1
+	for i, line := range lines {
+		if strings.TrimSpace(line) == header {
+			start = i
+			break
+		}
+	}
+	if start < 0 {
+		return profile
+	}
+
+	end := len(lines)
+	for i := start + 1; i < len(lines); i++ {
+		trimmed := strings.TrimSpace(lines[i])
+		if strings.HasPrefix(trimmed, "[") && strings.HasSuffix(trimmed, "]") {
+			end = i
+			break
+		}
+	}
+
+	next := make([]string, 0, len(lines))
+	next = append(next, lines[:start+1]...)
+	next = append(next, transform(append([]string(nil), lines[start+1:end]...))...)
+	next = append(next, lines[end:]...)
+	return strings.Join(next, "\n")
+}
+
+func injectSurgePolicyGroupLine(line string, proxyNames []string, rules map[string]PolicyGroupNodeRule) (string, bool) {
+	trimmedLine := strings.TrimSpace(line)
+	if trimmedLine == "" || strings.HasPrefix(trimmedLine, "#") || strings.HasPrefix(trimmedLine, ";") {
+		return line, false
+	}
+
+	parts := strings.SplitN(line, "=", 2)
+	if len(parts) != 2 {
+		return line, false
+	}
+	groupName := strings.TrimSpace(parts[0])
+	items := splitSurgeCSV(parts[1])
+	if len(items) == 0 {
+		return line, false
+	}
+	groupType := strings.TrimSpace(items[0])
+	if !isSurgeInjectableGroupType(groupType) {
+		return line, false
+	}
+
+	selected := selectedProxyNamesForGroup(groupName, proxyNames, rules)
+	if len(selected) == 0 {
+		return strings.TrimSpace(line), false
+	}
+
+	prefix := []string{groupType}
+	existingPolicies := make([]string, 0, len(items))
+	parameters := make([]string, 0, len(items))
+	for _, item := range items[1:] {
+		if isSurgePolicyGroupParameter(item) {
+			parameters = append(parameters, strings.TrimSpace(item))
+			continue
+		}
+		existingPolicies = append(existingPolicies, strings.TrimSpace(item))
+	}
+	mergedPolicies := appendUniqueStringNames(existingPolicies, selected)
+	return groupName + " = " + strings.Join(append(append(prefix, mergedPolicies...), parameters...), ", "), true
+}
+
+func isSurgeInjectableGroupType(groupType string) bool {
+	switch strings.TrimSpace(groupType) {
+	case "select", "url-test", "fallback", "load-balance":
+		return true
+	default:
+		return false
+	}
+}
+
+func isSurgePolicyGroupParameter(item string) bool {
+	item = strings.TrimSpace(item)
+	if item == "" {
+		return true
+	}
+	if strings.Contains(item, "=") {
+		return true
+	}
+	switch item {
+	case "no-alert", "hidden":
+		return true
+	default:
+		return false
+	}
+}
+
+func splitSurgeCSV(value string) []string {
+	rawItems := strings.Split(value, ",")
+	items := make([]string, 0, len(rawItems))
+	for _, item := range rawItems {
+		trimmed := strings.TrimSpace(item)
+		if trimmed != "" {
+			items = append(items, trimmed)
+		}
+	}
+	return items
 }

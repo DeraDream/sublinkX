@@ -1,12 +1,12 @@
 import request from "@/utils/request";
-export function getSubs(){
+export function getSubs() {
   return request({
     url: "/api/v1/subcription/get",
     method: "get",
   });
 }
 
-export function AddSub(data: any){
+export function AddSub(data: any) {
   return request({
     url: "/api/v1/subcription/add",
     method: "post",
@@ -16,7 +16,7 @@ export function AddSub(data: any){
     },
   });
 }
-export function DelSub(data: any){
+export function DelSub(data: any) {
   return request({
     url: "/api/v1/subcription/delete",
     method: "delete",
@@ -24,7 +24,7 @@ export function DelSub(data: any){
   });
 }
 
-export function UpdateSub(data: any){
+export function UpdateSub(data: any) {
   return request({
     url: "/api/v1/subcription/update",
     method: "post",
@@ -35,7 +35,7 @@ export function UpdateSub(data: any){
   });
 }
 
-export function ResetSubToken(data: any){
+export function ResetSubToken(data: any) {
   return request({
     url: "/api/v1/subcription/reset-token",
     method: "post",
@@ -46,7 +46,7 @@ export function ResetSubToken(data: any){
   });
 }
 
-export function SetSubRevoked(data: any){
+export function SetSubRevoked(data: any) {
   return request({
     url: "/api/v1/subcription/revoked",
     method: "post",
@@ -54,5 +54,13 @@ export function SetSubRevoked(data: any){
     headers: {
       "Content-Type": "multipart/form-data",
     },
+  });
+}
+
+export function PreviewSub(data: any) {
+  return request({
+    url: "/api/v1/subcription/preview",
+    method: "get",
+    params: data,
   });
 }

@@ -7,6 +7,7 @@ import {
   UpdateSub,
   ResetSubToken,
   SetSubRevoked,
+  PreviewSub,
 } from "@/api/subcription/subs";
 import { getTemp } from "@/api/subcription/temp";
 import { getNodes, setNodeDisabled } from "@/api/subcription/node";
@@ -127,6 +128,14 @@ const QrTitle = ref("");
 const ClientDiaLog = ref(false);
 const ClientUrls = ref<Record<string, string>>({});
 const ClientSubName = ref("");
+
+const previewDialog = ref(false);
+const previewLoading = ref(false);
+const previewSubName = ref("");
+const previewFormat = ref("");
+const previewFilename = ref("");
+const previewContent = ref("");
+const previewNodeCount = ref(0);
 
 const closeClashTemplateSelect = () => {
   nextTick(() => clashTemplateSelectRef.value?.blur());
@@ -924,6 +933,51 @@ const handleClient = (row: any) => {
   });
 };
 
+const handlePreviewSub = async (row: any) => {
+  previewDialog.value = true;
+  previewLoading.value = true;
+  previewSubName.value = row.Name;
+  previewFormat.value = "";
+  previewFilename.value = "";
+  previewContent.value = "";
+  previewNodeCount.value = 0;
+  try {
+    const config = parseConfig(row.Config);
+    const outputType = inferSubscriptionOutputType(config, row.Name);
+    const { data } = await PreviewSub({
+      id: row.ID,
+      client: outputType,
+    });
+    previewSubName.value = data.name || row.Name;
+    previewFormat.value = data.format || outputType;
+    previewFilename.value = data.filename || `${row.Name}.${outputType}`;
+    previewContent.value = data.content || "";
+    previewNodeCount.value = Number(data.node_count || 0);
+  } catch (error: any) {
+    previewDialog.value = false;
+    ElMessage.error(error?.response?.data?.msg || "订阅文件生成失败");
+  } finally {
+    previewLoading.value = false;
+  }
+};
+
+const copyPreviewContent = () => {
+  copyUrl(previewContent.value);
+};
+
+const downloadPreviewContent = () => {
+  const blob = new Blob([previewContent.value], {
+    type: "text/plain;charset=utf-8",
+  });
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(blob);
+  link.download = previewFilename.value || `${previewSubName.value}.txt`;
+  document.body.appendChild(link);
+  link.click();
+  URL.revokeObjectURL(link.href);
+  document.body.removeChild(link);
+};
+
 const handleQrcode = (url: string, title: string) => {
   Qrdialog.value = true;
   qrcode.value = url;
@@ -994,6 +1048,40 @@ const OpenUrl = (url: string) => {
           </div>
         </article>
       </div>
+    </el-dialog>
+
+    <el-dialog
+      v-model="previewDialog"
+      class="form-dialog subscription-preview-dialog"
+      width="min(1040px, calc(100vw - 32px))"
+      title="查看订阅文件"
+      :close-on-click-modal="true"
+    >
+      <div v-loading="previewLoading" class="subscription-preview">
+        <div class="preview-head">
+          <div>
+            <p class="dialog-intro">
+              后台生成的可读源配置，仅用于查看；浏览器订阅链接输出保持不变。
+            </p>
+            <strong>{{ previewSubName }}</strong>
+          </div>
+          <div class="preview-meta">
+            <el-tag size="small" effect="plain">{{ previewFormat }}</el-tag>
+            <span>{{ previewFilename }}</span>
+            <span>{{ previewNodeCount }} 个节点</span>
+          </div>
+        </div>
+        <pre class="preview-code"><code>{{ previewContent }}</code></pre>
+      </div>
+      <template #footer>
+        <div class="dialog-footer">
+          <el-button @click="copyPreviewContent">复制内容</el-button>
+          <el-button @click="downloadPreviewContent">下载文件</el-button>
+          <el-button type="primary" @click="previewDialog = false">
+            关闭
+          </el-button>
+        </div>
+      </template>
     </el-dialog>
 
     <el-dialog
@@ -1651,10 +1739,16 @@ const OpenUrl = (url: string) => {
           sortable
           :formatter="formatCreatedAt"
         />
-        <el-table-column label="操作" width="270" align="center">
+        <el-table-column label="操作" width="320" align="center">
           <template #default="scope">
             <div v-if="scope.row.Nodes" class="subscription-action-grid">
               <el-button link @click="handleIplogs(scope.row)">记录</el-button>
+              <el-button
+                link
+                type="primary"
+                @click="handlePreviewSub(scope.row)"
+                >查看文件</el-button
+              >
               <el-button link @click="handleResetToken(scope.row)"
                 >重置 token</el-button
               >
@@ -1720,6 +1814,9 @@ const OpenUrl = (url: string) => {
             <el-button type="primary" @click="handleClient(row)"
               >客户端</el-button
             >
+            <el-button type="primary" plain @click="handlePreviewSub(row)"
+              >查看文件</el-button
+            >
             <el-button @click="handleIplogs(row)">记录</el-button>
             <el-button type="warning" @click="handleResetToken(row)">
               重置
@@ -1765,10 +1862,6 @@ const OpenUrl = (url: string) => {
 .subscription-action-grid .el-button {
   min-height: 24px;
   margin-left: 0;
-}
-
-.subscription-action-grid .el-button:last-child {
-  grid-column: 2;
 }
 
 .record-count,
@@ -2249,6 +2342,47 @@ const OpenUrl = (url: string) => {
   justify-content: flex-start;
 }
 
+.subscription-preview {
+  display: grid;
+  gap: 14px;
+}
+
+.preview-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--el-border-color-lighter);
+}
+
+.preview-head strong {
+  color: var(--el-text-color-primary);
+}
+
+.preview-meta {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+}
+
+.preview-code {
+  max-height: min(62vh, 680px);
+  overflow: auto;
+  padding: 16px;
+  margin: 0;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 12px;
+  background: var(--el-fill-color-extra-light);
+  color: var(--el-text-color-primary);
+  font-size: 12px;
+  line-height: 1.65;
+  white-space: pre;
+}
+
 @media (max-width: 860px) {
   .form-grid,
   .template-grid,
@@ -2479,6 +2613,20 @@ const OpenUrl = (url: string) => {
 
   .client-dialog-head {
     gap: 10px;
+  }
+
+  .preview-head {
+    flex-direction: column;
+  }
+
+  .preview-meta {
+    justify-content: flex-start;
+  }
+
+  .preview-code {
+    max-height: 58vh;
+    padding: 12px;
+    font-size: 11px;
   }
 
   .client-card {

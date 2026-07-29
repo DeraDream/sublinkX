@@ -385,17 +385,14 @@ func DecodeClash(proxys []Proxy, sqlconfig SqlConfig) ([]byte, error) {
 	}
 	// proxies = append(proxies, newProxy)
 	config["proxies"] = proxies
-	// 往ProxyGroup中插入代理列表
-	// ProxiesNameList := []string{"newProxy", "ceshi"}
-	proxyGroups := config["proxy-groups"].([]interface{})
-	for i, pg := range proxyGroups {
+	rawProxyGroups, ok := config["proxy-groups"].([]interface{})
+	if !ok {
+		return nil, fmt.Errorf("Clash template must contain a proxy-groups list")
+	}
+	for i, pg := range rawProxyGroups {
 		proxyGroup, ok := pg.(map[string]interface{})
 		if !ok {
 			continue
-		}
-		// 如果 proxyGroup["proxies"] 是 nil，初始化它为一个空的切片
-		if proxyGroup["proxies"] == nil {
-			proxyGroup["proxies"] = []interface{}{}
 		}
 		groupName, _ := proxyGroup["name"].(string)
 		// 如果为链式代理的话则跳过当前组
@@ -403,12 +400,18 @@ func DecodeClash(proxys []Proxy, sqlconfig SqlConfig) ([]byte, error) {
 		if proxyGroup["type"] == "relay" {
 			continue
 		}
+		existingProxies, ok := proxyGroup["proxies"].([]interface{})
+		if proxyGroup["proxies"] == nil {
+			existingProxies = []interface{}{}
+		} else if !ok {
+			return nil, fmt.Errorf("Clash policy group %q proxies must be a list", groupName)
+		}
 		groupProxyNames := selectedProxyNamesForGroup(groupName, ProxiesNameList, policyGroupRulesForTemplate(sqlconfig, sqlconfig.Clash))
-		proxyGroup["proxies"] = appendUniqueProxyNames(proxyGroup["proxies"].([]interface{}), groupProxyNames)
-		proxyGroups[i] = proxyGroup
+		proxyGroup["proxies"] = appendUniqueProxyNames(existingProxies, groupProxyNames)
+		rawProxyGroups[i] = proxyGroup
 	}
 
-	config["proxy-groups"] = proxyGroups
+	config["proxy-groups"] = rawProxyGroups
 
 	// 将修改后的内容写回文件
 	newData, err := yaml.Marshal(config)
