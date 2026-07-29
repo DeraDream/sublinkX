@@ -2344,10 +2344,18 @@ const OpenUrl = (url: string) => {
 
 .subscription-preview {
   display: grid;
+  max-height: calc(100dvh - 220px);
+  min-height: 0;
+  grid-template-rows: auto minmax(0, 1fr);
   gap: 14px;
 }
 
+:deep(.subscription-preview-dialog .el-dialog__body) {
+  overflow: hidden;
+}
+
 .preview-head {
+  min-width: 0;
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
@@ -2370,7 +2378,7 @@ const OpenUrl = (url: string) => {
 }
 
 .preview-code {
-  max-height: min(62vh, 680px);
+  min-height: 0;
   overflow: auto;
   padding: 16px;
   margin: 0;
@@ -2381,6 +2389,7 @@ const OpenUrl = (url: string) => {
   font-size: 12px;
   line-height: 1.65;
   white-space: pre;
+  scrollbar-gutter: stable;
 }
 
 @media (max-width: 860px) {
@@ -2624,7 +2633,6 @@ const OpenUrl = (url: string) => {
   }
 
   .preview-code {
-    max-height: 58vh;
     padding: 12px;
     font-size: 11px;
   }
