@@ -1,6 +1,6 @@
 {
   "name": "sublinkx-admin",
-  "version": "4.41",
+  "version": "4.42",
   "private": true,
   "type": "module",
   "scripts": {
