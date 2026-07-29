@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref } from "vue";
+import { computed, nextTick, onMounted, ref, watch } from "vue";
 import YamlEditor from "@/components/YamlEditor/index.vue";
 import { AddTemp, DelTemp, getTemp, UpdateTemp } from "@/api/subcription/temp";
 import { formatBeijingTime } from "@/utils/time";
 import { useDraggableTableRows } from "@/utils/table-drag";
 import { useAppStore } from "@/store";
 import { DeviceEnum } from "@/enums/DeviceEnum";
+import { LineCounter, parseDocument } from "yaml";
 
 interface Temp {
   file: string;
@@ -26,6 +27,7 @@ const editorMode = ref<"add" | "edit" | "import">("add");
 const fileInput = ref<HTMLInputElement>();
 const isDragging = ref(false);
 const yamlEditor = ref<InstanceType<typeof YamlEditor>>();
+const yamlValidationError = ref("");
 
 async function gettemps() {
   const { data } = await getTemp();
@@ -40,6 +42,7 @@ const handleAddTemp = () => {
   Tempname.value = "";
   Tempoldname.value = "";
   TempText.value = "";
+  yamlValidationError.value = "";
   dialogVisible.value = true;
 };
 
@@ -51,6 +54,9 @@ const addtemp = async () => {
   }
   if (!TempText.value.trim()) {
     ElMessage.warning("模板内容不能为空");
+    return;
+  }
+  if (!validateCurrentTemplate(filename)) {
     return;
   }
 
@@ -73,6 +79,7 @@ const addtemp = async () => {
   Tempname.value = "";
   Tempoldname.value = "";
   TempText.value = "";
+  yamlValidationError.value = "";
   dialogVisible.value = false;
 };
 
@@ -100,6 +107,73 @@ const normalizeTemplateFilename = (filename: string, text = "") => {
   }
   return `${name}.yaml`;
 };
+
+const isYamlTemplateFilename = (filename: string) =>
+  /\.(ya?ml)$/i.test((filename || "").trim());
+
+const yamlErrorLine = (error: any, lineCounter: LineCounter) => {
+  const linePos = error?.linePos?.[0];
+  if (linePos?.line) {
+    return linePos.line;
+  }
+  const pos = Array.isArray(error?.pos) ? error.pos[0] : undefined;
+  if (typeof pos === "number") {
+    return lineCounter.linePos(pos).line;
+  }
+  return undefined;
+};
+
+const validateYamlTemplate = (filename: string, text: string) => {
+  if (!isYamlTemplateFilename(filename)) {
+    return "";
+  }
+  const lines = text.split(/\r?\n/);
+  for (let index = 0; index < lines.length; index += 1) {
+    const indent = lines[index].match(/^[\t ]*/)?.[0] || "";
+    if (indent.includes("\t")) {
+      return `第 ${index + 1} 行：YAML 缩进不能使用 Tab，请改为空格`;
+    }
+  }
+  try {
+    const lineCounter = new LineCounter();
+    const doc = parseDocument(text, {
+      lineCounter,
+      prettyErrors: false,
+      strict: true,
+    });
+    if (doc.errors.length > 0) {
+      const error = doc.errors[0] as any;
+      const line = yamlErrorLine(error, lineCounter);
+      const message = String(error.message || error).trim();
+      return line
+        ? `第 ${line} 行：YAML 格式错误：${message}`
+        : `YAML 格式错误：${message}`;
+    }
+  } catch (error: any) {
+    const message = String(error?.message || error).trim();
+    return `YAML 格式错误：${message}`;
+  }
+  return "";
+};
+
+const validateCurrentTemplate = (
+  filename = normalizeTemplateFilename(Tempname.value, TempText.value)
+) => {
+  yamlValidationError.value = validateYamlTemplate(filename, TempText.value);
+  if (yamlValidationError.value) {
+    ElMessage.error(yamlValidationError.value);
+    return false;
+  }
+  return true;
+};
+
+watch([Tempname, TempText], () => {
+  if (!dialogVisible.value) {
+    return;
+  }
+  const filename = normalizeTemplateFilename(Tempname.value, TempText.value);
+  yamlValidationError.value = validateYamlTemplate(filename, TempText.value);
+});
 
 const selectAll = () => {
   if (isMobile.value) {
@@ -133,6 +207,7 @@ const handleEdit = (row: any) => {
   Tempname.value = row.file;
   Tempoldname.value = row.file;
   TempText.value = row.text;
+  yamlValidationError.value = "";
   dialogVisible.value = true;
 };
 
@@ -173,7 +248,15 @@ const previewImportFile = async (file: File) => {
   Tempname.value = normalizeTemplateFilename(file.name, text);
   Tempoldname.value = "";
   TempText.value = text;
+  yamlValidationError.value = validateYamlTemplate(
+    Tempname.value,
+    TempText.value
+  );
   dialogVisible.value = true;
+  if (yamlValidationError.value) {
+    ElMessage.error(yamlValidationError.value);
+    return;
+  }
   ElMessage.info("已读取本地文件，请检查内容，点击保存后才会真正导入");
 };
 
@@ -310,6 +393,16 @@ const toggleMobileTemplateSelection = (row: Temp, checked: boolean) => {
         show-icon
         :closable="false"
         description="你可以先修改文件名和内容。只有点击底部“保存模板”后，模板才会真正导入。"
+      />
+
+      <el-alert
+        v-if="yamlValidationError"
+        class="yaml-validation-alert"
+        title="YAML 格式检查未通过"
+        type="error"
+        show-icon
+        :closable="false"
+        :description="yamlValidationError"
       />
 
       <div class="editor-layout">
@@ -558,6 +651,10 @@ const toggleMobileTemplateSelection = (row: Temp, checked: boolean) => {
 }
 
 .import-preview-alert {
+  margin-bottom: 14px;
+}
+
+.yaml-validation-alert {
   margin-bottom: 14px;
 }
 

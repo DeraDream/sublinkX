@@ -3,14 +3,17 @@ package api
 import (
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sublink/utils"
 	"sync"
 
 	"github.com/gin-gonic/gin"
+	"gopkg.in/yaml.v3"
 )
 
 type Temp struct {
@@ -32,6 +35,44 @@ func normalizeTemplateFilename(filename string, text string) string {
 		return filename + ".conf"
 	}
 	return filename + ".yaml"
+}
+
+func isYAMLTemplateFilename(filename string) bool {
+	ext := strings.ToLower(filepath.Ext(strings.TrimSpace(filename)))
+	return ext == ".yaml" || ext == ".yml"
+}
+
+var yamlLinePattern = regexp.MustCompile(`line\s+(\d+)`)
+
+func formatYAMLValidationError(err error) error {
+	message := strings.TrimSpace(err.Error())
+	if match := yamlLinePattern.FindStringSubmatch(message); len(match) > 1 {
+		return fmt.Errorf("第%s行：YAML 格式错误：%s", match[1], message)
+	}
+	return fmt.Errorf("YAML 格式错误：%s", message)
+}
+
+func validateYAMLTemplate(filename string, text string) error {
+	if !isYAMLTemplateFilename(filename) {
+		return nil
+	}
+	for index, line := range strings.Split(text, "\n") {
+		indent := line[:len(line)-len(strings.TrimLeft(line, " \t"))]
+		if strings.Contains(indent, "\t") {
+			return fmt.Errorf("第%d行：YAML 缩进不能使用 Tab，请改为空格", index+1)
+		}
+	}
+	decoder := yaml.NewDecoder(strings.NewReader(text))
+	for {
+		var value interface{}
+		err := decoder.Decode(&value)
+		if errors.Is(err, io.EOF) {
+			return nil
+		}
+		if err != nil {
+			return formatYAMLValidationError(err)
+		}
+	}
 }
 
 // 定义允许操作的基础目录
@@ -188,6 +229,10 @@ func UpdateTemp(c *gin.Context) {
 		})
 		return
 	}
+	if err := validateYAMLTemplate(filename, text); err != nil {
+		c.JSON(400, gin.H{"msg": err.Error()})
+		return
+	}
 
 	// 验证旧文件名以防止目录遍历
 	oldFullPath, err := safeFilePath(oldname)
@@ -278,6 +323,10 @@ func AddTemp(c *gin.Context) {
 		c.JSON(400, gin.H{
 			"msg": "文件名或内容不能为空",
 		})
+		return
+	}
+	if err := validateYAMLTemplate(filename, text); err != nil {
+		c.JSON(400, gin.H{"msg": err.Error()})
 		return
 	}
 

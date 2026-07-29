@@ -9,7 +9,7 @@ import {
   SetSubRevoked,
 } from "@/api/subcription/subs";
 import { getTemp } from "@/api/subcription/temp";
-import { getNodes } from "@/api/subcription/node";
+import { getNodes, setNodeDisabled } from "@/api/subcription/node";
 import { beijingTimestamp, formatBeijingTime } from "@/utils/time";
 import { useDraggableTableRows } from "@/utils/table-drag";
 import { useAppStore } from "@/store";
@@ -193,21 +193,50 @@ const availableNodes = computed(() => {
   });
 });
 
+const nodeById = (id: number) =>
+  NodesList.value.find((node) => node.ID === id) || {
+    ID: id,
+    Name: String(id),
+    Link: "",
+    Disabled: false,
+  };
+
+const isNodeDisabledById = (id: number) => Boolean(nodeById(id).Disabled);
+
+const sortedSelectedNodeIds = computed(() => [
+  ...value1.value.filter((id) => !isNodeDisabledById(id)),
+  ...value1.value.filter((id) => isNodeDisabledById(id)),
+]);
+
 const selectedNodes = computed(() =>
-  value1.value.map((id) => {
-    return (
-      NodesList.value.find((node) => node.ID === id) || {
-        ID: id,
-        Name: String(id),
-        Link: "",
-        Disabled: false,
-      }
-    );
-  })
+  sortedSelectedNodeIds.value.map((id) => nodeById(id))
 );
 
+const selectedActiveNodes = computed(() =>
+  selectedNodes.value.filter((node) => !node.Disabled)
+);
+
+const selectedDisabledNodes = computed(() =>
+  selectedNodes.value.filter((node) => node.Disabled)
+);
+
+const selectedActiveNodeIds = computed(() =>
+  selectedActiveNodes.value.map((node) => node.ID)
+);
+
+const selectedDisabledNodeIds = computed(() =>
+  selectedDisabledNodes.value.map((node) => node.ID)
+);
+
+const draggableSelectedNodeIds = computed({
+  get: () => selectedActiveNodeIds.value,
+  set: (ids: number[]) => {
+    value1.value = [...ids, ...selectedDisabledNodeIds.value];
+  },
+});
+
 const selectedNodeNames = computed(() =>
-  selectedNodes.value.map((node) => node.Name)
+  selectedActiveNodes.value.map((node) => node.Name)
 );
 
 const wizardTitles = [
@@ -218,13 +247,18 @@ const wizardTitles = [
   "确认保存",
 ];
 
-const nodeNameById = (id: number) =>
-  NodesList.value.find((node) => node.ID === id)?.Name || String(id);
+const nodeNameById = (id: number) => nodeById(id).Name;
 
 const selectedNodePreview = computed(() => {
   if (!value1.value.length) return "尚未选择节点";
-  const head = value1.value.slice(0, 4).map(nodeNameById).join(" → ");
-  return value1.value.length > 4 ? `${head} → ...` : head;
+  const head = sortedSelectedNodeIds.value
+    .slice(0, 4)
+    .map(nodeNameById)
+    .join(" → ");
+  const suffix = selectedDisabledNodes.value.length
+    ? `，含 ${selectedDisabledNodes.value.length} 个已禁用节点`
+    : "";
+  return `${value1.value.length > 4 ? `${head} → ...` : head}${suffix}`;
 });
 
 const defaultTemplate = (keyword: string, fallback: string) => {
@@ -606,7 +640,11 @@ const jumpStep = (step: number) => {
 
 const addNodeToSelection = (id: number) => {
   if (!value1.value.includes(id)) {
-    value1.value.push(id);
+    value1.value = [
+      ...selectedActiveNodeIds.value,
+      id,
+      ...selectedDisabledNodeIds.value,
+    ];
   }
 };
 
@@ -616,6 +654,32 @@ const removeNodeFromSelection = (id: number) => {
 
 const addAllVisibleNodes = () => {
   availableNodes.value.forEach((node) => addNodeToSelection(node.ID));
+};
+
+const restoreSelectedNode = async (id: number) => {
+  await setNodeDisabled({
+    id,
+    disabled: false,
+  });
+  await getnodes();
+  value1.value = sortedSelectedNodeIds.value;
+  ElMessage.success(`${nodeNameById(id)} 已恢复`);
+};
+
+const restoreAllSelectedDisabledNodes = async () => {
+  const ids = [...selectedDisabledNodeIds.value];
+  if (!ids.length) return;
+  await Promise.all(
+    ids.map((id) =>
+      setNodeDisabled({
+        id,
+        disabled: false,
+      })
+    )
+  );
+  await getnodes();
+  value1.value = sortedSelectedNodeIds.value;
+  ElMessage.success(`已恢复 ${ids.length} 个禁用节点`);
 };
 
 const clearSelectedNodes = () => {
@@ -673,7 +737,7 @@ const addSubs = async () => {
   const payload = {
     config: buildConfig(),
     name: Subname.value.trim(),
-    nodes: value1.value.join(","),
+    nodes: sortedSelectedNodeIds.value.join(","),
     expire_at: expireAt.value || "",
     access_limit: accessLimit.value || "",
   };
@@ -1214,20 +1278,35 @@ const OpenUrl = (url: string) => {
 
           <section class="node-column selected-column">
             <div class="node-column-head">
-              <strong>已选节点 {{ value1.length }} 个</strong>
-              <el-button link type="danger" @click="clearSelectedNodes"
-                >清空</el-button
-              >
+              <strong>
+                已选节点 {{ value1.length }} 个
+                <small v-if="selectedDisabledNodes.length">
+                  ，{{ selectedDisabledNodes.length }} 个已禁用
+                </small>
+              </strong>
+              <div class="selected-node-actions">
+                <el-button
+                  v-if="selectedDisabledNodes.length"
+                  link
+                  type="primary"
+                  @click="restoreAllSelectedDisabledNodes"
+                >
+                  恢复禁用
+                </el-button>
+                <el-button link type="danger" @click="clearSelectedNodes"
+                  >清空</el-button
+                >
+              </div>
             </div>
             <VueDraggable
-              v-if="value1.length"
-              v-model="value1"
+              v-if="selectedActiveNodeIds.length"
+              v-model="draggableSelectedNodeIds"
               :animation="150"
               ghost-class="ghost"
               class="selected-nodes"
             >
               <div
-                v-for="(nodeId, index) in value1"
+                v-for="(nodeId, index) in draggableSelectedNodeIds"
                 :key="nodeId"
                 class="draggable-item"
               >
@@ -1242,7 +1321,44 @@ const OpenUrl = (url: string) => {
                 >
               </div>
             </VueDraggable>
-            <div v-else class="empty-selection">尚未选择节点</div>
+            <div
+              v-else-if="!selectedDisabledNodes.length"
+              class="empty-selection"
+            >
+              尚未选择节点
+            </div>
+            <div
+              v-if="selectedDisabledNodes.length"
+              class="disabled-selected-nodes"
+            >
+              <div class="disabled-selected-head">
+                <span>已禁用节点自动置底，不参与拖拽</span>
+              </div>
+              <div
+                v-for="(node, index) in selectedDisabledNodes"
+                :key="node.ID"
+                class="disabled-selected-item"
+              >
+                <span class="drag-lock">锁</span>
+                <span class="row-number">{{
+                  selectedActiveNodeIds.length + index + 1
+                }}</span>
+                <span class="node-name">{{ node.Name }}</span>
+                <el-tag size="small" type="info" effect="plain">已禁用</el-tag>
+                <el-button
+                  link
+                  type="primary"
+                  @click="restoreSelectedNode(node.ID)"
+                  >恢复</el-button
+                >
+                <el-button
+                  link
+                  type="danger"
+                  @click.stop="removeNodeFromSelection(node.ID)"
+                  >移除</el-button
+                >
+              </div>
+            </div>
           </section>
         </div>
       </section>
@@ -1338,7 +1454,7 @@ const OpenUrl = (url: string) => {
               "
             >
               <el-option
-                v-for="node in selectedNodes"
+                v-for="node in selectedActiveNodes"
                 :key="node.ID"
                 :label="node.Name"
                 :value="node.Name"
@@ -1349,7 +1465,7 @@ const OpenUrl = (url: string) => {
               class="mobile-node-choice-list"
             >
               <label
-                v-for="node in selectedNodes"
+                v-for="node in selectedActiveNodes"
                 :key="node.ID"
                 class="mobile-node-choice"
                 :class="{
@@ -1891,6 +2007,22 @@ const OpenUrl = (url: string) => {
   background: var(--el-fill-color-extra-light);
 }
 
+.node-column-head small {
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.selected-node-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.selected-node-actions .el-button {
+  margin-left: 0;
+}
+
 .node-search {
   padding: 12px;
 }
@@ -1948,6 +2080,47 @@ const OpenUrl = (url: string) => {
 
 .draggable-item:hover {
   background: var(--el-fill-color-light);
+}
+
+.disabled-selected-nodes {
+  border-top: 1px solid var(--el-border-color-lighter);
+  background: var(--el-fill-color-extra-light);
+}
+
+.disabled-selected-head {
+  padding: 9px 12px;
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+}
+
+.disabled-selected-item {
+  display: grid;
+  grid-template-columns: 22px 30px minmax(0, 1fr) auto auto auto;
+  gap: 8px;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 12px;
+  border-top: 1px solid var(--el-border-color-lighter);
+  background: color-mix(
+    in srgb,
+    var(--el-fill-color-light) 62%,
+    var(--el-bg-color)
+  );
+  color: var(--el-text-color-secondary);
+}
+
+.disabled-selected-item .node-name {
+  color: var(--el-text-color-secondary);
+  text-decoration: line-through;
+}
+
+.disabled-selected-item .el-button {
+  margin-left: 0;
+}
+
+.drag-lock {
+  color: var(--el-text-color-placeholder);
+  font-size: 12px;
 }
 
 .ghost {
@@ -2164,6 +2337,24 @@ const OpenUrl = (url: string) => {
   .template-card-head {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .selected-node-actions {
+    flex-wrap: wrap;
+  }
+
+  .disabled-selected-item {
+    grid-template-columns: 22px 24px minmax(0, 1fr) auto;
+    padding: 8px 10px;
+  }
+
+  .disabled-selected-item .el-tag {
+    grid-column: 3;
+    justify-self: start;
+  }
+
+  .disabled-selected-item .el-button {
+    padding: 0;
   }
 
   .group-rule-card {
