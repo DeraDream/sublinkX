@@ -203,6 +203,67 @@ func TestEncodeEgernInjectsSelectedNodesIntoPolicyGroups(t *testing.T) {
 	}
 }
 
+func TestEncodeEgernInjectsNodesIntoSmartPolicyGroups(t *testing.T) {
+	templatePath := filepath.Join(t.TempDir(), "egern-smart.yaml")
+	template := `proxies: []
+policy_groups:
+  - smart:
+      name: Smart
+      policies: []
+      priorities:
+        "^Node A$": 0.8
+  - external:
+      name: External Smart
+      type: smart
+      priorities:
+        "^Node B$": 0.8
+      urls: []
+`
+	if err := os.WriteFile(templatePath, []byte(template), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	output, err := EncodeEgern([]string{testSSLink("Node A"), testSSLink("Node B")}, SqlConfig{
+		Egern:              templatePath,
+		GroupNodesTemplate: templatePath,
+		GroupNodes: map[string]PolicyGroupNodeRule{
+			"Smart":          {Mode: "include", Nodes: []string{"Node A"}},
+			"External Smart": {Mode: "include", Nodes: []string{"Node B"}},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var profile map[string]interface{}
+	if err := yaml.Unmarshal(output, &profile); err != nil {
+		t.Fatal(err)
+	}
+	groups := profile["policy_groups"].([]interface{})
+
+	smart := groups[0].(map[string]interface{})["smart"].(map[string]interface{})
+	if policies := smart["policies"].([]interface{}); len(policies) != 1 || policies[0] != "Node A" {
+		t.Fatalf("smart policies = %#v, want [Node A]", policies)
+	}
+	if smart["priorities"].(map[string]interface{})["^Node A$"] != 0.8 {
+		t.Fatalf("smart priorities = %#v", smart["priorities"])
+	}
+
+	external := groups[1].(map[string]interface{})
+	if _, exists := external["external"]; exists {
+		t.Fatalf("external smart group was not converted: %#v", external)
+	}
+	converted := external["smart"].(map[string]interface{})
+	if policies := converted["policies"].([]interface{}); len(policies) != 1 || policies[0] != "Node B" {
+		t.Fatalf("external smart policies = %#v, want [Node B]", policies)
+	}
+	for _, field := range []string{"type", "urls", "update_interval", "filter"} {
+		if _, exists := converted[field]; exists {
+			t.Fatalf("converted smart group retained external-only field %q: %#v", field, converted)
+		}
+	}
+}
+
 func TestEncodeEgernInjectsDynamicAutoUpdate(t *testing.T) {
 	templatePath := filepath.Join(t.TempDir(), "egern-auto-update.yaml")
 	template := `auto_update:

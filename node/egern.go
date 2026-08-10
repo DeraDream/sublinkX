@@ -293,7 +293,7 @@ func decodeEgern(proxies []interface{}, proxyNames []string, sqlconfig SqlConfig
 
 func isEgernLocalPolicyGroupType(groupType string) bool {
 	switch groupType {
-	case "select", "auto_test", "fallback", "load_balance":
+	case "select", "auto_test", "smart", "fallback", "load_balance":
 		return true
 	default:
 		return false
