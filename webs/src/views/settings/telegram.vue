@@ -12,6 +12,7 @@ import {
   SystemUpdateInfo,
   SystemUpdateStatus,
 } from "@/api/system/update";
+import { exportBackup, importBackup } from "@/api/backup";
 
 defineOptions({
   name: "TelegramBot",
@@ -29,6 +30,72 @@ const updateStatus = ref<SystemUpdateStatus>();
 let updatePollTimer: ReturnType<typeof setTimeout> | undefined;
 let updateReloadTimer: ReturnType<typeof setTimeout> | undefined;
 let updatePollStartedAt = 0;
+const backupImportInput = ref<HTMLInputElement>();
+const backupExporting = ref(false);
+const backupImporting = ref(false);
+const backupPassword = ref("");
+
+async function downloadBackup() {
+  if (backupPassword.value.length < 8) {
+    ElMessage.warning("备份密码至少 8 位");
+    return;
+  }
+  backupExporting.value = true;
+  try {
+    const formData = new FormData();
+    formData.append("password", backupPassword.value);
+    const response: any = await exportBackup(formData);
+    const url = URL.createObjectURL(new Blob([response.data]));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `sublink-backup-${new Date().toISOString().slice(0, 10)}.sublink-backup`;
+    link.click();
+    URL.revokeObjectURL(url);
+    ElMessage.success("备份已导出");
+  } finally {
+    backupExporting.value = false;
+  }
+}
+
+function selectBackup() {
+  backupImportInput.value?.click();
+}
+
+async function restoreBackup(event: Event) {
+  const input = event.target as HTMLInputElement;
+  const file = input.files?.[0];
+  if (!file) return;
+  if (backupPassword.value.length < 8) {
+    ElMessage.warning("请先输入备份密码（至少 8 位）");
+    input.value = "";
+    return;
+  }
+  try {
+    await ElMessageBox.confirm(
+      "导入会覆盖当前全部数据、配置和模板，且恢复管理员账号密码。确认继续？",
+      "确认恢复整库备份",
+      { type: "warning", confirmButtonText: "确认恢复", cancelButtonText: "取消" }
+    );
+  } catch {
+    input.value = "";
+    return;
+  }
+  backupImporting.value = true;
+  try {
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("password", backupPassword.value);
+    await importBackup(formData);
+    await ElMessageBox.alert(
+      "恢复成功。请重启 SublinkX，然后使用备份中的管理员账号密码登录。",
+      "恢复完成",
+      { type: "success", confirmButtonText: "知道了" }
+    );
+  } finally {
+    backupImporting.value = false;
+    input.value = "";
+  }
+}
 
 const updateInProgress = computed(() =>
   ["queued", "downloading", "installing", "restarting"].includes(
@@ -388,6 +455,41 @@ onBeforeUnmount(() => {
       </div>
     </section>
 
+    <section class="work-surface backup-settings">
+      <div class="section-heading">
+        <svg-icon icon-class="lock" size="17px" />
+        <span>整库备份</span>
+      </div>
+      <div class="setting-row">
+        <div class="setting-copy">
+          <strong>导出或恢复全部数据</strong>
+          <span>包含节点、订阅、模板、配置和管理员账号密码，备份文件已加密</span>
+        </div>
+        <div class="backup-control">
+          <el-input
+            v-model="backupPassword"
+            type="password"
+            show-password
+            placeholder="备份密码，至少 8 位"
+            autocomplete="new-password"
+          />
+          <input
+            ref="backupImportInput"
+            type="file"
+            accept=".sublink-backup"
+            hidden
+            @change="restoreBackup"
+          />
+          <el-button :loading="backupExporting" @click="downloadBackup">
+            导出备份
+          </el-button>
+          <el-button type="warning" :loading="backupImporting" @click="selectBackup">
+            导入恢复
+          </el-button>
+        </div>
+      </div>
+    </section>
+
     <section class="work-surface bot-capabilities">
       <div class="section-heading">
         <svg-icon icon-class="message" size="17px" />
@@ -474,14 +576,27 @@ onBeforeUnmount(() => {
 
 .telegram-settings,
 .bot-capabilities,
-.system-update-settings {
+.system-update-settings,
+.backup-settings {
   padding: 0 24px;
 }
 
 .telegram-settings,
-.bot-capabilities {
+.bot-capabilities,
+.backup-settings {
   margin-top: 18px;
   padding-bottom: 24px;
+}
+
+.backup-control {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.backup-control .el-input {
+  min-width: 220px;
 }
 
 .section-heading {
@@ -650,9 +765,15 @@ html.dark .bot-status.active {
 @media (max-width: 640px) {
   .telegram-settings,
   .bot-capabilities,
-  .system-update-settings {
+  .system-update-settings,
+  .backup-settings {
     padding-right: 14px;
     padding-left: 14px;
+  }
+
+  .backup-control .el-input {
+    width: 100%;
+    min-width: 0;
   }
 
   .setting-row {
