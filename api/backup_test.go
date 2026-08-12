@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"sublink/models"
 
@@ -28,6 +29,19 @@ func TestBackupEncryptionRoundTrip(t *testing.T) {
 	}
 	if _, err := decryptBackup(ciphertext, "wrong password"); err == nil {
 		t.Fatal("wrong password was accepted")
+	}
+}
+
+func TestEncryptedBackupRequiresPassword(t *testing.T) {
+	ciphertext, err := encryptBackup([]byte("not an archive"), "correct horse battery")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !isEncryptedBackup(ciphertext) {
+		t.Fatal("encrypted backup was not recognized")
+	}
+	if err := validateBackupPassword(""); err == nil {
+		t.Fatal("empty password was accepted")
 	}
 }
 
@@ -101,11 +115,18 @@ func TestBackupHandlersRestoreAllData(t *testing.T) {
 		t.Fatal(err)
 	}
 	previousDB := models.DB
+	previousRestart := restartProcess
+	previousDelay := backupRestartDelay
+	restarted := make(chan struct{}, 1)
+	restartProcess = func() { restarted <- struct{}{} }
+	backupRestartDelay = 0
 	if err := os.Chdir(root); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
 		models.DB = previousDB
+		restartProcess = previousRestart
+		backupRestartDelay = previousDelay
 		_ = os.Chdir(previousDir)
 	})
 	if err := os.MkdirAll("db", 0700); err != nil {
@@ -134,9 +155,6 @@ func TestBackupHandlersRestoreAllData(t *testing.T) {
 
 	exportBody := &bytes.Buffer{}
 	exportForm := multipart.NewWriter(exportBody)
-	if err := exportForm.WriteField("password", "correct horse battery"); err != nil {
-		t.Fatal(err)
-	}
 	if err := exportForm.Close(); err != nil {
 		t.Fatal(err)
 	}
@@ -147,6 +165,9 @@ func TestBackupHandlersRestoreAllData(t *testing.T) {
 	BackupExport(exportContext)
 	if exportRecorder.Code != http.StatusOK {
 		t.Fatalf("export failed: %s", exportRecorder.Body.String())
+	}
+	if isEncryptedBackup(exportRecorder.Body.Bytes()) {
+		t.Fatal("empty export password should produce an unencrypted backup")
 	}
 
 	if err := db.Create(&models.User{Username: "changed", Password: "changed"}).Error; err != nil {
@@ -161,9 +182,6 @@ func TestBackupHandlersRestoreAllData(t *testing.T) {
 
 	importBody := &bytes.Buffer{}
 	importForm := multipart.NewWriter(importBody)
-	if err := importForm.WriteField("password", "correct horse battery"); err != nil {
-		t.Fatal(err)
-	}
 	file, err := importForm.CreateFormFile("file", "backup.sublink-backup")
 	if err != nil {
 		t.Fatal(err)
@@ -181,6 +199,14 @@ func TestBackupHandlersRestoreAllData(t *testing.T) {
 	BackupImport(importContext)
 	if importRecorder.Code != http.StatusOK {
 		t.Fatalf("import failed: %s", importRecorder.Body.String())
+	}
+	if !bytes.Contains(importRecorder.Body.Bytes(), []byte(`"port":8000`)) {
+		t.Fatalf("restore response did not include backup port: %s", importRecorder.Body.String())
+	}
+	select {
+	case <-restarted:
+	case <-time.After(time.Second):
+		t.Fatal("restore did not schedule a restart")
 	}
 
 	restored, err := gorm.Open(sqlite.Open("db/sublink.db"), &gorm.Config{})

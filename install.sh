@@ -75,5 +75,5 @@ systemctl daemon-reload
 systemctl enable --now sublink
 
 echo "安装完成，当前版本: $("$INSTALL_DIR/sublink" --version)"
-echo "默认账号 admin，默认密码 123456，默认端口 8000"
+echo "默认账号 admin，默认密码 344817，默认端口 8000"
 echo "输入 sublink 可呼出管理菜单"

@@ -59,7 +59,7 @@ func InitSqlite() {
 	if err == gorm.ErrRecordNotFound {
 		admin := &User{
 			Username: "admin",
-			Password: "123456",
+			Password: "344817",
 			Role:     "admin",
 			Nickname: "管理员",
 		}

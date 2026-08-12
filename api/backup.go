@@ -37,6 +37,11 @@ const (
 	backupIterations  = 600000
 )
 
+var (
+	backupRestartDelay = time.Second
+	restartProcess     = func() { os.Exit(1) }
+)
+
 type backupManifest struct {
 	Version   int      `json:"version"`
 	CreatedAt string   `json:"created_at"`
@@ -45,7 +50,7 @@ type backupManifest struct {
 
 func BackupExport(c *gin.Context) {
 	password := c.PostForm("password")
-	if err := validateBackupPassword(password); err != nil {
+	if err := validateBackupPassword(password); password != "" && err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"msg": err.Error()})
 		return
 	}
@@ -63,23 +68,22 @@ func BackupExport(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"msg": "生成备份失败"})
 		return
 	}
-	encrypted, err := encryptBackup(archive, password)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"msg": "加密备份失败"})
-		return
+	output := archive
+	if password != "" {
+		output, err = encryptBackup(archive, password)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"msg": "加密备份失败"})
+			return
+		}
 	}
 	c.Header("Cache-Control", "no-store")
 	c.Header("Content-Disposition", `attachment; filename="sublink-backup.sublink-backup"`)
-	c.Data(http.StatusOK, "application/octet-stream", encrypted)
+	c.Data(http.StatusOK, "application/octet-stream", output)
 }
 
 func BackupImport(c *gin.Context) {
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, backupMaxSize+(1<<20))
 	password := c.PostForm("password")
-	if err := validateBackupPassword(password); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"msg": err.Error()})
-		return
-	}
 	file, err := c.FormFile("file")
 	if err != nil || file.Size > backupMaxSize {
 		c.JSON(http.StatusBadRequest, gin.H{"msg": "备份文件无效或超过 256 MB"})
@@ -96,10 +100,17 @@ func BackupImport(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"msg": "备份文件读取失败"})
 		return
 	}
-	archive, err := decryptBackup(data, password)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"msg": "备份密码错误或文件已损坏"})
-		return
+	archive := data
+	if isEncryptedBackup(data) {
+		if err := validateBackupPassword(password); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"msg": "此备份已加密，请输入至少 8 位备份密码"})
+			return
+		}
+		archive, err = decryptBackup(data, password)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"msg": "备份密码错误或文件已损坏"})
+			return
+		}
 	}
 	tempDir, err := os.MkdirTemp("", "sublink-restore-")
 	if err != nil {
@@ -115,11 +126,34 @@ func BackupImport(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"msg": "备份数据库校验失败"})
 		return
 	}
+	config, err := backupConfig(tempDir)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"msg": "备份端口配置无效"})
+		return
+	}
 	if err := restoreBackup(tempDir); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"msg": "恢复失败，请检查文件权限"})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"code": "00000", "data": gin.H{"restart_required": true}, "msg": "恢复成功，请重启 SublinkX"})
+	c.JSON(http.StatusOK, gin.H{"code": "00000", "data": gin.H{"port": config.Port, "restart_delay_ms": 4500}, "msg": "恢复成功，服务正在重启"})
+	scheduleProcessRestart()
+}
+
+func backupConfig(dir string) (models.Config, error) {
+	data, err := os.ReadFile(filepath.Join(dir, "db/config.yaml"))
+	if err != nil {
+		return models.Config{}, err
+	}
+	var config models.Config
+	if err := yaml.Unmarshal(data, &config); err != nil || config.Port < 1 || config.Port > 65535 {
+		return models.Config{}, errors.New("invalid config")
+	}
+	return config, nil
+}
+
+func scheduleProcessRestart() {
+	restart := restartProcess
+	time.AfterFunc(backupRestartDelay, restart)
 }
 
 func validateBackupPassword(password string) error {
@@ -243,6 +277,10 @@ func decryptBackup(data []byte, password string) ([]byte, error) {
 	return gcm.Open(nil, nonce, data[offset:], []byte(backupMagic))
 }
 
+func isEncryptedBackup(data []byte) bool {
+	return len(data) >= len(backupMagic) && string(data[:len(backupMagic)]) == backupMagic
+}
+
 func deriveBackupKey(password string, salt []byte) []byte {
 	// ponytail: fixed PBKDF2 cost keeps the format dependency-free; raise it with a version bump if hardware changes materially.
 	key := make([]byte, 32)
@@ -321,8 +359,7 @@ func unpackBackup(archive []byte, dir string) error {
 	if err != nil || json.Unmarshal(data, &manifest) != nil || manifest.Version != 1 {
 		return errors.New("不支持的备份版本")
 	}
-	config, err := os.ReadFile(filepath.Join(dir, "db/config.yaml"))
-	if err != nil || yaml.Unmarshal(config, &models.Config{}) != nil {
+	if _, err := backupConfig(dir); err != nil {
 		return errors.New("备份配置无效")
 	}
 	return os.MkdirAll(filepath.Join(dir, "template"), 0700)

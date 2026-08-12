@@ -33,17 +33,18 @@ let updatePollStartedAt = 0;
 const backupImportInput = ref<HTMLInputElement>();
 const backupExporting = ref(false);
 const backupImporting = ref(false);
-const backupPassword = ref("");
+const backupExportPassword = ref("");
 
 async function downloadBackup() {
-  if (backupPassword.value.length < 8) {
-    ElMessage.warning("备份密码至少 8 位");
+  const password = backupExportPassword.value;
+  if (password && password.length < 8) {
+    ElMessage.warning("加密密码至少 8 位");
     return;
   }
   backupExporting.value = true;
   try {
     const formData = new FormData();
-    formData.append("password", backupPassword.value);
+    if (password) formData.append("password", password);
     const response: any = await exportBackup(formData);
     const url = URL.createObjectURL(new Blob([response.data]));
     const link = document.createElement("a");
@@ -61,18 +62,40 @@ function selectBackup() {
   backupImportInput.value?.click();
 }
 
+function redirectAfterRestore(port: number, delay: number) {
+  const target = new URL(window.location.href);
+  target.protocol = "http:";
+  target.port = String(port);
+  target.pathname = "/";
+  target.hash = "";
+  window.setTimeout(() => window.location.replace(target.toString()), delay);
+}
+
 async function restoreBackup(event: Event) {
   const input = event.target as HTMLInputElement;
   const file = input.files?.[0];
   if (!file) return;
-  if (backupPassword.value.length < 8) {
-    ElMessage.warning("请先输入备份密码（至少 8 位）");
-    input.value = "";
-    return;
-  }
+  const encrypted =
+    new TextDecoder().decode(await file.slice(0, 8).arrayBuffer()) ===
+    "SLXBACK1";
+  let password = "";
   try {
+    if (encrypted) {
+      const result = await ElMessageBox.prompt(
+        "此备份已加密，请输入备份密码。",
+        "输入备份密码",
+        {
+          inputType: "password",
+          inputPlaceholder: "至少 8 位",
+          inputValidator: (value) => value.length >= 8 || "备份密码至少 8 位",
+          confirmButtonText: "继续",
+          cancelButtonText: "取消",
+        }
+      );
+      password = result.value;
+    }
     await ElMessageBox.confirm(
-      "导入会覆盖当前全部数据、配置和模板，且恢复管理员账号密码。确认继续？",
+      `导入会覆盖当前全部数据、配置和模板，且恢复管理员账号密码。${encrypted ? "备份已加密。" : "备份未加密。"}确认继续？`,
       "确认恢复整库备份",
       { type: "warning", confirmButtonText: "确认恢复", cancelButtonText: "取消" }
     );
@@ -84,13 +107,10 @@ async function restoreBackup(event: Event) {
   try {
     const formData = new FormData();
     formData.append("file", file);
-    formData.append("password", backupPassword.value);
-    await importBackup(formData);
-    await ElMessageBox.alert(
-      "恢复成功。请重启 SublinkX，然后使用备份中的管理员账号密码登录。",
-      "恢复完成",
-      { type: "success", confirmButtonText: "知道了" }
-    );
+    if (password) formData.append("password", password);
+    const { data } = await importBackup(formData);
+    ElMessage.success("恢复成功，服务正在重启并跳转到备份端口");
+    redirectAfterRestore(data.port, data.restart_delay_ms || 4500);
   } finally {
     backupImporting.value = false;
     input.value = "";
@@ -463,14 +483,14 @@ onBeforeUnmount(() => {
       <div class="setting-row">
         <div class="setting-copy">
           <strong>导出或恢复全部数据</strong>
-          <span>包含节点、订阅、模板、配置和管理员账号密码，备份文件已加密</span>
+          <span>包含节点、订阅、模板、配置和管理员账号密码；导出时可选加密</span>
         </div>
         <div class="backup-control">
           <el-input
-            v-model="backupPassword"
+            v-model="backupExportPassword"
             type="password"
             show-password
-            placeholder="备份密码，至少 8 位"
+            placeholder="加密密码（可选，至少 8 位）"
             autocomplete="new-password"
           />
           <input
@@ -483,7 +503,11 @@ onBeforeUnmount(() => {
           <el-button :loading="backupExporting" @click="downloadBackup">
             导出备份
           </el-button>
-          <el-button type="warning" :loading="backupImporting" @click="selectBackup">
+          <el-button
+            type="warning"
+            :loading="backupImporting"
+            @click="selectBackup"
+          >
             导入恢复
           </el-button>
         </div>
