@@ -16,6 +16,7 @@ type SqlConfig struct {
 	Clash                      string                         `json:"clash"`
 	Surge                      string                         `json:"surge"`
 	Egern                      string                         `json:"egern"`
+	Loon                       string                         `json:"loon"`
 	EgernUpdateIntervalMinutes int                            `json:"egern_update_interval"`
 	EgernUpdateURL             string                         `json:"-"`
 	Udp                        bool                           `json:"udp"`

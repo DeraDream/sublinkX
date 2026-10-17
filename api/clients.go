@@ -92,6 +92,8 @@ func GetClient(c *gin.Context) {
 		resp, err = buildSurgeSubscription(c)
 	case "egern":
 		resp, err = buildEgernSubscription(c)
+	case "loon":
+		resp, err = buildLoonSubscription(c)
 	case "v2ray":
 		resp, err = buildV2raySubscription(c)
 	default:
@@ -130,7 +132,7 @@ func logSubscriptionGenerated(c *gin.Context, subID int, nodeCount int, format s
 
 func subscriptionFormat(c *gin.Context, clientIndex string) string {
 	switch clientIndex {
-	case "clash", "surge", "egern", "v2ray":
+	case "clash", "surge", "egern", "loon", "v2ray":
 		return clientIndex
 	}
 	for _, userAgent := range c.Request.Header.Values("User-Agent") {
@@ -144,6 +146,9 @@ func subscriptionFormat(c *gin.Context, clientIndex string) string {
 		if strings.Contains(ua, "egern") {
 			return "egern"
 		}
+		if strings.Contains(ua, "loon") {
+			return "loon"
+		}
 	}
 	return "v2ray"
 }
@@ -152,7 +157,7 @@ func subscriptionOutputType(sub models.Subcription) string {
 	var config node.SqlConfig
 	if json.Unmarshal([]byte(sub.Config), &config) == nil {
 		switch strings.ToLower(strings.TrimSpace(config.OutputType)) {
-		case "clash", "surge", "egern":
+		case "clash", "surge", "egern", "loon":
 			return strings.ToLower(strings.TrimSpace(config.OutputType))
 		}
 	}
@@ -162,6 +167,9 @@ func subscriptionOutputType(sub models.Subcription) string {
 	name := strings.ToLower(strings.TrimSpace(sub.Name))
 	if strings.Contains(name, "egern") {
 		return "egern"
+	}
+	if strings.Contains(name, "loon") {
+		return "loon"
 	}
 	if strings.Contains(name, "surge") {
 		return "surge"
@@ -173,7 +181,7 @@ func subscriptionFormatForType(c *gin.Context, requested, outputType string) (st
 	requested = strings.ToLower(strings.TrimSpace(requested))
 	if requested == "" {
 		switch outputType {
-		case "surge", "egern":
+		case "surge", "egern", "loon":
 			return outputType, true
 		default:
 			format := subscriptionFormat(c, "")
@@ -185,7 +193,7 @@ func subscriptionFormatForType(c *gin.Context, requested, outputType string) (st
 	}
 
 	switch requested {
-	case "clash", "surge", "egern", "v2ray":
+	case "clash", "surge", "egern", "loon", "v2ray":
 	default:
 		return requested, false
 	}
@@ -198,6 +206,8 @@ func subscriptionFormatForType(c *gin.Context, requested, outputType string) (st
 		return format, format == "surge"
 	case "egern":
 		return format, format == "egern"
+	case "loon":
+		return format, format == "loon"
 	default:
 		return format, false
 	}
@@ -250,7 +260,7 @@ func forwardedHeaderValue(value string) string {
 }
 
 func templateFingerprint(configText string, format string) (string, bool) {
-	if format != "clash" && format != "surge" && format != "egern" {
+	if format != "clash" && format != "surge" && format != "egern" && format != "loon" {
 		return "", true
 	}
 
@@ -264,6 +274,8 @@ func templateFingerprint(configText string, format string) (string, bool) {
 		templatePath = config.Surge
 	} else if format == "egern" {
 		templatePath = config.Egern
+	} else if format == "loon" {
+		templatePath = config.Loon
 	}
 	templatePath = strings.TrimSpace(templatePath)
 	if templatePath == "" {
@@ -595,6 +607,64 @@ func GetEgern(c *gin.Context) {
 		return
 	}
 	writeSubscriptionResponse(c, resp)
+}
+
+func GetLoon(c *gin.Context) {
+	resp, err := buildLoonSubscription(c)
+	if err != nil {
+		c.Writer.WriteString(err.Error())
+		return
+	}
+	writeSubscriptionResponse(c, resp)
+}
+
+func buildLoonSubscription(c *gin.Context) (subscriptionCacheEntry, error) {
+	var sub models.Subcription
+	subName, ok := subscriptionNameFromContext(c)
+	if !ok {
+		return subscriptionCacheEntry{}, fmt.Errorf("订阅名为空")
+	}
+	sub.Name = subName
+	if err := sub.Find(); err != nil {
+		return subscriptionCacheEntry{}, fmt.Errorf("找不到这个订阅:%s", subName)
+	}
+
+	urls := []string{}
+	for _, item := range sub.ActiveNodes() {
+		nodeLinks := subscriptionNodeLinks(item)
+		switch {
+		case strings.Contains(item.Link, ","):
+			urls = append(urls, nodeLinks...)
+		case strings.Contains(item.Link, "http://") || strings.Contains(item.Link, "https://"):
+			resp, err := http.Get(item.Link)
+			if err != nil {
+				return subscriptionCacheEntry{}, err
+			}
+			body, readErr := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			if readErr != nil {
+				return subscriptionCacheEntry{}, readErr
+			}
+			urls = append(urls, strings.Split(node.Base64Decode(string(body)), "\n")...)
+		default:
+			urls = append(urls, nodeLinks...)
+		}
+	}
+
+	var config node.SqlConfig
+	if err := json.Unmarshal([]byte(sub.Config), &config); err != nil {
+		return subscriptionCacheEntry{}, fmt.Errorf("配置读取错误")
+	}
+	output, err := node.EncodeLoon(urls, config)
+	if err != nil {
+		return subscriptionCacheEntry{}, err
+	}
+	return subscriptionCacheEntry{
+		contentType: "text/plain; charset=utf-8",
+		filename:    fmt.Sprintf("%s.conf", subName),
+		nodeCount:   len(urls),
+		body:        []byte(output),
+	}, nil
 }
 
 func buildEgernSubscription(c *gin.Context) (subscriptionCacheEntry, error) {

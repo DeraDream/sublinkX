@@ -46,6 +46,7 @@ interface Config {
   clash: string;
   surge: string;
   egern: string;
+  loon: string;
   egern_update_interval?: number;
   udp: boolean | string;
   cert: boolean | string;
@@ -53,7 +54,7 @@ interface Config {
   group_nodes_template?: string;
 }
 
-type SubscriptionOutputType = "clash" | "surge" | "egern";
+type SubscriptionOutputType = "clash" | "surge" | "egern" | "loon";
 
 interface PolicyGroupNodeRule {
   mode: "all" | "include" | "none";
@@ -103,12 +104,15 @@ const EgernUpdateInterval = ref(1440);
 const Clash = ref("");
 const Surge = ref("");
 const Egern = ref("");
+const Loon = ref("");
 const clashTemplateSelectRef = ref<{ blur: () => void }>();
 const surgeTemplateSelectRef = ref<{ blur: () => void }>();
 const egernTemplateSelectRef = ref<{ blur: () => void }>();
+const loonTemplateSelectRef = ref<{ blur: () => void }>();
 const clashTemplateMode = ref<"local" | "url">("local");
 const surgeTemplateMode = ref<"local" | "url">("local");
 const egernTemplateMode = ref<"local" | "url">("local");
+const loonTemplateMode = ref<"local" | "url">("local");
 const checkList = ref<string[]>([]);
 
 const value1 = ref<number[]>([]);
@@ -147,6 +151,10 @@ const closeSurgeTemplateSelect = () => {
 
 const closeEgernTemplateSelect = () => {
   nextTick(() => egernTemplateSelectRef.value?.blur());
+};
+
+const closeLoonTemplateSelect = () => {
+  nextTick(() => loonTemplateSelectRef.value?.blur());
 };
 
 async function getsubs() {
@@ -378,6 +386,8 @@ const selectedTemplateSource = computed(() => {
       return Surge.value.trim();
     case "egern":
       return Egern.value.trim();
+    case "loon":
+      return Loon.value.trim();
     default:
       return Clash.value.trim();
   }
@@ -503,7 +513,14 @@ const parseConfig = (value: Config | string): Config => {
     try {
       return JSON.parse(value) as Config;
     } catch {
-      return { clash: "", surge: "", egern: "", udp: false, cert: false };
+      return {
+        clash: "",
+        surge: "",
+        egern: "",
+        loon: "",
+        udp: false,
+        cert: false,
+      };
     }
   }
   return (
@@ -511,6 +528,7 @@ const parseConfig = (value: Config | string): Config => {
       clash: "",
       surge: "",
       egern: "",
+      loon: "",
       udp: false,
       cert: false,
     }
@@ -521,11 +539,12 @@ const inferSubscriptionOutputType = (
   config: Config,
   subscriptionName = ""
 ): SubscriptionOutputType => {
-  if (["clash", "surge", "egern"].includes(config.output_type || "")) {
+  if (["clash", "surge", "egern", "loon"].includes(config.output_type || "")) {
     return config.output_type as SubscriptionOutputType;
   }
   const normalizedName = subscriptionName.trim().toLowerCase();
   if (normalizedName.includes("egern")) return "egern";
+  if (normalizedName.includes("loon")) return "loon";
   if (normalizedName.includes("surge")) return "surge";
   return "clash";
 };
@@ -545,9 +564,11 @@ const resetWizardForm = () => {
   Clash.value = defaultTemplate("clash", "./template/clash.yaml");
   Surge.value = defaultTemplate("surge", "./template/surge.conf");
   Egern.value = defaultTemplate("egern", "./template/egern.yaml");
+  Loon.value = defaultTemplate("loon", "./template/loon.conf");
   clashTemplateMode.value = inferTemplateMode(Clash.value);
   surgeTemplateMode.value = inferTemplateMode(Surge.value);
   egernTemplateMode.value = inferTemplateMode(Egern.value);
+  loonTemplateMode.value = inferTemplateMode(Loon.value);
   groupNodesTemplate.value = selectedTemplateSource.value;
   value1.value = [];
   nodeKeyword.value = "";
@@ -587,9 +608,11 @@ const handleEdit = (row: any) => {
     config.surge || defaultTemplate("surge", "./template/surge.conf");
   Egern.value =
     config.egern || defaultTemplate("egern", "./template/egern.yaml");
+  Loon.value = config.loon || defaultTemplate("loon", "./template/loon.conf");
   clashTemplateMode.value = inferTemplateMode(Clash.value);
   surgeTemplateMode.value = inferTemplateMode(Surge.value);
   egernTemplateMode.value = inferTemplateMode(Egern.value);
+  loonTemplateMode.value = inferTemplateMode(Loon.value);
   groupNodesTemplate.value =
     config.group_nodes_template === selectedTemplateSource.value
       ? config.group_nodes_template
@@ -704,7 +727,7 @@ watch(value1, () => {
   });
 });
 
-watch([Clash, Surge, Egern, OutputType], ensureGroupNodesTemplate);
+watch([Clash, Surge, Egern, Loon, OutputType], ensureGroupNodesTemplate);
 
 const serializedGroupRules = () => {
   const result: Record<string, PolicyGroupNodeRule> = {};
@@ -732,6 +755,7 @@ const buildConfig = () =>
     clash: OutputType.value === "clash" ? Clash.value.trim() : "",
     surge: OutputType.value === "surge" ? Surge.value.trim() : "",
     egern: OutputType.value === "egern" ? Egern.value.trim() : "",
+    loon: OutputType.value === "loon" ? Loon.value.trim() : "",
     egern_update_interval:
       OutputType.value === "egern" ? EgernUpdateInterval.value : 0,
     udp: checkList.value.includes("udp"),
@@ -1202,6 +1226,7 @@ const OpenUrl = (url: string) => {
             <el-radio-button value="clash">Clash / V2Ray</el-radio-button>
             <el-radio-button value="surge">Surge</el-radio-button>
             <el-radio-button value="egern">Egern</el-radio-button>
+            <el-radio-button value="loon">Loon</el-radio-button>
           </el-radio-group>
         </div>
         <div class="template-grid">
@@ -1317,6 +1342,38 @@ const OpenUrl = (url: string) => {
                 {{ EgernUpdateInterval * 60 }} 秒。
               </small>
             </label>
+          </article>
+
+          <article v-if="OutputType === 'loon'" class="template-card">
+            <div class="template-card-head">
+              <strong>Loon</strong>
+              <el-radio-group
+                v-model="loonTemplateMode"
+                class="flat-segmented"
+                size="small"
+              >
+                <el-radio-button value="local">本地模板</el-radio-button>
+                <el-radio-button value="url">URL</el-radio-button>
+              </el-radio-group>
+            </div>
+            <el-select
+              v-if="loonTemplateMode === 'local'"
+              ref="loonTemplateSelectRef"
+              v-model="Loon"
+              placeholder="选择 Loon 模板"
+              @change="closeLoonTemplateSelect"
+            >
+              <el-option
+                v-for="template in templist"
+                :key="template.file"
+                :label="template.file"
+                :value="'./template/' + template.file"
+              />
+            </el-select>
+            <el-input v-else v-model="Loon" placeholder="输入 Loon 模板 URL" />
+            <small class="field-hint">
+              默认模板已包含 [Proxy]，无需手动配置；自定义模板必须包含 [Proxy]。
+            </small>
           </article>
         </div>
         <div class="field">

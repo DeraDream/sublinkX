@@ -26,8 +26,17 @@ func TestSubscriptionFormatDetectsEgernUserAgent(t *testing.T) {
 	}
 }
 
+func TestSubscriptionFormatDetectsLoonUserAgent(t *testing.T) {
+	context, _ := gin.CreateTestContext(httptest.NewRecorder())
+	context.Request = httptest.NewRequest("GET", "/c/", nil)
+	context.Request.Header.Set("User-Agent", "Loon/3.5")
+	if got := subscriptionFormat(context, ""); got != "loon" {
+		t.Fatalf("subscriptionFormat() = %q, want loon", got)
+	}
+}
+
 func TestSubscriptionOutputTypeUsesStoredType(t *testing.T) {
-	for _, outputType := range []string{"clash", "surge", "egern"} {
+	for _, outputType := range []string{"clash", "surge", "egern", "loon"} {
 		sub := models.Subcription{
 			Name:   "custom name",
 			Config: `{"output_type":"` + outputType + `"}`,
@@ -44,6 +53,7 @@ func TestSubscriptionOutputTypeInfersLegacyNamedSubscriptions(t *testing.T) {
 		"Surge Personal":  "surge",
 		"Egern Personal":  "egern",
 		"egern-订阅":        "egern",
+		"Loon Personal":   "loon",
 		"surge-subscribe": "surge",
 	}
 	for name, want := range tests {
@@ -68,6 +78,8 @@ func TestSubscriptionFormatIsLimitedByOutputType(t *testing.T) {
 		{outputType: "surge", client: "clash", want: "clash", allowed: false},
 		{outputType: "egern", client: "egern", want: "egern", allowed: true},
 		{outputType: "egern", client: "v2ray", want: "v2ray", allowed: false},
+		{outputType: "loon", client: "loon", want: "loon", allowed: true},
+		{outputType: "loon", client: "clash", want: "clash", allowed: false},
 		{outputType: "clash", client: "unknown", want: "unknown", allowed: false},
 	}
 
@@ -90,7 +102,7 @@ func TestSubscriptionFormatIsLimitedByOutputType(t *testing.T) {
 }
 
 func TestSubscriptionFormatDefaultsToSingleOutputType(t *testing.T) {
-	for _, outputType := range []string{"surge", "egern"} {
+	for _, outputType := range []string{"surge", "egern", "loon"} {
 		context, _ := gin.CreateTestContext(httptest.NewRecorder())
 		context.Request = httptest.NewRequest("GET", "/c/", nil)
 		got, allowed := subscriptionFormatForType(context, "", outputType)
