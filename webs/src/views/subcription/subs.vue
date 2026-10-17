@@ -963,12 +963,6 @@ const handleClient = (row: any) => {
       url: subscriptionURL,
       description: `使用 ${item} 专用订阅地址。`,
     };
-    if (item === "loon") {
-      ClientUrls.value["导入 Loon"] = {
-        url: `loon://import?sub=${encodeURIComponent(subscriptionURL)}`,
-        description: "在 Loon 中导入并持续更新此完整远端配置。",
-      };
-    }
   });
 };
 
@@ -1025,6 +1019,10 @@ const handleQrcode = (url: string, title: string) => {
 
 const OpenUrl = (url: string) => {
   window.open(url);
+};
+
+const importLoon = (subscriptionURL: string) => {
+  window.location.href = `loon://import?sub=${encodeURIComponent(subscriptionURL)}`;
 };
 </script>
 
@@ -1087,6 +1085,13 @@ const OpenUrl = (url: string) => {
             >
             <el-button link type="primary" @click="OpenUrl(item.url)"
               >打开</el-button
+            >
+            <el-button
+              v-if="index === 'loon'"
+              link
+              type="primary"
+              @click="importLoon(item.url)"
+              >导入 Loon</el-button
             >
           </div>
         </article>

@@ -6,8 +6,7 @@ import (
 	"strings"
 )
 
-// EncodeLoon emits a Loon subscription file. Loon natively accepts the
-// standard proxy URIs we store, avoiding lossy protocol conversion.
+// EncodeLoon emits a Loon subscription file.
 func EncodeLoon(urls []string, sqlconfig SqlConfig) (string, error) {
 	proxies := make([]string, 0, len(urls))
 	proxyNames := make([]string, 0, len(urls))
@@ -18,7 +17,14 @@ func EncodeLoon(urls []string, sqlconfig SqlConfig) (string, error) {
 		}
 		scheme := strings.ToLower(strings.SplitN(link, "://", 2)[0])
 		switch scheme {
-		case "ss", "ssr", "vmess", "vless", "trojan", "hysteria2", "hy2", "anytls":
+		case "ss":
+			proxy, name, err := loonShadowsocksProxy(link, sqlconfig.Udp)
+			if err != nil {
+				continue
+			}
+			proxies = append(proxies, proxy)
+			proxyNames = append(proxyNames, name)
+		case "ssr", "vmess", "vless", "trojan", "hysteria2", "hy2", "anytls":
 			proxies = append(proxies, link)
 			if name := loonProxyName(link); name != "" {
 				proxyNames = append(proxyNames, name)
@@ -49,6 +55,30 @@ func EncodeLoon(urls []string, sqlconfig SqlConfig) (string, error) {
 		return "", fmt.Errorf("Loon template has unresolved internal placeholders")
 	}
 	return profile, nil
+}
+
+// loonShadowsocksProxy converts the SS URI storage format to Loon's native
+// full-configuration syntax. Loon can read URI nodes in a node subscription,
+// but a remote full configuration imported with loon://import?sub= requires
+// native [Proxy] entries.
+func loonShadowsocksProxy(link string, udp bool) (string, string, error) {
+	proxy, err := DecodeSSURL(link)
+	if err != nil {
+		return "", "", err
+	}
+	name := strings.TrimSpace(proxy.Name)
+	if name == "" {
+		return "", "", fmt.Errorf("Loon Shadowsocks proxy has no name")
+	}
+	return fmt.Sprintf(
+		"%s = Shadowsocks,%s,%d,%s,%q,udp=%t",
+		name,
+		proxy.Server,
+		proxy.Port,
+		proxy.Param.Cipher,
+		proxy.ClientPassword(),
+		udp,
+	), name, nil
 }
 
 // loonProxyName returns the name Loon assigns to a URI proxy: its decoded

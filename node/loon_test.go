@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-func TestEncodeLoonUsesProxyURIsInProxySection(t *testing.T) {
+func TestEncodeLoonWritesShadowsocksInNativeProxySyntax(t *testing.T) {
 	output, err := EncodeLoon([]string{
 		"ss://YWVzLTEyOC1nY206cGFzc0BleGFtcGxlLmNvbTo0NDM#SS",
 		"tuic://unsupported",
@@ -16,11 +16,36 @@ func TestEncodeLoonUsesProxyURIsInProxySection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(output, "[Proxy]\nss://") || !strings.Contains(output, "vless://uuid") {
-		t.Fatalf("Loon output did not contain supported proxy URIs: %q", output)
+	if !strings.Contains(output, `SS = Shadowsocks,example.com,443,aes-128-gcm,"pass",udp=false`) {
+		t.Fatalf("Loon output did not contain a native Shadowsocks proxy: %q", output)
+	}
+	if strings.Contains(output, "\nss://") || !strings.Contains(output, "vless://uuid") {
+		t.Fatalf("Loon output did not contain the expected proxy entries: %q", output)
 	}
 	if strings.Contains(output, "tuic://") {
 		t.Fatalf("Loon output must omit unsupported TUIC URI: %q", output)
+	}
+}
+
+func TestEncodeLoonInjectsNativeShadowsocksIntoPolicyGroups(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "loon.conf")
+	template := `[Proxy]
+__LOON_PROXY_ENTRIES__
+[Proxy Group]
+Proxy = select,__LOON_ALL_NODES__,DIRECT`
+	if err := os.WriteFile(path, []byte(template), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	output, err := EncodeLoon([]string{testSSLink("Node A")}, SqlConfig{Loon: path, Udp: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(output, `Node A = Shadowsocks,example.com,8388,aes-128-gcm,"password",udp=true`) {
+		t.Fatalf("Loon output did not contain native Shadowsocks syntax: %q", output)
+	}
+	if !strings.Contains(output, "Proxy = select,Node A,DIRECT") {
+		t.Fatalf("Loon policy group did not reference the injected node: %q", output)
 	}
 }
 
