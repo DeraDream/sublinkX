@@ -37,3 +37,64 @@ func TestEncodeLoonInjectsTemplate(t *testing.T) {
 		t.Fatalf("unexpected rendered Loon template: %q", output)
 	}
 }
+
+func TestEncodeLoonRendersDynamicPolicyGroupNodes(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "loon.conf")
+	template := `[Proxy]
+__LOON_PROXY_ENTRIES__
+[Proxy Group]
+♻️ 自动选择 = url-test,__LOON_ALL_NODES__,url=http://www.gstatic.com/generate_204,interval=300
+🚀 节点选择 = select,♻️ 自动选择,__LOON_ALL_NODES__,DIRECT,missing-node
+[Rule]
+FINAL,🚀 节点选择`
+	if err := os.WriteFile(path, []byte(template), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	output, err := EncodeLoon([]string{
+		"trojan://password@example.com:443#Po0-SGS",
+		"vless://uuid@example.com:443?type=ws#%E5%B9%BF%E6%B8%AF%20IEPL-HKS",
+	}, SqlConfig{Loon: path})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(output, "__LOON_") {
+		t.Fatalf("Loon output retains placeholder: %q", output)
+	}
+	for _, expected := range []string{
+		"♻️ 自动选择 = url-test,Po0-SGS,广港 IEPL-HKS,url=http://www.gstatic.com/generate_204,interval=300",
+		"🚀 节点选择 = select,♻️ 自动选择,Po0-SGS,广港 IEPL-HKS,DIRECT",
+	} {
+		if !strings.Contains(output, expected) {
+			t.Fatalf("Loon output missing %q:\n%s", expected, output)
+		}
+	}
+}
+
+func TestEncodeLoonRejectsUnresolvedInternalPlaceholder(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "loon.conf")
+	if err := os.WriteFile(path, []byte("[Proxy]\n__LOON_UNKNOWN__"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := EncodeLoon([]string{"trojan://password@example.com:443#node"}, SqlConfig{Loon: path}); err == nil {
+		t.Fatal("EncodeLoon accepted an unresolved internal placeholder")
+	}
+}
+
+func TestEncodeLoonKeepsReferencesToExistingTemplateProxies(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "loon.conf")
+	template := `[Proxy]
+Template Proxy = ss, example.com, 8388
+[Proxy Group]
+Proxy = select,Template Proxy,missing-node,DIRECT`
+	if err := os.WriteFile(path, []byte(template), 0600); err != nil {
+		t.Fatal(err)
+	}
+	output, err := EncodeLoon([]string{"trojan://password@example.com:443#dynamic"}, SqlConfig{Loon: path})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(output, "Proxy = select,Template Proxy,DIRECT") {
+		t.Fatalf("Loon output dropped a real template proxy or retained an invalid member: %q", output)
+	}
+}
