@@ -1083,13 +1083,9 @@ const importLoon = (subscriptionURL: string) => {
             <el-button @click="handleQrcode(item.url, String(index))"
               >二维码</el-button
             >
-            <el-button link type="primary" @click="OpenUrl(item.url)"
-              >打开</el-button
-            >
+            <el-button @click="OpenUrl(item.url)">打开</el-button>
             <el-button
               v-if="index === 'loon'"
-              link
-              type="primary"
               @click="importLoon(item.url)"
               >导入 Loon</el-button
             >
@@ -2703,6 +2699,20 @@ const importLoon = (subscriptionURL: string) => {
 
   .client-dialog-head {
     gap: 10px;
+  }
+
+  .client-actions {
+    display: grid;
+    width: 100%;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  :deep(.client-actions .el-button) {
+    width: 100%;
+    min-width: 0;
+    min-height: 40px;
+    margin-left: 0;
   }
 
   .preview-head {
