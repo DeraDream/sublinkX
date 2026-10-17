@@ -130,7 +130,12 @@ const Qrdialog = ref(false);
 const QrTitle = ref("");
 
 const ClientDiaLog = ref(false);
-const ClientUrls = ref<Record<string, string>>({});
+interface ClientLink {
+  url: string;
+  description: string;
+}
+
+const ClientUrls = ref<Record<string, ClientLink>>({});
 const ClientSubName = ref("");
 
 const previewDialog = ref(false);
@@ -952,8 +957,18 @@ const handleClient = (row: any) => {
   const outputType = inferSubscriptionOutputType(config, row.Name);
   const clients = outputType === "clash" ? ["clash", "v2ray"] : [outputType];
   clients.forEach((item: string) => {
-    ClientUrls.value[item] =
+    const subscriptionURL =
       `${serverAddress}/c/?token=${row.Token}&client=${item}`;
+    ClientUrls.value[item] = {
+      url: subscriptionURL,
+      description: `使用 ${item} 专用订阅地址。`,
+    };
+    if (item === "loon") {
+      ClientUrls.value["导入 Loon"] = {
+        url: `loon://import?sub=${encodeURIComponent(subscriptionURL)}`,
+        description: "在 Loon 中导入并持续更新此完整远端配置。",
+      };
+    }
   });
 };
 
@@ -1059,14 +1074,18 @@ const OpenUrl = (url: string) => {
             <span>{{ index }}</span>
             <el-tag size="small" effect="plain">{{ index }}</el-tag>
           </div>
-          <p>使用 {{ index }} 专用订阅地址。</p>
-          <el-input :model-value="item" readonly class="client-url-input" />
+          <p>{{ item.description }}</p>
+          <el-input
+            :model-value="item.url"
+            readonly
+            class="client-url-input"
+          />
           <div class="client-actions">
-            <el-button @click="copyUrl(item)">复制链接</el-button>
-            <el-button @click="handleQrcode(item, String(index))"
+            <el-button @click="copyUrl(item.url)">复制链接</el-button>
+            <el-button @click="handleQrcode(item.url, String(index))"
               >二维码</el-button
             >
-            <el-button link type="primary" @click="OpenUrl(item)"
+            <el-button link type="primary" @click="OpenUrl(item.url)"
               >打开</el-button
             >
           </div>
