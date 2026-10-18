@@ -1,13 +1,19 @@
 package api
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"io"
+	"net"
+	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"sublink/utils"
 
@@ -26,6 +32,10 @@ type visualTemplatePayload struct {
 	Filename string `json:"filename"`
 	OldName  string `json:"old_name"`
 	Content  string `json:"content"`
+}
+
+type visualTemplateFetchPayload struct {
+	URL string `json:"url"`
 }
 
 var visualTemplateDir string
@@ -231,4 +241,60 @@ func DeleteVisualTemplate(c *gin.Context) {
 		return
 	}
 	c.JSON(200, gin.H{"code": "00000", "msg": "删除成功"})
+}
+
+func FetchVisualTemplateSource(c *gin.Context) {
+	var payload visualTemplateFetchPayload
+	if err := c.ShouldBindJSON(&payload); err != nil {
+		c.JSON(400, gin.H{"msg": "订阅地址无效"})
+		return
+	}
+	parsed, err := url.Parse(strings.TrimSpace(payload.URL))
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Hostname() == "" {
+		c.JSON(400, gin.H{"msg": "请输入有效的 HTTP(S) 订阅地址"})
+		return
+	}
+	dialer := &net.Dialer{Timeout: 8 * time.Second}
+	transport := &http.Transport{Proxy: nil, DialContext: func(ctx context.Context, network, address string) (net.Conn, error) {
+		host, _, err := net.SplitHostPort(address)
+		if err != nil {
+			return nil, err
+		}
+		ips, err := net.DefaultResolver.LookupIPAddr(ctx, host)
+		if err != nil {
+			return nil, err
+		}
+		for _, item := range ips {
+			if item.IP.IsLoopback() || item.IP.IsPrivate() || item.IP.IsLinkLocalUnicast() || item.IP.IsUnspecified() {
+				return nil, errors.New("订阅地址不能指向本地或私有网络")
+			}
+		}
+		return dialer.DialContext(ctx, network, address)
+	}}
+	client := &http.Client{Timeout: 15 * time.Second, Transport: transport, CheckRedirect: func(req *http.Request, via []*http.Request) error {
+		if len(via) >= 3 {
+			return errors.New("重定向次数过多")
+		}
+		return nil
+	}}
+	resp, err := client.Get(parsed.String())
+	if err != nil {
+		c.JSON(400, gin.H{"msg": "拉取订阅失败：" + err.Error()})
+		return
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		c.JSON(400, gin.H{"msg": fmt.Sprintf("订阅服务器返回 %d", resp.StatusCode)})
+		return
+	}
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 2<<20))
+	if err != nil {
+		c.JSON(500, gin.H{"msg": "读取订阅失败"})
+		return
+	}
+	if len(body) >= 2<<20 {
+		c.JSON(400, gin.H{"msg": "订阅内容超过 2MB 限制"})
+		return
+	}
+	c.JSON(200, gin.H{"code": "00000", "data": gin.H{"content": string(body)}, "msg": "ok"})
 }

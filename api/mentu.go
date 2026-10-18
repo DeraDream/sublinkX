@@ -183,11 +183,10 @@ func GetMenus(c *gin.Context) {
 			Redirect:  "/settings/telegram",
 			Name:      "settings",
 			Meta: Meta{
-				Title:      "settingsmenu",
-				Icon:       "setting",
-				Hidden:     false,
-				Roles:      []string{"ADMIN"},
-				AlwaysShow: true,
+				Title:  "settingsmenu",
+				Icon:   "setting",
+				Hidden: false,
+				Roles:  []string{"ADMIN"},
 			},
 			Children: []Child{
 				{
@@ -195,8 +194,8 @@ func GetMenus(c *gin.Context) {
 					Component: "settings/telegram",
 					Name:      "TelegramBot",
 					Meta: Meta{
-						Title:     "telegrambot",
-						Icon:      "message",
+						Title:     "settingsmenu",
+						Icon:      "setting",
 						Hidden:    false,
 						Roles:     []string{"ADMIN"},
 						KeepAlive: true,

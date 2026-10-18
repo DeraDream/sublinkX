@@ -25,3 +25,6 @@ export const updateVisualTemplate = (data: VisualTemplatePayload) =>
 
 export const deleteVisualTemplate = (filename: string) =>
   request({ url: "/api/v1/template-manager/delete", method: "post", data: { filename } });
+
+export const fetchVisualTemplateSource = (url: string) =>
+  request({ url: "/api/v1/template-manager/fetch", method: "post", data: { url } });

@@ -2,340 +2,113 @@
 import { computed, ref, watch } from "vue";
 import { parseDocument, stringify } from "yaml";
 import YamlEditor from "@/components/YamlEditor/index.vue";
-import {
-  createVisualTemplate,
-  deleteVisualTemplate,
-  getVisualTemplate,
-  listVisualTemplates,
-  updateVisualTemplate,
-  type VisualTemplateItem,
-} from "@/api/template-manager";
+import { getTemp } from "@/api/subcription/temp";
+import { createVisualTemplate, deleteVisualTemplate, fetchVisualTemplateSource, getVisualTemplate, listVisualTemplates, updateVisualTemplate, type VisualTemplateItem } from "@/api/template-manager";
 
-type ProxyGroup = Record<string, any> & { name: string; type: string; proxies?: string[] };
-type TemplateRoot = Record<string, any>;
-
-const templateList = ref<VisualTemplateItem[]>([]);
-const selectedFile = ref("");
-const filename = ref("");
-const yamlText = ref("");
-const templateRoot = ref<TemplateRoot>({});
-const groups = ref<ProxyGroup[]>([]);
-const mode = ref<"visual" | "yaml">("visual");
-const loading = ref(false);
-const saving = ref(false);
-const parseError = ref("");
-const visualReady = ref(false);
-const dirty = ref(false);
-const syncing = ref(false);
-
-const groupTypes = [
-  { value: "select", label: "手动选择" },
-  { value: "url-test", label: "自动测速" },
-  { value: "fallback", label: "故障转移" },
-  { value: "load-balance", label: "负载均衡" },
-  { value: "relay", label: "链式代理" },
-];
-const speedTestTypes = new Set(["url-test", "fallback", "load-balance"]);
-const groupNames = computed(() => groups.value.map((group) => group.name).filter(Boolean));
-
-function blankTemplate() {
-  return {
-    "mixed-port": 7890,
-    "allow-lan": false,
-    mode: "rule",
-    "log-level": "info",
-    "proxy-groups": [],
-    rules: ["MATCH,DIRECT"],
-  };
-}
-
-function resetEditor() {
-  selectedFile.value = "";
-  filename.value = "untitled.yaml";
-  templateRoot.value = blankTemplate();
-  groups.value = [];
-  yamlText.value = stringify(templateRoot.value, { lineWidth: 0 });
-  parseError.value = "";
-  visualReady.value = true;
-  mode.value = "visual";
-  dirty.value = false;
-}
-
-function parseYaml(showMessage = true) {
+type Group = Record<string, any> & { name: string; type: string; proxies?: string[] };
+type Legacy = { file: string; text: string };
+const templates = ref<VisualTemplateItem[]>([]);
+const legacy = ref<Legacy[]>([]);
+const createVisible = ref(false), editorVisible = ref(false), loading = ref(false), saving = ref(false);
+const createMode = ref<"blank" | "import" | "paste" | "subscription">("blank"), importedFile = ref(""), pastedYaml = ref(""), subscriptionURL = ref(""), fetchingSubscription = ref(false);
+const selectedFile = ref(""), filename = ref(""), yamlText = ref("");
+const root = ref<Record<string, any>>({}), groups = ref<Group[]>([]);
+const mode = ref<"visual" | "yaml">("visual"), parseError = ref(""), visualReady = ref(false), dirty = ref(false), syncing = ref(false);
+const types = [{ value: "select", label: "手动选择" }, { value: "url-test", label: "自动测速" }, { value: "fallback", label: "故障转移" }, { value: "load-balance", label: "负载均衡" }, { value: "relay", label: "链式代理" }];
+const speedTypes = new Set(["url-test", "fallback", "load-balance"]);
+const names = computed(() => groups.value.map((group) => group.name).filter(Boolean));
+const previewYaml = computed(() => {
   const doc = parseDocument(yamlText.value, { prettyErrors: false, strict: true });
-  if (doc.errors.length) {
-    parseError.value = String(doc.errors[0].message || "YAML 格式错误");
-    visualReady.value = false;
-    if (showMessage) ElMessage.error(`无法切换可视化编辑：${parseError.value}`);
-    return false;
-  }
-  const parsed = doc.toJS();
-  if (!parsed || Array.isArray(parsed) || typeof parsed !== "object") {
-    parseError.value = "模板根节点必须是 YAML 对象";
-    visualReady.value = false;
-    if (showMessage) ElMessage.error(parseError.value);
-    return false;
-  }
-  const nextGroups = (parsed["proxy-groups"] || []) as unknown;
-  if (!Array.isArray(nextGroups) || nextGroups.some((group) => !group || typeof group !== "object")) {
-    parseError.value = "proxy-groups 必须是代理组数组";
-    visualReady.value = false;
-    if (showMessage) ElMessage.error(parseError.value);
-    return false;
-  }
-  syncing.value = true;
-  templateRoot.value = parsed as TemplateRoot;
-  groups.value = nextGroups.map((group) => ({ proxies: [], ...(group as ProxyGroup) }));
-  syncing.value = false;
-  parseError.value = "";
-  visualReady.value = true;
-  return true;
-}
+  if (doc.errors.length) return "# YAML 格式错误，修复后会显示代理组预览";
+  const value = doc.toJS();
+  if (!value || Array.isArray(value) || typeof value !== "object") return "# 暂无代理组配置";
+  return stringify({ "proxy-groups": value["proxy-groups"] || [] }, { lineWidth: 0 });
+});
+const blank = () => ({ "mixed-port": 7890, "allow-lan": false, mode: "rule", "log-level": "info", "proxy-groups": [], rules: ["MATCH,DIRECT"] });
 
-function syncYamlFromVisual() {
+function reset() {
+  selectedFile.value = ""; filename.value = "untitled.yaml"; root.value = blank(); groups.value = [];
+  yamlText.value = stringify(root.value, { lineWidth: 0 }); parseError.value = ""; visualReady.value = true; mode.value = "visual"; dirty.value = false;
+}
+function parse(showError = true) {
+  const doc = parseDocument(yamlText.value, { prettyErrors: false, strict: true });
+  if (doc.errors.length) { parseError.value = String(doc.errors[0].message || "YAML 格式错误"); visualReady.value = false; if (showError) ElMessage.error(`无法切换可视化编辑：${parseError.value}`); return false; }
+  const value = doc.toJS();
+  if (!value || Array.isArray(value) || typeof value !== "object") { parseError.value = "模板根节点必须是 YAML 对象"; visualReady.value = false; if (showError) ElMessage.error(parseError.value); return false; }
+  const parsedGroups = value["proxy-groups"] || [];
+  if (!Array.isArray(parsedGroups) || parsedGroups.some((item) => !item || typeof item !== "object")) { parseError.value = "proxy-groups 必须是代理组数组"; visualReady.value = false; if (showError) ElMessage.error(parseError.value); return false; }
+  syncing.value = true; root.value = value; groups.value = parsedGroups.map((item) => ({ proxies: [], ...item })); syncing.value = false;
+  parseError.value = ""; visualReady.value = true; return true;
+}
+function sync() {
   if (syncing.value || !visualReady.value) return;
-  templateRoot.value["proxy-groups"] = groups.value.map((group) => {
-    const next = { ...group };
-    if (!next.proxies?.length) delete next.proxies;
-    Object.keys(next).forEach((key) => {
-      if (next[key] === "" || next[key] === false || next[key] === undefined) delete next[key];
-    });
-    return next;
-  });
-  yamlText.value = stringify(templateRoot.value, { lineWidth: 0 });
-  dirty.value = true;
+  root.value["proxy-groups"] = groups.value.map((group) => { const item = { ...group }; if (!item.proxies?.length) delete item.proxies; Object.keys(item).forEach((key) => { if (item[key] === "" || item[key] === false || item[key] === undefined) delete item[key]; }); return item; });
+  yamlText.value = stringify(root.value, { lineWidth: 0 }); dirty.value = true;
 }
-
-watch(groups, syncYamlFromVisual, { deep: true });
-
-async function loadList() {
-  const { data } = await listVisualTemplates();
-  templateList.value = data || [];
-}
-
-async function selectTemplate(file: string) {
-  if (dirty.value && !await confirmDiscard()) return;
-  loading.value = true;
-  try {
-    const { data } = await getVisualTemplate(file);
-    selectedFile.value = data.file;
-    filename.value = data.file;
-    yamlText.value = data.content;
-    parseYaml(false);
-    mode.value = visualReady.value ? "visual" : "yaml";
-    dirty.value = false;
-  } finally {
-    loading.value = false;
-  }
-}
-
-async function confirmDiscard() {
-  try {
-    await ElMessageBox.confirm("当前模板有未保存的更改，确定放弃吗？", "未保存的更改", { type: "warning" });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-async function createTemplate() {
-  if (dirty.value && !await confirmDiscard()) return;
-  resetEditor();
-}
-
-function addGroup() {
-  groups.value.push({
-    name: `新代理组 ${groups.value.length + 1}`,
-    type: "select",
-    proxies: ["DIRECT"],
-  });
-}
-
-function removeGroup(index: number) {
-  groups.value.splice(index, 1);
-}
-
-function moveGroup(index: number, direction: number) {
-  const target = index + direction;
-  if (target < 0 || target >= groups.value.length) return;
-  const [group] = groups.value.splice(index, 1);
-  groups.value.splice(target, 0, group);
-}
-
-function addProxy(group: ProxyGroup) {
-  group.proxies ||= [];
-  group.proxies.push("");
-}
-
-function removeProxy(group: ProxyGroup, index: number) {
-  group.proxies?.splice(index, 1);
-}
-
-function switchMode(next: "visual" | "yaml") {
-  if (next === "visual" && !parseYaml()) return;
-  mode.value = next;
-}
-
-function handleModeChange(value: string | number | boolean | undefined) {
-  if (value === "visual" || value === "yaml") switchMode(value);
-}
-
-async function saveTemplate() {
-  const safeName = filename.value.trim();
-  if (!safeName) { ElMessage.warning("请输入模板文件名"); return; }
-  if (mode.value === "yaml" && !parseYaml(false)) { ElMessage.error(`YAML 格式错误：${parseError.value}`); return; }
-  if (!visualReady.value) { ElMessage.error("请先修复 YAML 格式错误"); return; }
-  const names = groups.value.map((group) => group.name.trim()).filter(Boolean);
-  if (names.length !== groups.value.length || new Set(names).size !== names.length) {
-    ElMessage.error("每个代理组都需要唯一的名称");
-    return;
-  }
-  saving.value = true;
-  try {
-    if (selectedFile.value) {
-      await updateVisualTemplate({ filename: safeName, old_name: selectedFile.value, content: yamlText.value });
-    } else {
-      await createVisualTemplate({ filename: safeName, content: yamlText.value });
-    }
-    selectedFile.value = /\.ya?ml$/i.test(safeName) ? safeName : `${safeName}.yaml`;
-    filename.value = selectedFile.value;
-    dirty.value = false;
-    await loadList();
-    ElMessage.success("模板已保存");
-  } finally {
-    saving.value = false;
-  }
-}
-
-async function deleteCurrentTemplate() {
-  if (!selectedFile.value) return;
-  try {
-    await ElMessageBox.confirm(`确定删除模板「${selectedFile.value}」吗？`, "删除模板", { type: "warning" });
-    await deleteVisualTemplate(selectedFile.value);
-    await loadList();
-    resetEditor();
-    ElMessage.success("模板已删除");
-  } catch (error: any) {
-    if (error !== "cancel" && error !== "close") throw error;
-  }
-}
-
+watch(groups, sync, { deep: true });
 watch(yamlText, () => { if (!syncing.value && mode.value === "yaml") dirty.value = true; });
-loadList().then(() => resetEditor());
+async function loadList() { const { data } = await listVisualTemplates(); templates.value = data || []; }
+async function openCreate() {
+  createMode.value = "blank"; importedFile.value = ""; createVisible.value = true;
+  const { data } = await getTemp(); legacy.value = (data || []).filter((item: Legacy) => /.ya?ml$/i.test(item.file));
+}
+function selectLegacy(file: string) { const item = legacy.value.find((candidate) => candidate.file === file); if (item) { filename.value = item.file; yamlText.value = item.text; } }
+async function fetchSubscription() { if (!subscriptionURL.value.trim()) { ElMessage.warning("请输入订阅地址"); return; } fetchingSubscription.value = true; try { const { data } = await fetchVisualTemplateSource(subscriptionURL.value); pastedYaml.value = data.content; ElMessage.success("订阅内容已拉取，请确认后继续"); } finally { fetchingSubscription.value = false; } }
+function create() {
+  if (createMode.value === "blank") reset();
+  else { if (createMode.value === "import") { if (!importedFile.value) { ElMessage.warning("请选择要导入的现有模板"); return; } selectLegacy(importedFile.value); } else { if (!pastedYaml.value.trim()) { ElMessage.warning(createMode.value === "paste" ? "请粘贴 YAML 内容" : "请先拉取订阅内容"); return; } yamlText.value = pastedYaml.value; filename.value = "imported-template.yaml"; } if (!parse()) return; selectedFile.value = ""; mode.value = "visual"; dirty.value = false; }
+  createVisible.value = false; editorVisible.value = true;
+}
+async function edit(file: string) {
+  loading.value = true;
+  try { const { data } = await getVisualTemplate(file); selectedFile.value = data.file; filename.value = data.file; yamlText.value = data.content; parse(false); mode.value = visualReady.value ? "visual" : "yaml"; dirty.value = false; editorVisible.value = true; } finally { loading.value = false; }
+}
+function addGroup() { groups.value.push({ name: `新代理组 ${groups.value.length + 1}`, type: "select", proxies: ["DIRECT"] }); }
+function move(index: number, delta: number) { const target = index + delta; if (target < 0 || target >= groups.value.length) return; const [item] = groups.value.splice(index, 1); groups.value.splice(target, 0, item); }
+function switchMode(value: string | number | boolean | undefined) { if (value !== "visual" && value !== "yaml") return; if (value === "visual" && !parse()) return; mode.value = value; }
+async function copyPreview() { try { await navigator.clipboard.writeText(previewYaml.value); ElMessage.success("代理组配置已复制"); } catch { ElMessage.error("复制失败，请检查浏览器剪贴板权限"); } }
+function refreshPreview() { if (parse(false)) ElMessage.success("预览已刷新"); else ElMessage.error(`YAML 格式错误：${parseError.value}`); }
+async function save() {
+  const name = filename.value.trim(); if (!name) { ElMessage.warning("请输入模板文件名"); return; }
+  if (mode.value === "yaml" && !parse(false)) { ElMessage.error(`YAML 格式错误：${parseError.value}`); return; }
+  const groupNames = groups.value.map((item) => item.name.trim()).filter(Boolean);
+  if (groupNames.length !== groups.value.length || new Set(groupNames).size !== groupNames.length) { ElMessage.error("每个代理组都需要唯一的名称"); return; }
+  saving.value = true;
+  try { if (selectedFile.value) await updateVisualTemplate({ filename: name, old_name: selectedFile.value, content: yamlText.value }); else await createVisualTemplate({ filename: name, content: yamlText.value }); selectedFile.value = /.ya?ml$/i.test(name) ? name : `${name}.yaml`; filename.value = selectedFile.value; dirty.value = false; await loadList(); ElMessage.success("模板已保存"); } finally { saving.value = false; }
+}
+async function close() { if (!dirty.value) { editorVisible.value = false; return; } try { await ElMessageBox.confirm("当前模板有未保存的更改，确定关闭吗？", "未保存的更改", { type: "warning" }); editorVisible.value = false; } catch {} }
+async function remove(file: string) { try { await ElMessageBox.confirm(`确定删除模板「${file}」吗？`, "删除模板", { type: "warning" }); await deleteVisualTemplate(file); await loadList(); ElMessage.success("模板已删除"); } catch (error: any) { if (error !== "cancel" && error !== "close") throw error; } }
+loadList();
 </script>
 
 <template>
   <div class="template-manager page-workspace">
-    <header class="page-heading">
-      <div>
-        <h1>模板管理</h1>
-        <p>独立管理 Clash / Mihomo 可视化模板，不影响现有模板列表或订阅配置。</p>
+    <header class="page-heading"><div><h1>模板管理</h1><p>创建或导入 Clash / Mihomo 模板，再进入可视化编辑。</p></div><el-button type="primary" @click="openCreate">新建模板</el-button></header>
+    <section class="work-surface manager-list" v-loading="loading"><el-table :data="templates" empty-text="暂无模板，点击右上角新建模板"><el-table-column prop="file" label="模板名称" min-width="360"><template #default="{ row }"><strong>{{ row.file }}</strong></template></el-table-column><el-table-column prop="updated_at" label="更新时间" min-width="220" /><el-table-column label="操作" width="180" align="right"><template #default="{ row }"><el-button link type="primary" @click="edit(row.file)">编辑</el-button><el-button link type="danger" @click="remove(row.file)">删除</el-button></template></el-table-column></el-table></section>
+
+    <el-dialog v-model="createVisible" title="创建模板" width="min(680px, 94vw)" destroy-on-close>
+      <p class="intro">创建空白 Clash/Mihomo YAML，或从当前项目的“模板列表”导入一个 YAML 模板。</p>
+      <el-radio-group v-model="createMode" class="create-tabs"><el-radio-button value="blank">创建空白模板</el-radio-button><el-radio-button value="import">从模板列表导入</el-radio-button><el-radio-button value="paste">粘贴代码</el-radio-button><el-radio-button value="subscription">从订阅导入</el-radio-button></el-radio-group>
+      <div v-if="createMode === 'blank'" class="create-option"><el-alert type="info" :closable="false" show-icon title="会创建基础 Clash/Mihomo YAML；之后可在可视化编辑器添加代理组。" /></div>
+      <div v-else-if="createMode === 'import'" class="create-option"><el-form label-position="top"><el-form-item label="选择现有 YAML 模板"><el-select v-model="importedFile" filterable placeholder="选择要导入的模板" class="wide" @change="selectLegacy"><el-option v-for="item in legacy" :key="item.file" :label="item.file" :value="item.file" /></el-select></el-form-item></el-form><el-alert type="warning" :closable="false" show-icon title="仅显示 YAML 模板；导入后另存为可视化模板，不会修改原模板。" /></div>
+      <div v-else-if="createMode === 'paste'" class="create-option"><el-form label-position="top"><el-form-item label="粘贴 YAML 内容"><el-input v-model="pastedYaml" type="textarea" :rows="7" placeholder="粘贴 Clash / Mihomo YAML 配置" /></el-form-item></el-form></div>
+      <div v-else class="create-option"><el-form label-position="top"><el-form-item label="订阅地址"><div class="subscription-input"><el-input v-model="subscriptionURL" placeholder="https://example.com/config.yaml" /><el-button :loading="fetchingSubscription" @click="fetchSubscription">拉取</el-button></div></el-form-item><el-form-item label="拉取结果"><el-input v-model="pastedYaml" type="textarea" :rows="5" placeholder="拉取成功后会显示在这里，也可直接修改" /></el-form-item></el-form><el-alert type="warning" :closable="false" show-icon title="仅支持可直接返回 Clash/Mihomo YAML 的 HTTP(S) 地址；本地和私有网络地址会被拒绝。" /></div>
+      <template #footer><el-button @click="createVisible = false">取消</el-button><el-button type="primary" @click="create">下一步：编辑模板</el-button></template>
+    </el-dialog>
+
+    <el-dialog v-model="editorVisible" class="editor-dialog" width="calc(100vw - 48px)" top="24px" :close-on-click-modal="false" destroy-on-close @close="close">
+      <template #header><div class="editor-title"><div><h2>{{ selectedFile || filename || "新模板" }}</h2><p>编辑模板配置</p></div><div class="actions"><el-button type="primary" :loading="saving" @click="save">保存</el-button><el-button @click="close">关闭</el-button></div></div></template>
+      <div class="toolbar"><el-input v-model="filename" class="filename" placeholder="模板文件名，例如 my-template.yaml"><template #prepend>文件名</template></el-input><el-radio-group :model-value="mode" @change="switchMode"><el-radio-button value="visual">可视化编辑</el-radio-button><el-radio-button value="yaml">YAML 代码</el-radio-button></el-radio-group></div>
+      <el-alert v-if="parseError" type="warning" :closable="false" show-icon class="parse-error" :title="`可视化编辑不可用：${parseError}`" />
+      <div class="editor-layout">
+        <section v-if="mode === 'visual' && visualReady" class="panel visual"><div class="panel-title"><span>代理组配置</span><el-button size="small" type="primary" plain @click="addGroup">添加代理组</el-button></div><el-scrollbar class="scroll"><div class="groups"><el-empty v-if="!groups.length" description="暂无代理组" :image-size="72" /><article v-for="(group, index) in groups" :key="`${index}-${group.name}`" class="group"><div class="group-head"><el-input v-model="group.name" placeholder="代理组名称" /><el-select v-model="group.type" class="type"><el-option v-for="item in types" :key="item.value" :label="item.label" :value="item.value" /></el-select><el-button circle size="small" :disabled="index === 0" @click="move(index, -1)">↑</el-button><el-button circle size="small" :disabled="index === groups.length - 1" @click="move(index, 1)">↓</el-button><el-button circle size="small" type="danger" plain @click="groups.splice(index, 1)">×</el-button></div><div class="fields"><div class="field-grid"><el-input v-model="group.filter" placeholder="节点筛选，例如 香港|HK" clearable /><el-input v-model="group['exclude-filter']" placeholder="排除筛选" clearable /></div><div class="switches"><el-switch v-model="group['include-all']" active-text="包含全部代理" /><el-switch v-model="group.hidden" active-text="在客户端隐藏" /></div><div v-if="speedTypes.has(group.type)" class="speed"><el-input v-model="group.url" placeholder="测试 URL" /><el-input-number v-model="group.interval" :min="1" placeholder="间隔" /><el-input-number v-model="group.tolerance" :min="0" placeholder="容差" /></div><div class="proxies"><div v-for="(_, proxyIndex) in group.proxies || []" :key="proxyIndex" class="proxy"><el-select v-model="group.proxies![proxyIndex]" filterable allow-create default-first-option placeholder="选择组或输入成员"><el-option value="DIRECT" label="DIRECT" /><el-option value="REJECT" label="REJECT" /><el-option v-for="name in names.filter((name) => name !== group.name)" :key="name" :value="name" :label="name" /></el-select><el-button type="danger" link @click="group.proxies?.splice(proxyIndex, 1)">移除</el-button></div><el-button size="small" plain @click="(group.proxies ||= []).push('')">添加成员</el-button></div></div></article></div></el-scrollbar></section>
+        <section v-else class="panel raw"><div class="panel-title">YAML 代码</div><YamlEditor v-model="yamlText" /></section>
+        <section class="panel preview"><div class="panel-title"><span>代理组配置预览</span><div class="preview-actions"><el-button link title="复制预览" @click="copyPreview">复制</el-button><el-button link title="刷新预览" @click="refreshPreview">刷新</el-button></div></div><pre>{{ previewYaml }}</pre></section>
       </div>
-      <div class="heading-actions">
-        <el-button @click="createTemplate">新建模板</el-button>
-        <el-button v-if="selectedFile" type="danger" plain @click="deleteCurrentTemplate">删除</el-button>
-        <el-button type="primary" :loading="saving" @click="saveTemplate">保存模板</el-button>
-      </div>
-    </header>
-
-    <section class="manager-shell" v-loading="loading">
-      <aside class="template-library">
-        <div class="library-title"><strong>可视化模板</strong><span>{{ templateList.length }}</span></div>
-        <el-scrollbar>
-          <button
-            v-for="item in templateList"
-            :key="item.file"
-            class="template-item"
-            :class="{ active: item.file === selectedFile }"
-            @click="selectTemplate(item.file)"
-          >
-            <strong>{{ item.file }}</strong><small>{{ item.updated_at }}</small>
-          </button>
-          <div v-if="!templateList.length" class="empty-library">还没有可视化模板</div>
-        </el-scrollbar>
-      </aside>
-
-      <main class="editor-workspace">
-        <div class="editor-toolbar">
-          <el-input v-model="filename" class="name-input" placeholder="模板文件名，例如 my-template.yaml">
-            <template #prepend>文件名</template>
-          </el-input>
-          <el-radio-group :model-value="mode" size="default" @change="handleModeChange">
-            <el-radio-button value="visual">可视化编辑</el-radio-button>
-            <el-radio-button value="yaml">原始 YAML</el-radio-button>
-          </el-radio-group>
-        </div>
-
-        <el-alert v-if="parseError" type="warning" :closable="false" show-icon class="parse-alert" :title="`可视化编辑不可用：${parseError}`" />
-
-        <template v-if="mode === 'visual' && visualReady">
-          <div class="visual-header">
-            <div><h2>代理组配置</h2><p>更改会实时同步到右侧 YAML；未识别的顶级配置会原样保留。</p></div>
-            <el-button type="primary" plain @click="addGroup">添加代理组</el-button>
-          </div>
-          <div class="visual-layout">
-            <section class="group-list">
-              <el-empty v-if="!groups.length" description="还没有代理组，点击上方按钮添加" :image-size="84" />
-              <article v-for="(group, index) in groups" :key="`${index}-${group.name}`" class="group-card">
-                <div class="group-card-head">
-                  <el-input v-model="group.name" placeholder="代理组名称" />
-                  <el-select v-model="group.type" class="type-select">
-                    <el-option v-for="type in groupTypes" :key="type.value" :label="type.label" :value="type.value" />
-                  </el-select>
-                  <div class="group-actions">
-                    <el-button circle size="small" :disabled="index === 0" @click="moveGroup(index, -1)">↑</el-button>
-                    <el-button circle size="small" :disabled="index === groups.length - 1" @click="moveGroup(index, 1)">↓</el-button>
-                    <el-button circle size="small" type="danger" plain @click="removeGroup(index)">×</el-button>
-                  </div>
-                </div>
-                <div class="group-fields">
-                  <el-form label-position="top" size="small">
-                    <div class="field-grid">
-                      <el-form-item label="节点筛选（正则）"><el-input v-model="group.filter" placeholder="香港|HK|Hong Kong" clearable /></el-form-item>
-                      <el-form-item label="排除筛选（正则）"><el-input v-model="group['exclude-filter']" placeholder="倍率|剩余流量" clearable /></el-form-item>
-                    </div>
-                    <div class="switch-row">
-                      <el-switch v-model="group['include-all']" active-text="包含全部代理" />
-                      <el-switch v-model="group.hidden" active-text="在客户端隐藏" />
-                    </div>
-                    <div v-if="speedTestTypes.has(group.type)" class="field-grid speed-fields">
-                      <el-form-item label="测试 URL"><el-input v-model="group.url" placeholder="https://www.gstatic.com/generate_204" /></el-form-item>
-                      <el-form-item label="间隔（秒）"><el-input-number v-model="group.interval" :min="1" :max="86400" /></el-form-item>
-                      <el-form-item label="容差（ms）"><el-input-number v-model="group.tolerance" :min="0" :max="1000" /></el-form-item>
-                    </div>
-                    <el-form-item label="代理顺序 / 固定成员">
-                      <div class="proxy-list">
-                        <div v-for="(_, proxyIndex) in group.proxies || []" :key="proxyIndex" class="proxy-line">
-                          <el-select v-model="group.proxies![proxyIndex]" filterable allow-create default-first-option placeholder="选择组或输入 DIRECT / 节点名">
-                            <el-option value="DIRECT" label="DIRECT" /><el-option value="REJECT" label="REJECT" />
-                            <el-option v-for="name in groupNames.filter((name) => name !== group.name)" :key="name" :value="name" :label="name" />
-                          </el-select>
-                          <el-button type="danger" link @click="removeProxy(group, proxyIndex)">移除</el-button>
-                        </div>
-                        <el-button size="small" plain @click="addProxy(group)">添加成员</el-button>
-                      </div>
-                    </el-form-item>
-                  </el-form>
-                </div>
-              </article>
-            </section>
-            <section class="yaml-panel"><div class="yaml-title">实时 YAML 预览</div><pre>{{ yamlText }}</pre></section>
-          </div>
-        </template>
-
-        <section v-else class="raw-editor"><div class="yaml-title">原始 YAML（保存时会校验）</div><YamlEditor v-model="yamlText" /></section>
-      </main>
-    </section>
+    </el-dialog>
   </div>
 </template>
 
 <style scoped>
-.heading-actions,.editor-toolbar,.group-card-head,.switch-row,.proxy-line { display:flex; align-items:center; gap:10px; }
-.manager-shell { display:grid; grid-template-columns:260px minmax(0,1fr); min-height:calc(100vh - 185px); overflow:hidden; border:1px solid var(--el-border-color-lighter); border-radius:12px; background:var(--el-bg-color); }
-.template-library { min-width:0; border-right:1px solid var(--el-border-color-lighter); background:var(--el-fill-color-light); }
-.library-title { display:flex; justify-content:space-between; padding:18px 16px 12px; color:var(--el-text-color-primary); }.library-title span { color:var(--el-text-color-secondary); font-size:12px; }
-.template-item { display:grid; width:100%; gap:5px; padding:12px 16px; border:0; border-left:3px solid transparent; color:var(--el-text-color-primary); background:transparent; text-align:left; cursor:pointer; }.template-item:hover { background:var(--el-fill-color); }.template-item.active { border-left-color:var(--el-color-primary); background:var(--el-color-primary-light-9); }.template-item strong { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:13px; }.template-item small,.empty-library { color:var(--el-text-color-secondary); font-size:12px; }.empty-library { padding:24px 16px; text-align:center; }
-.editor-workspace { min-width:0; padding:18px; }.editor-toolbar { justify-content:space-between; padding-bottom:16px; border-bottom:1px solid var(--el-border-color-lighter); }.name-input { max-width:440px; }.parse-alert { margin:14px 0; }.visual-header { display:flex; align-items:center; justify-content:space-between; gap:18px; margin:18px 0 12px; }.visual-header h2 { margin:0; font-size:16px; }.visual-header p { margin:5px 0 0; color:var(--el-text-color-secondary); font-size:13px; }
-.visual-layout { display:grid; grid-template-columns:minmax(430px,1.15fr) minmax(300px,.85fr); gap:16px; }.group-list { display:grid; align-content:start; gap:12px; }.group-card,.yaml-panel,.raw-editor { overflow:hidden; border:1px solid var(--el-border-color-lighter); border-radius:8px; }.group-card-head { padding:12px; background:var(--el-fill-color-light); }.type-select { width:130px; }.group-actions { display:flex; margin-left:auto; gap:5px; }.group-fields { padding:12px 14px 4px; }.field-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; }.speed-fields { grid-template-columns:minmax(0,1fr) 110px 110px; }.switch-row { margin:0 0 12px; flex-wrap:wrap; }.proxy-list { display:grid; gap:7px; }.proxy-line { width:100%; }.proxy-line .el-select { flex:1; }.yaml-panel,.raw-editor { min-height:520px; display:flex; flex-direction:column; }.yaml-title { padding:12px 14px; border-bottom:1px solid var(--el-border-color-lighter); background:var(--el-fill-color-light); font-size:13px; font-weight:600; }.yaml-panel pre { flex:1; overflow:auto; margin:0; padding:14px; color:var(--el-text-color-primary); font:12px/1.55 Consolas,monospace; white-space:pre; }.raw-editor :deep(.yaml-editor) { flex:1; min-height:520px; }
-@media (max-width:900px) { .manager-shell { grid-template-columns:1fr; }.template-library { max-height:185px; border-right:0; border-bottom:1px solid var(--el-border-color-lighter); }.visual-layout { grid-template-columns:1fr; }.yaml-panel { min-height:300px; }.field-grid,.speed-fields { grid-template-columns:1fr; }.editor-toolbar,.visual-header { align-items:stretch; flex-direction:column; }.name-input { max-width:none; }.heading-actions { flex-wrap:wrap; } }
+.manager-list{min-height:360px}.intro{margin:0 0 16px;color:var(--el-text-color-secondary)}.create-tabs{margin-bottom:18px}.create-option{min-height:120px}.wide{width:100%}.subscription-input{display:flex;width:100%;gap:10px}.subscription-input .el-input{flex:1}.editor-title,.actions,.toolbar,.group-head,.switches,.proxy,.preview-actions{display:flex;align-items:center;gap:10px}.editor-title{justify-content:space-between;padding-right:32px}.editor-title h2{margin:0;font-size:19px}.editor-title p{margin:4px 0 0;color:var(--el-text-color-secondary);font-size:13px}.toolbar{justify-content:space-between;padding-bottom:14px;border-bottom:1px solid var(--el-border-color-lighter)}.filename{max-width:440px}.parse-error{margin:14px 0}.editor-layout{display:grid;grid-template-columns:minmax(430px,1fr) minmax(360px,.9fr);gap:16px;min-height:calc(100dvh - 205px)}.panel{display:flex;min-width:0;min-height:0;flex-direction:column;overflow:hidden;border:1px solid var(--el-border-color-lighter);border-radius:8px}.panel-title{display:flex;min-height:45px;align-items:center;justify-content:space-between;padding:0 14px;border-bottom:1px solid var(--el-border-color-lighter);background:var(--el-fill-color-light);font-size:14px;font-weight:600}.scroll{min-height:0;flex:1}.groups{display:grid;gap:10px;padding:12px}.group{overflow:hidden;border:1px solid var(--el-border-color-lighter);border-radius:7px}.group-head{padding:10px;background:var(--el-fill-color-light)}.type{width:125px}.fields{display:grid;gap:10px;padding:10px}.field-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}.switches{flex-wrap:wrap}.speed{display:grid;grid-template-columns:minmax(0,1fr) 100px 100px;gap:8px}.proxies{display:grid;gap:6px}.proxy .el-select{min-width:0;flex:1}.preview pre{min-height:0;flex:1;overflow:auto;box-sizing:border-box;margin:0;padding:14px;color:var(--el-text-color-primary);font:12px/1.55 Consolas,monospace;white-space:pre}.raw :deep(.yaml-editor){min-height:0;flex:1}@media(min-width:901px){:deep(.editor-dialog){display:flex;height:calc(100dvh - 48px);flex-direction:column;margin-bottom:0}:deep(.editor-dialog .el-dialog__body){display:flex;min-height:0;flex:1;flex-direction:column;overflow:hidden}}@media(max-width:900px){.editor-title,.toolbar{align-items:stretch;flex-direction:column}.actions{justify-content:flex-end}.filename{max-width:none}.editor-layout{grid-template-columns:1fr;min-height:0}.panel{min-height:420px}.field-grid,.speed{grid-template-columns:1fr}.subscription-input{flex-direction:column}:deep(.editor-dialog){width:min(96vw,720px)!important}.editor-title{padding-right:28px}}
 </style>

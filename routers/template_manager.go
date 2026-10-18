@@ -16,5 +16,6 @@ func TemplateManager(r *gin.Engine) {
 		group.POST("/create", api.CreateVisualTemplate)
 		group.POST("/update", api.UpdateVisualTemplate)
 		group.POST("/delete", api.DeleteVisualTemplate)
+		group.POST("/fetch", api.FetchVisualTemplateSource)
 	}
 }
