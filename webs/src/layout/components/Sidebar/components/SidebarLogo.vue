@@ -12,13 +12,24 @@
         <button v-if="updateInfo?.update_available" class="update-badge" @click.prevent.stop="confirmUpdate">↑ 新版本</button>
       </router-link>
     </transition>
+    <el-dialog v-model="updateProgressVisible" class="sidebar-update-dialog" width="min(430px, calc(100vw - 36px))" :close-on-click-modal="false" :close-on-press-escape="false" :show-close="false" align-center>
+      <div class="update-progress" role="status" aria-live="polite">
+        <span class="update-spinner" />
+        <h3>正在升级 SublinkX</h3>
+        <p>{{ updateStatus?.message || "正在准备更新，请勿关闭页面" }}</p>
+        <div class="version-line">{{ updateStatus?.current_version || updateInfo?.current_version }} <span>→</span> {{ updateStatus?.target_version || updateInfo?.latest_version }}</div>
+        <el-progress :percentage="Math.max(1, updateStatus?.progress || 1)" :stroke-width="9" />
+        <small>升级期间服务会短暂重启，页面将自动恢复。</small>
+        <el-button v-if="updateFailed" @click="updateProgressVisible = false">关闭</el-button>
+      </div>
+    </el-dialog>
   </div>
 </template>
 
 <script lang="ts" setup>
 import defaultSettings from "@/settings";
 import { useSettingsStore } from "@/store";
-import { checkSystemUpdate, startSystemUpdate, type SystemUpdateInfo } from "@/api/system/update";
+import { checkSystemUpdate, getSystemUpdateStatus, startSystemUpdate, type SystemUpdateInfo, type SystemUpdateStatus } from "@/api/system/update";
 
 const settingsStore = useSettingsStore();
 
@@ -32,6 +43,11 @@ defineProps({
 const logo = ref(new URL(`../../../../assets/logo.png`, import.meta.url).href);
 const updateInfo = ref<SystemUpdateInfo>();
 const updating = ref(false);
+const updateProgressVisible = ref(false);
+const updateStatus = ref<SystemUpdateStatus>();
+const updateFailed = computed(() => updateStatus.value?.state === "failed");
+let updatePollTimer: ReturnType<typeof setTimeout> | undefined;
+let updateStartedAt = 0;
 
 async function loadUpdateInfo() {
   try {
@@ -55,14 +71,49 @@ async function confirmUpdate() {
   }
   updating.value = true;
   try {
-    await startSystemUpdate();
-    ElMessage.success("已开始升级，服务正在重启");
+    const { data } = await startSystemUpdate();
+    updateStatus.value = data;
+    updateProgressVisible.value = true;
+    updateStartedAt = Date.now();
+    pollUpdateStatus(500);
   } catch {
     updating.value = false;
   }
 }
 
+function stopUpdatePolling() {
+  if (updatePollTimer) clearTimeout(updatePollTimer);
+  updatePollTimer = undefined;
+}
+
+function pollUpdateStatus(delay = 1500) {
+  stopUpdatePolling();
+  updatePollTimer = setTimeout(async () => {
+    if (updateStartedAt && Date.now() - updateStartedAt > 15 * 60 * 1000) {
+      updateStatus.value = { ...(updateStatus.value as SystemUpdateStatus), state: "failed", message: "升级超时，请检查服务状态和后台日志" };
+      updating.value = false;
+      return;
+    }
+    try {
+      const { data } = await getSystemUpdateStatus();
+      updateStatus.value = data;
+      if (data.state === "completed") {
+        window.setTimeout(() => window.location.reload(), 900);
+        return;
+      }
+      if (data.state === "failed") {
+        updating.value = false;
+        return;
+      }
+    } catch {
+      // 服务重启时请求暂时失败是正常现象，继续轮询即可。
+    }
+    pollUpdateStatus(updateStatus.value?.state === "restarting" ? 2000 : 1200);
+  }, delay);
+}
+
 onMounted(loadUpdateInfo);
+onBeforeUnmount(stopUpdatePolling);
 </script>
 
 <style lang="scss" scoped>
@@ -101,4 +152,14 @@ onMounted(loadUpdateInfo);
     &.collapsed { position: absolute; top: 4px; right: 2px; margin: 0; padding: 1px 5px; }
   }
 }
+
+:deep(.sidebar-update-dialog .el-dialog__body) { padding: 30px; }
+.update-progress { display:flex; flex-direction:column; align-items:center; text-align:center; gap:10px; }
+.update-progress h3 { margin:2px 0 0; font-size:19px; }
+.update-progress p, .update-progress small { margin:0; color:var(--el-text-color-secondary); line-height:1.6; }
+.update-progress .el-progress { width:100%; margin:8px 0 2px; }
+.version-line { padding:6px 10px; border-radius:6px; color:var(--el-text-color-regular); background:var(--el-fill-color-light); font:13px ui-monospace, SFMono-Regular, Menlo, monospace; }
+.version-line span { margin:0 7px; color:var(--el-color-primary); }
+.update-spinner { width:36px; height:36px; border:3px solid var(--el-color-primary-light-7); border-top-color:var(--el-color-primary); border-radius:50%; animation:update-spin .8s linear infinite; }
+@keyframes update-spin { to { transform:rotate(360deg); } }
 </style>
