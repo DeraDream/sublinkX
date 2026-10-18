@@ -153,7 +153,22 @@ onBeforeUnmount(stopUpdatePolling);
   }
 }
 
-:deep(.sidebar-update-dialog .el-dialog__body) { padding: 30px; }
+/* This dialog must size to its progress content.  Keep it isolated from the
+   full-height editor dialog used by Template Management. */
+:deep(.sidebar-update-dialog) {
+  display: block !important;
+  box-sizing: border-box;
+  width: min(430px, calc(100vw - 36px));
+  height: auto !important;
+  min-height: 0 !important;
+  max-height: calc(100dvh - 48px);
+  margin: auto !important;
+}
+:deep(.sidebar-update-dialog .el-dialog__body) {
+  max-height: none;
+  padding: 30px;
+  overflow: visible;
+}
 .update-progress { display:flex; flex-direction:column; align-items:center; text-align:center; gap:10px; }
 .update-progress h3 { margin:2px 0 0; font-size:19px; }
 .update-progress p, .update-progress small { margin:0; color:var(--el-text-color-secondary); line-height:1.6; }

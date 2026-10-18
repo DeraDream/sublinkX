@@ -1439,9 +1439,8 @@ loadList();
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 18px;
-  height: calc(100dvh - 220px);
   min-height: 0;
-  flex: none;
+  flex: 1;
 }
 .panel {
   display: flex;
@@ -1747,12 +1746,29 @@ loadList();
 }
 @media (min-width: 901px) {
   :global(.editor-dialog) {
+    /* The overlay already owns the 24px viewport gutter.  Keep the dialog
+       inside that box, otherwise header/body heights are added to `height`. */
+    display: flex;
+    box-sizing: border-box;
     height: calc(100dvh - 48px);
-    margin-bottom: 0;
+    min-height: 0;
+    flex-direction: column;
+    margin: 0 auto !important;
+  }
+  :global(.editor-dialog .el-dialog__header) {
+    flex: none;
   }
   :global(.editor-dialog .el-dialog__body) {
+    display: flex;
     box-sizing: border-box;
+    /* The application-wide dialog rule caps bodies at 680px.  This editor is
+       intentionally viewport-sized, so that cap would leave a blank lower half. */
+    max-height: none;
+    min-height: 0;
+    flex: 1;
+    flex-direction: column;
     padding: 0 24px 24px;
+    overflow: hidden;
   }
 }
 @media (max-width: 900px) {
