@@ -61,10 +61,16 @@ func TestBackupArchiveRoundTrip(t *testing.T) {
 	if err := os.MkdirAll("template/nested", 0700); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.MkdirAll("rule_templates", 0700); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile("db/config.yaml", []byte("jwt_secret: test\nexpire_days: 14\nport: 8000\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile("template/nested/test.yaml", []byte("mode: rule\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile("rule_templates/managed.yaml", []byte("proxy-groups: []\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
 	db, err := gorm.Open(sqlite.Open("db/sublink.db"), &gorm.Config{})
@@ -104,6 +110,10 @@ func TestBackupArchiveRoundTrip(t *testing.T) {
 	data, err := os.ReadFile(filepath.Join(restored, "template/nested/test.yaml"))
 	if err != nil || string(data) != "mode: rule\n" {
 		t.Fatalf("template was not restored: %v", err)
+	}
+	managed, err := os.ReadFile(filepath.Join(restored, "rule_templates/managed.yaml"))
+	if err != nil || string(managed) != "proxy-groups: []\n" {
+		t.Fatalf("managed template was not restored: %v", err)
 	}
 }
 

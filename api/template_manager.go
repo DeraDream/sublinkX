@@ -26,12 +26,14 @@ import (
 type VisualTemplate struct {
 	File      string `json:"file"`
 	UpdatedAt string `json:"updated_at"`
+	Type      string `json:"type"`
 }
 
 type visualTemplatePayload struct {
 	Filename string `json:"filename"`
 	OldName  string `json:"old_name"`
 	Content  string `json:"content"`
+	Type     string `json:"type"`
 }
 
 type visualTemplateFetchPayload struct {
@@ -67,8 +69,8 @@ func visualTemplatePath(filename string) (string, error) {
 	if filepath.Ext(filename) == "" {
 		filename += ".yaml"
 	}
-	if !isYAMLTemplateFilename(filename) {
-		return "", errors.New("可视化模板仅支持 .yaml 或 .yml 文件")
+	if !isVisualTemplateFilename(filename) {
+		return "", errors.New("可视化模板仅支持 .yaml、.yml 或 .conf 文件")
 	}
 	clean := filepath.Clean(filename)
 	if clean == "." || clean == ".." || strings.ContainsAny(clean, "/\\") {
@@ -82,6 +84,39 @@ func visualTemplatePath(filename string) (string, error) {
 	return path, nil
 }
 
+func isVisualTemplateFilename(filename string) bool {
+	return isYAMLTemplateFilename(filename) || strings.EqualFold(filepath.Ext(filename), ".conf")
+}
+
+// detectVisualTemplateType intentionally uses content before the filename:
+// both Clash/Mihomo and Egern use YAML, so an extension alone is ambiguous.
+func detectVisualTemplateType(filename, content string) string {
+	if strings.EqualFold(filepath.Ext(filename), ".conf") || strings.Contains(content, "[Proxy Group]") {
+		return "loon"
+	}
+	if strings.Contains(content, "policy_groups:") {
+		return "egern"
+	}
+	return "clash"
+}
+
+func validateVisualTemplate(filename, content, requestedType string) (string, error) {
+	kind := detectVisualTemplateType(filename, content)
+	if requestedType != "" && requestedType != kind {
+		return "", fmt.Errorf("模板类型与内容不一致：当前内容识别为 %s", kind)
+	}
+	if kind == "loon" {
+		if !strings.Contains(content, "[") || !strings.Contains(content, "]") {
+			return "", errors.New("Loon 配置至少需要一个 INI 分段，例如 [Proxy Group]")
+		}
+		return kind, nil
+	}
+	if err := validateYAMLTemplate(filename, content); err != nil {
+		return "", err
+	}
+	return kind, nil
+}
+
 func visualTemplateJSON(c *gin.Context) (visualTemplatePayload, bool) {
 	var payload visualTemplatePayload
 	if err := c.ShouldBindJSON(&payload); err != nil {
@@ -90,6 +125,7 @@ func visualTemplateJSON(c *gin.Context) (visualTemplatePayload, bool) {
 	}
 	payload.Filename = strings.TrimSpace(payload.Filename)
 	payload.OldName = strings.TrimSpace(payload.OldName)
+	payload.Type = strings.TrimSpace(payload.Type)
 	return payload, true
 }
 
@@ -105,14 +141,18 @@ func ListVisualTemplates(c *gin.Context) {
 	}
 	items := make([]VisualTemplate, 0)
 	for _, entry := range entries {
-		if entry.IsDir() || !isYAMLTemplateFilename(entry.Name()) {
+		if entry.IsDir() || !isVisualTemplateFilename(entry.Name()) {
 			continue
 		}
 		info, err := entry.Info()
 		if err != nil || info.Mode()&os.ModeSymlink != 0 {
 			continue
 		}
-		items = append(items, VisualTemplate{File: entry.Name(), UpdatedAt: utils.FormatBeijingTime(info.ModTime())})
+		content, err := os.ReadFile(filepath.Join(visualTemplateDir, entry.Name()))
+		if err != nil {
+			continue
+		}
+		items = append(items, VisualTemplate{File: entry.Name(), UpdatedAt: utils.FormatBeijingTime(info.ModTime()), Type: detectVisualTemplateType(entry.Name(), string(content))})
 	}
 	sort.Slice(items, func(i, j int) bool { return items[i].File < items[j].File })
 	c.JSON(200, gin.H{"code": "00000", "data": items, "msg": "ok"})
@@ -134,7 +174,7 @@ func GetVisualTemplate(c *gin.Context) {
 		c.JSON(500, gin.H{"msg": "无法读取模板"})
 		return
 	}
-	c.JSON(200, gin.H{"code": "00000", "data": gin.H{"file": filepath.Base(path), "content": string(content)}, "msg": "ok"})
+	c.JSON(200, gin.H{"code": "00000", "data": gin.H{"file": filepath.Base(path), "content": string(content), "type": detectVisualTemplateType(filepath.Base(path), string(content))}, "msg": "ok"})
 }
 
 func CreateVisualTemplate(c *gin.Context) {
@@ -151,7 +191,7 @@ func CreateVisualTemplate(c *gin.Context) {
 		c.JSON(400, gin.H{"msg": "模板内容不能为空"})
 		return
 	}
-	if err := validateYAMLTemplate(path, payload.Content); err != nil {
+	if _, err := validateVisualTemplate(path, payload.Content, payload.Type); err != nil {
 		c.JSON(400, gin.H{"msg": err.Error()})
 		return
 	}
@@ -192,7 +232,7 @@ func UpdateVisualTemplate(c *gin.Context) {
 		c.JSON(400, gin.H{"msg": "模板内容不能为空"})
 		return
 	}
-	if err := validateYAMLTemplate(newPath, payload.Content); err != nil {
+	if _, err := validateVisualTemplate(newPath, payload.Content, payload.Type); err != nil {
 		c.JSON(400, gin.H{"msg": err.Error()})
 		return
 	}

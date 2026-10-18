@@ -174,23 +174,33 @@ func buildBackupArchive() ([]byte, error) {
 	if err := addTarFile(tw, "db/config.yaml", "./db/config.yaml"); err != nil {
 		return nil, err
 	}
-	err := filepath.WalkDir("./template", func(path string, entry os.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
+	addTemplateDir := func(directory string) error {
+		return filepath.WalkDir(directory, func(path string, entry os.DirEntry, walkErr error) error {
+			if walkErr != nil {
+				return walkErr
+			}
+			if entry.IsDir() {
+				return nil
+			}
+			if entry.Type()&os.ModeSymlink != 0 {
+				return fmt.Errorf("模板目录不能包含符号链接")
+			}
+			rel, err := filepath.Rel(".", path)
+			if err != nil {
+				return err
+			}
+			manifest.Files = append(manifest.Files, filepath.ToSlash(rel))
+			return addTarFile(tw, filepath.ToSlash(rel), path)
+		})
+	}
+	err := addTemplateDir("./template")
+	if err == nil {
+		if _, statErr := os.Stat("./rule_templates"); statErr == nil {
+			err = addTemplateDir("./rule_templates")
+		} else if !os.IsNotExist(statErr) {
+			err = statErr
 		}
-		if entry.IsDir() {
-			return nil
-		}
-		if entry.Type()&os.ModeSymlink != 0 {
-			return fmt.Errorf("模板目录不能包含符号链接")
-		}
-		rel, err := filepath.Rel(".", path)
-		if err != nil {
-			return err
-		}
-		manifest.Files = append(manifest.Files, filepath.ToSlash(rel))
-		return addTarFile(tw, filepath.ToSlash(rel), path)
-	})
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -332,7 +342,7 @@ func unpackBackup(archive []byte, dir string) error {
 		if totalSize > backupMaxSize {
 			return errors.New("备份解压后过大")
 		}
-		allowed := name == "manifest.json" || name == "db/sublink.db" || name == "db/config.yaml" || strings.HasPrefix(name, "template/")
+		allowed := name == "manifest.json" || name == "db/sublink.db" || name == "db/config.yaml" || strings.HasPrefix(name, "template/") || strings.HasPrefix(name, "rule_templates/")
 		if !allowed {
 			return errors.New("备份包含未知文件")
 		}
@@ -362,7 +372,10 @@ func unpackBackup(archive []byte, dir string) error {
 	if _, err := backupConfig(dir); err != nil {
 		return errors.New("备份配置无效")
 	}
-	return os.MkdirAll(filepath.Join(dir, "template"), 0700)
+	if err := os.MkdirAll(filepath.Join(dir, "template"), 0700); err != nil {
+		return err
+	}
+	return os.MkdirAll(filepath.Join(dir, "rule_templates"), 0700)
 }
 
 func validateBackupDatabase(path string) error {
@@ -411,11 +424,16 @@ func restoreBackup(dir string) error {
 	if err := copyExistingDir("./template", filepath.Join(rollback, "template")); err != nil {
 		return err
 	}
+	if err := copyExistingDir("./rule_templates", filepath.Join(rollback, "rule_templates")); err != nil {
+		return err
+	}
 	restoreOld := func() {
 		_ = copyFileAtomic(filepath.Join(rollback, "sublink.db"), "./db/sublink.db", 0600)
 		_ = copyFileAtomic(filepath.Join(rollback, "config.yaml"), "./db/config.yaml", 0600)
 		_ = os.RemoveAll("./template")
 		_ = copyDir(filepath.Join(rollback, "template"), "./template")
+		_ = os.RemoveAll("./rule_templates")
+		_ = copyDir(filepath.Join(rollback, "rule_templates"), "./rule_templates")
 	}
 	if err := copyFileAtomic(filepath.Join(dir, "db/sublink.db"), "./db/sublink.db", 0600); err != nil {
 		restoreOld()
@@ -430,6 +448,14 @@ func restoreBackup(dir string) error {
 		return err
 	}
 	if err := copyDir(filepath.Join(dir, "template"), "./template"); err != nil {
+		restoreOld()
+		return err
+	}
+	if err := os.RemoveAll("./rule_templates"); err != nil {
+		restoreOld()
+		return err
+	}
+	if err := copyDir(filepath.Join(dir, "rule_templates"), "./rule_templates"); err != nil {
 		restoreOld()
 		return err
 	}

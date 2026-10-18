@@ -2,6 +2,8 @@
 import { computed, nextTick, ref, watch } from "vue";
 import { parseDocument, stringify } from "yaml";
 import YamlEditor from "@/components/YamlEditor/index.vue";
+import EgernVisualEditor from "./components/EgernVisualEditor.vue";
+import LoonVisualEditor from "./components/LoonVisualEditor.vue";
 import { getTemp } from "@/api/subcription/temp";
 import {
   createVisualTemplate,
@@ -19,6 +21,7 @@ type Group = Record<string, any> & {
   proxies?: string[];
 };
 type Legacy = { file: string; text: string };
+type TemplateKind = "clash" | "egern" | "loon";
 const templates = ref<VisualTemplateItem[]>([]);
 const legacy = ref<Legacy[]>([]);
 const createVisible = ref(false),
@@ -26,6 +29,7 @@ const createVisible = ref(false),
   loading = ref(false),
   saving = ref(false);
 const createMode = ref<"blank" | "import" | "paste" | "subscription">("blank"),
+  createType = ref<TemplateKind>("clash"),
   importedFile = ref(""),
   pastedYaml = ref(""),
   subscriptionURL = ref(""),
@@ -39,6 +43,7 @@ const cleanYamlText = ref("");
 const root = ref<Record<string, any>>({}),
   groups = ref<Group[]>([]);
 const mode = ref<"visual" | "yaml">("visual"),
+  templateType = ref<TemplateKind>("clash"),
   parseError = ref(""),
   visualReady = ref(false),
   dirty = ref(false),
@@ -368,6 +373,7 @@ const names = computed(() =>
   groups.value.map((group) => group.name).filter(Boolean)
 );
 const previewYaml = computed(() => {
+  if (templateType.value !== "clash") return yamlText.value;
   const doc = parseDocument(yamlText.value, {
     prettyErrors: false,
     strict: true,
@@ -381,6 +387,8 @@ const previewYaml = computed(() => {
     { lineWidth: 0 }
   );
 });
+const codeModeLabel = computed(() => templateType.value === "loon" ? "配置代码" : "YAML 代码");
+const previewTitle = computed(() => templateType.value === "clash" ? "代理组配置预览" : templateType.value === "egern" ? "Egern 配置预览" : "Loon 配置预览");
 const blank = () => ({
   "mixed-port": 7890,
   "allow-lan": false,
@@ -389,21 +397,41 @@ const blank = () => ({
   "proxy-groups": [],
   rules: ["MATCH,DIRECT"],
 });
+const blankEgern = () => ({ policy_groups: [], rules: [{ default: { policy: "DIRECT" } }] });
+const blankLoon = () => "[Proxy]\n__LOON_PROXY_ENTRIES__\n\n[Proxy Group]\n🚀 节点选择 = select,__LOON_ALL_NODES__,DIRECT\n\n[Rule]\nFINAL,🚀 节点选择\n";
+function detectTemplateType(filename: string, content: string): TemplateKind {
+  if (/\.conf$/i.test(filename) || /\[Proxy Group\]/i.test(content)) return "loon";
+  if (/^\s*policy_groups\s*:/m.test(content)) return "egern";
+  return "clash";
+}
+function filenameForType(name: string, kind: TemplateKind) {
+  if (kind === "loon" && /\.ya?ml$/i.test(name)) return name.replace(/\.ya?ml$/i, ".conf");
+  if (kind !== "loon" && /\.conf$/i.test(name)) return name.replace(/\.conf$/i, ".yaml");
+  return /\.(ya?ml|conf)$/i.test(name) ? name : `${name}.${kind === "loon" ? "conf" : "yaml"}`;
+}
 
 function reset() {
   selectedFile.value = "";
   filename.value = "untitled.yaml";
-  root.value = blank();
+  templateType.value = createType.value;
+  root.value = templateType.value === "egern" ? blankEgern() : blank();
   groups.value = [];
   disabledRules.value = [];
   disabledRulePositions.value = [];
-  yamlText.value = stringify(root.value, { lineWidth: 0 });
+  yamlText.value = templateType.value === "loon" ? blankLoon() : stringify(root.value, { lineWidth: 0 });
   parseError.value = "";
   visualReady.value = true;
   mode.value = "visual";
   dirty.value = false;
 }
 function parse(showError = true) {
+  if (templateType.value === "loon") {
+    const valid = /^\s*\[[^\]]+\]/m.test(yamlText.value);
+    parseError.value = valid ? "" : "Loon 配置至少需要一个 INI 分段，例如 [Proxy Group]";
+    visualReady.value = valid;
+    if (!valid && showError) ElMessage.error(parseError.value);
+    return valid;
+  }
   const doc = parseDocument(yamlText.value, {
     prettyErrors: false,
     strict: true,
@@ -420,6 +448,19 @@ function parse(showError = true) {
     visualReady.value = false;
     if (showError) ElMessage.error(parseError.value);
     return false;
+  }
+  if (templateType.value === "egern") {
+    if (value.policy_groups !== undefined && !Array.isArray(value.policy_groups)) {
+      parseError.value = "policy_groups 必须是策略组数组";
+      visualReady.value = false;
+      if (showError) ElMessage.error(parseError.value);
+      return false;
+    }
+    root.value = value;
+    groups.value = [];
+    parseError.value = "";
+    visualReady.value = true;
+    return true;
   }
   const parsedGroups = value["proxy-groups"] || [];
   if (
@@ -455,7 +496,7 @@ function parse(showError = true) {
   return true;
 }
 function sync() {
-  if (syncing.value || !visualReady.value) return;
+  if (templateType.value !== "clash" || syncing.value || !visualReady.value) return;
   root.value["proxy-groups"] = groups.value.map((group) => {
     const item = { ...group };
     delete item["include-all"];
@@ -483,6 +524,7 @@ async function openCreate() {
   pastedYaml.value = "";
   subscriptionURL.value = "";
   createFilename.value = "untitled.yaml";
+  createType.value = "clash";
   createVisible.value = true;
   const { data } = await getTemp();
   legacy.value = (data || []).filter((item: Legacy) =>
@@ -522,7 +564,7 @@ async function create() {
   }
   const content =
     createMode.value === "blank"
-      ? stringify(blank(), { lineWidth: 0 })
+      ? createType.value === "loon" ? blankLoon() : stringify(createType.value === "egern" ? blankEgern() : blank(), { lineWidth: 0 })
       : pastedYaml.value;
   if (!content.trim()) {
     ElMessage.warning(
@@ -530,14 +572,10 @@ async function create() {
     );
     return;
   }
-  const doc = parseDocument(content, { prettyErrors: false, strict: true });
-  if (doc.errors.length) {
-    ElMessage.error(`YAML 格式错误：${doc.errors[0].message}`);
-    return;
-  }
+  if (createType.value !== "loon") { const doc = parseDocument(content, { prettyErrors: false, strict: true }); if (doc.errors.length) { ElMessage.error(`YAML 格式错误：${doc.errors[0].message}`); return; } }
   creating.value = true;
   try {
-    await createVisualTemplate({ filename: name, content });
+    await createVisualTemplate({ filename: filenameForType(name, createType.value), content, type: createType.value });
     await loadList();
     createVisible.value = false;
     ElMessage.success("模板已创建，请从列表点击编辑");
@@ -552,6 +590,7 @@ async function edit(file: string) {
     selectedFile.value = data.file;
     filename.value = data.file;
     yamlText.value = data.content;
+    templateType.value = data.type || detectTemplateType(data.file, data.content);
     parse(false);
     mode.value = visualReady.value ? "visual" : "yaml";
     dirty.value = false;
@@ -781,6 +820,7 @@ function switchMode(value: string | number | boolean | undefined) {
   if (value === "visual" && !parse()) return;
   mode.value = value;
 }
+function onExternalVisualChange() { dirty.value = true; }
 async function copyPreview() {
   try {
     await navigator.clipboard.writeText(previewYaml.value);
@@ -806,10 +846,10 @@ async function save() {
   const groupNames = groups.value
     .map((item) => item.name.trim())
     .filter(Boolean);
-  if (
+  if (templateType.value === "clash" && (
     groupNames.length !== groups.value.length ||
     new Set(groupNames).size !== groupNames.length
-  ) {
+  )) {
     ElMessage.error("每个代理组都需要唯一的名称");
     return;
   }
@@ -817,13 +857,14 @@ async function save() {
   try {
     if (selectedFile.value)
       await updateVisualTemplate({
-        filename: name,
+        filename: filenameForType(name, templateType.value),
         old_name: selectedFile.value,
         content: yamlText.value,
+        type: templateType.value,
       });
     else
-      await createVisualTemplate({ filename: name, content: yamlText.value });
-    selectedFile.value = /.ya?ml$/i.test(name) ? name : `${name}.yaml`;
+      await createVisualTemplate({ filename: filenameForType(name, templateType.value), content: yamlText.value, type: templateType.value });
+    selectedFile.value = filenameForType(name, templateType.value);
     filename.value = selectedFile.value;
     cleanYamlText.value = yamlText.value;
     dirty.value = false;
@@ -872,7 +913,7 @@ loadList();
     <header class="page-heading">
       <div>
         <h1>模板管理</h1>
-        <p>创建或导入 Clash / Mihomo 模板，再进入可视化编辑。</p>
+        <p>创建或导入 Clash/Mihomo、Egern、Loon 模板，再进入各自独立的可视化编辑器。</p>
       </div>
       <el-button type="primary" @click="openCreate">新建模板</el-button>
     </header>
@@ -880,7 +921,7 @@ loadList();
       <el-table :data="templates" empty-text="暂无模板，点击右上角新建模板"
         ><el-table-column prop="file" label="模板名称" min-width="360"
           ><template #default="{ row }"
-            ><strong>{{ row.file }}</strong></template
+            ><strong>{{ row.file }}</strong><el-tag size="small" class="template-kind">{{ row.type === "egern" ? "Egern" : row.type === "loon" ? "Loon" : "Clash / Mihomo" }}</el-tag></template
           ></el-table-column
         ><el-table-column
           prop="updated_at"
@@ -912,6 +953,7 @@ loadList();
           ><el-input
             v-model="createFilename"
             placeholder="例如 my-template.yaml" /></el-form-item
+        ><el-form-item label="模板类型"><el-radio-group v-model="createType"><el-radio-button value="clash">Clash / Mihomo</el-radio-button><el-radio-button value="egern">Egern</el-radio-button><el-radio-button value="loon">Loon</el-radio-button></el-radio-group></el-form-item
       ></el-form>
       <el-radio-group v-model="createMode" class="create-tabs"
         ><el-radio-button value="blank">创建空白模板</el-radio-button
@@ -926,7 +968,7 @@ loadList();
           type="info"
           :closable="false"
           show-icon
-          title="会创建基础 Clash/Mihomo YAML；之后可在可视化编辑器添加代理组。"
+          :title="createType === 'loon' ? '会创建基础 Loon .conf（INI）配置。' : createType === 'egern' ? '会创建基础 Egern YAML；之后可编辑策略组和规则。' : '会创建基础 Clash/Mihomo YAML；之后可在可视化编辑器添加代理组。'"
         />
       </div>
       <div v-else-if="createMode === 'import'" class="create-option">
@@ -952,12 +994,12 @@ loadList();
       </div>
       <div v-else-if="createMode === 'paste'" class="create-option">
         <el-form label-position="top"
-          ><el-form-item label="粘贴 YAML 内容"
+          ><el-form-item :label="createType === 'loon' ? '粘贴 Loon CONF 内容' : '粘贴 YAML 内容'"
             ><el-input
               v-model="pastedYaml"
               type="textarea"
               :rows="7"
-              placeholder="粘贴 Clash / Mihomo YAML 配置" /></el-form-item
+              :placeholder="createType === 'loon' ? '粘贴 Loon INI / CONF 配置' : createType === 'egern' ? '粘贴 Egern YAML 配置' : '粘贴 Clash / Mihomo YAML 配置'" /></el-form-item
         ></el-form>
       </div>
       <div v-else class="create-option">
@@ -983,7 +1025,7 @@ loadList();
           type="warning"
           :closable="false"
           show-icon
-          title="仅支持可直接返回 Clash/Mihomo YAML 的 HTTP(S) 地址；本地和私有网络地址会被拒绝。"
+          title="支持直接返回所选模板类型的 HTTP(S) 地址；本地和私有网络地址会被拒绝。"
         />
       </div>
       <template #footer
@@ -1038,11 +1080,11 @@ loadList();
             <el-radio-group :model-value="mode" @change="switchMode"
               ><el-radio-button value="visual">可视化编辑</el-radio-button
               ><el-radio-button value="yaml"
-                >YAML 代码</el-radio-button
+                >{{ codeModeLabel }}</el-radio-button
               ></el-radio-group
             >
           </div>
-          <template v-if="mode === 'visual' && visualReady"
+          <template v-if="mode === 'visual' && visualReady && templateType === 'clash'"
             ><div class="panel-title">
               <span
                 >代理组配置 <em>{{ groups.length }}</em></span
@@ -1269,14 +1311,18 @@ loadList();
                 </article>
               </div></el-scrollbar
             ></template
+          ><template v-else-if="mode === 'visual' && visualReady && templateType === 'egern'"
+            ><EgernVisualEditor v-model="yamlText" @update:model-value="onExternalVisualChange" @error="parseError = $event" /></template
+          ><template v-else-if="mode === 'visual' && visualReady && templateType === 'loon'"
+            ><LoonVisualEditor v-model="yamlText" @update:model-value="onExternalVisualChange" @error="parseError = $event" /></template
           ><template v-else
-            ><div class="panel-title">YAML 代码</div>
+            ><div class="panel-title">{{ codeModeLabel }}</div>
             <YamlEditor v-model="yamlText"
           /></template>
         </section>
         <section class="panel preview">
           <div class="panel-title">
-            <span>代理组配置预览</span>
+            <span>{{ previewTitle }}</span>
             <div class="preview-actions">
               <el-button link title="复制预览" @click="copyPreview"
                 >复制</el-button
@@ -1378,7 +1424,9 @@ loadList();
 
 <style scoped>
 .manager-list {
-  min-height: 360px;
+  /* Let the surface follow the table's actual rows instead of reserving a
+     dashboard-sized empty panel when only one template exists. */
+  min-height: 0;
 }
 .intro {
   margin: 0 0 16px;

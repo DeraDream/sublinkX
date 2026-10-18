@@ -30,3 +30,27 @@ func TestValidateYAMLTemplateSkipsNonYAMLFiles(t *testing.T) {
 		t.Fatalf("validateYAMLTemplate() error = %v, want nil for non-yaml", err)
 	}
 }
+
+func TestDetectVisualTemplateType(t *testing.T) {
+	cases := []struct {
+		name, file, content, want string
+	}{
+		{"clash yaml", "profile.yaml", "proxy-groups: []\n", "clash"},
+		{"egern yaml", "profile.yaml", "policy_groups: []\nrules: []\n", "egern"},
+		{"loon conf", "profile.conf", "[Proxy Group]\nA = select,DIRECT\n", "loon"},
+		{"loon content despite yaml name", "profile.yaml", "[Proxy Group]\nA = select,DIRECT\n", "loon"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := detectVisualTemplateType(tc.file, tc.content); got != tc.want {
+				t.Fatalf("detectVisualTemplateType() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestValidateVisualTemplateLoonRequiresSection(t *testing.T) {
+	if _, err := validateVisualTemplate("profile.conf", "DOMAIN,example.com,DIRECT", "loon"); err == nil {
+		t.Fatal("validateVisualTemplate() accepted a Loon document without INI sections")
+	}
+}

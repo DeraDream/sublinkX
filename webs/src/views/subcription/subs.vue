@@ -10,6 +10,7 @@ import {
   PreviewSub,
 } from "@/api/subcription/subs";
 import { getTemp } from "@/api/subcription/temp";
+import { getVisualTemplate, listVisualTemplates, type VisualTemplateItem } from "@/api/template-manager";
 import { getNodes, setNodeDisabled } from "@/api/subcription/node";
 import { beijingTimestamp, formatBeijingTime } from "@/utils/time";
 import { useDraggableTableRows } from "@/utils/table-drag";
@@ -17,6 +18,7 @@ import { useAppStore } from "@/store";
 import { DeviceEnum } from "@/enums/DeviceEnum";
 import QrcodeVue from "qrcode.vue";
 import { VueDraggable } from "vue-draggable-plus";
+import TemplateSourcePicker from "./components/TemplateSourcePicker.vue";
 
 interface Sub {
   ID: number;
@@ -78,6 +80,7 @@ interface Temp {
   text: string;
   CreateDate?: string;
 }
+interface ManagedTemplate extends VisualTemplateItem { text: string }
 
 const tableData = ref<Sub[]>([]);
 const table = ref();
@@ -85,6 +88,7 @@ const appStore = useAppStore();
 const isMobile = computed(() => appStore.device === DeviceEnum.MOBILE);
 const NodesList = ref<Node[]>([]);
 const templist = ref<Temp[]>([]);
+const managedTemplist = ref<ManagedTemplate[]>([]);
 const multipleSelection = ref<Sub[]>([]);
 const subscriptionSortMode = ref(false);
 
@@ -109,10 +113,10 @@ const clashTemplateSelectRef = ref<{ blur: () => void }>();
 const surgeTemplateSelectRef = ref<{ blur: () => void }>();
 const egernTemplateSelectRef = ref<{ blur: () => void }>();
 const loonTemplateSelectRef = ref<{ blur: () => void }>();
-const clashTemplateMode = ref<"local" | "url">("local");
+const clashTemplateMode = ref<"local" | "managed" | "url">("local");
 const surgeTemplateMode = ref<"local" | "url">("local");
-const egernTemplateMode = ref<"local" | "url">("local");
-const loonTemplateMode = ref<"local" | "url">("local");
+const egernTemplateMode = ref<"local" | "managed" | "url">("local");
+const loonTemplateMode = ref<"local" | "managed" | "url">("local");
 const checkList = ref<string[]>([]);
 
 const value1 = ref<number[]>([]);
@@ -170,6 +174,16 @@ async function getsubs() {
 async function gettemps() {
   const { data } = await getTemp();
   templist.value = data;
+  try {
+    const { data: managed } = await listVisualTemplates();
+    managedTemplist.value = await Promise.all((managed || []).map(async (item: VisualTemplateItem) => {
+      const { data: detail } = await getVisualTemplate(item.file);
+      return { ...item, text: detail.content };
+    }));
+  } catch {
+    // Older servers may not expose template management yet; original templates remain usable.
+    managedTemplist.value = [];
+  }
 }
 
 async function getnodes() {
@@ -292,14 +306,23 @@ const defaultTemplate = (keyword: string, fallback: string) => {
 
 const localTemplateText = (value: string) => {
   const filename = value.replace(/^\.\/template\//, "");
+  if (/^\.\/rule_templates\//.test(value)) {
+    return managedTemplist.value.find((item) => item.file === value.replace(/^\.\/rule_templates\//, ""))?.text || "";
+  }
   return templist.value.find((item) => item.file === filename)?.text || "";
 };
 
 const templateDisplayName = (value: string) => {
   if (!value) return "未选择模板";
   if (/^https?:\/\//i.test(value)) return value;
-  return value.replace(/^\.\/template\//, "");
+  return value.replace(/^\.\/(template|rule_templates)\//, "");
 };
+
+const managedByType = (type: "clash" | "egern" | "loon") =>
+  computed(() => managedTemplist.value.filter((item) => item.type === type));
+const clashManagedTemplates = managedByType("clash");
+const egernManagedTemplates = managedByType("egern");
+const loonManagedTemplates = managedByType("loon");
 
 const uniqueStrings = (items: string[]) =>
   Array.from(new Set(items.map((item) => item.trim()).filter(Boolean)));
@@ -554,7 +577,9 @@ const inferSubscriptionOutputType = (
   return "clash";
 };
 
-const inferTemplateMode = (value: string) =>
+const inferTemplateMode = (value: string): "local" | "managed" | "url" =>
+  /^https?:\/\//i.test(value) ? "url" : /^\.\/rule_templates\//.test(value) ? "managed" : "local";
+const inferBasicTemplateMode = (value: string): "local" | "url" =>
   /^https?:\/\//i.test(value) ? "url" : "local";
 
 const resetWizardForm = () => {
@@ -571,7 +596,7 @@ const resetWizardForm = () => {
   Egern.value = defaultTemplate("egern", "./template/egern.yaml");
   Loon.value = defaultTemplate("loon", "./template/loon.conf");
   clashTemplateMode.value = inferTemplateMode(Clash.value);
-  surgeTemplateMode.value = inferTemplateMode(Surge.value);
+  surgeTemplateMode.value = inferBasicTemplateMode(Surge.value);
   egernTemplateMode.value = inferTemplateMode(Egern.value);
   loonTemplateMode.value = inferTemplateMode(Loon.value);
   groupNodesTemplate.value = selectedTemplateSource.value;
@@ -615,7 +640,7 @@ const handleEdit = (row: any) => {
     config.egern || defaultTemplate("egern", "./template/egern.yaml");
   Loon.value = config.loon || defaultTemplate("loon", "./template/loon.conf");
   clashTemplateMode.value = inferTemplateMode(Clash.value);
-  surgeTemplateMode.value = inferTemplateMode(Surge.value);
+  surgeTemplateMode.value = inferBasicTemplateMode(Surge.value);
   egernTemplateMode.value = inferTemplateMode(Egern.value);
   loonTemplateMode.value = inferTemplateMode(Loon.value);
   groupNodesTemplate.value =
@@ -1253,34 +1278,8 @@ const importLoon = (subscriptionURL: string) => {
           <article v-if="OutputType === 'clash'" class="template-card">
             <div class="template-card-head">
               <strong>Clash</strong>
-              <el-radio-group
-                v-model="clashTemplateMode"
-                class="flat-segmented"
-                size="small"
-              >
-                <el-radio-button value="local">本地模板</el-radio-button>
-                <el-radio-button value="url">URL</el-radio-button>
-              </el-radio-group>
             </div>
-            <el-select
-              v-if="clashTemplateMode === 'local'"
-              ref="clashTemplateSelectRef"
-              v-model="Clash"
-              placeholder="选择 Clash 模板"
-              @change="closeClashTemplateSelect"
-            >
-              <el-option
-                v-for="template in templist"
-                :key="template.file"
-                :label="template.file"
-                :value="'./template/' + template.file"
-              />
-            </el-select>
-            <el-input
-              v-else
-              v-model="Clash"
-              placeholder="输入 Clash 模板 URL"
-            />
+            <TemplateSourcePicker v-model="Clash" v-model:mode="clashTemplateMode" label="Clash" :local-templates="templist" :managed-templates="clashManagedTemplates" />
           </article>
 
           <article v-if="OutputType === 'surge'" class="template-card">
@@ -1319,34 +1318,8 @@ const importLoon = (subscriptionURL: string) => {
           <article v-if="OutputType === 'egern'" class="template-card">
             <div class="template-card-head">
               <strong>Egern</strong>
-              <el-radio-group
-                v-model="egernTemplateMode"
-                class="flat-segmented"
-                size="small"
-              >
-                <el-radio-button value="local">本地模板</el-radio-button>
-                <el-radio-button value="url">URL</el-radio-button>
-              </el-radio-group>
             </div>
-            <el-select
-              v-if="egernTemplateMode === 'local'"
-              ref="egernTemplateSelectRef"
-              v-model="Egern"
-              placeholder="选择 Egern 模板"
-              @change="closeEgernTemplateSelect"
-            >
-              <el-option
-                v-for="template in templist"
-                :key="template.file"
-                :label="template.file"
-                :value="'./template/' + template.file"
-              />
-            </el-select>
-            <el-input
-              v-else
-              v-model="Egern"
-              placeholder="输入 Egern 模板 URL"
-            />
+            <TemplateSourcePicker v-model="Egern" v-model:mode="egernTemplateMode" label="Egern" :local-templates="templist" :managed-templates="egernManagedTemplates" />
             <label class="field">
               <span class="field-label">自动更新间隔（分钟）</span>
               <el-input-number
@@ -1367,30 +1340,8 @@ const importLoon = (subscriptionURL: string) => {
           <article v-if="OutputType === 'loon'" class="template-card">
             <div class="template-card-head">
               <strong>Loon</strong>
-              <el-radio-group
-                v-model="loonTemplateMode"
-                class="flat-segmented"
-                size="small"
-              >
-                <el-radio-button value="local">本地模板</el-radio-button>
-                <el-radio-button value="url">URL</el-radio-button>
-              </el-radio-group>
             </div>
-            <el-select
-              v-if="loonTemplateMode === 'local'"
-              ref="loonTemplateSelectRef"
-              v-model="Loon"
-              placeholder="选择 Loon 模板"
-              @change="closeLoonTemplateSelect"
-            >
-              <el-option
-                v-for="template in templist"
-                :key="template.file"
-                :label="template.file"
-                :value="'./template/' + template.file"
-              />
-            </el-select>
-            <el-input v-else v-model="Loon" placeholder="输入 Loon 模板 URL" />
+            <TemplateSourcePicker v-model="Loon" v-model:mode="loonTemplateMode" label="Loon" :local-templates="templist" :managed-templates="loonManagedTemplates" />
             <small class="field-hint">
               默认模板已包含 [Proxy]，无需手动配置；自定义模板必须包含 [Proxy]。
             </small>

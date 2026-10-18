@@ -3,12 +3,14 @@ import request from "@/utils/request";
 export interface VisualTemplateItem {
   file: string;
   updated_at: string;
+  type: "clash" | "egern" | "loon";
 }
 
 export interface VisualTemplatePayload {
   filename: string;
   old_name?: string;
   content: string;
+  type?: "clash" | "egern" | "loon";
 }
 
 export const listVisualTemplates = () =>
