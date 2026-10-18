@@ -30,7 +30,7 @@ var embeddedFiles embed.FS
 var Template embed.FS
 
 // version is overridden from the release tag by GitHub Actions.
-var version = "4.51"
+var version = "4.52"
 
 func Templateinit() {
 	// 设置template路径
@@ -160,6 +160,7 @@ func Run(port int) {
 	routers.Clients(r)
 	routers.Total(r)
 	routers.Templates(r)
+	routers.TemplateManager(r)
 	routers.Telegram(r)
 	routers.Backup(r)
 	routers.Version(r, version)

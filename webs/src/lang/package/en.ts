@@ -10,6 +10,7 @@ export default {
     nodesublist: "Node Subscriptions",
     subcription: "Subscription Management",
     templatelist: "Template List",
+    templatemanager: "Template Manager",
     settingsmenu: "Settings",
     telegrambot: "Telegram Bot",
   },

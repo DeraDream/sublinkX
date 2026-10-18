@@ -136,6 +136,22 @@ func GetMenus(c *gin.Context) {
 			},
 		},
 		{
+			Path:      "/template-manager",
+			Component: "Layout",
+			Redirect:  "/template-manager/index",
+			Name:      "templateManager",
+			Meta: Meta{
+				Title:  "templatemanager",
+				Icon:   "edit",
+				Hidden: false,
+				Roles:  []string{"ADMIN"},
+			},
+			Children: []Child{{
+				Path: "index", Component: "template-manager/index", Name: "TemplateManager",
+				Meta: Meta{Title: "templatemanager", Icon: "edit", Roles: []string{"ADMIN"}, KeepAlive: true},
+			}},
+		},
+		{
 			Path:      "/templates",
 			Component: "Layout",
 			Redirect:  "/templates/index",

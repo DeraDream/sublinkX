@@ -10,6 +10,7 @@ export default {
     nodesublist: "节点订阅",
     subcription: "订阅管理",
     templatelist: "模板列表",
+    templatemanager: "模板管理",
     settingsmenu: "系统设置",
     telegrambot: "Telegram 机器人",
   },
