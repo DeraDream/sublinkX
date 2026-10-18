@@ -849,7 +849,9 @@ async function close(done?: () => void) {
     done?.();
   } catch {}
 }
-function requestClose() { return close(); }
+function requestClose() {
+  return close();
+}
 async function remove(file: string) {
   try {
     await ElMessageBox.confirm(`确定删除模板「${file}」吗？`, "删除模板", {
@@ -1424,7 +1426,6 @@ loadList();
   font-size: 13px;
 }
 .toolbar {
-  grid-row: 1;
   padding-bottom: 14px;
   border-bottom: 1px solid var(--el-border-color-lighter);
 }
@@ -1432,17 +1433,15 @@ loadList();
   max-width: 440px;
 }
 .parse-error {
-  grid-row: 2;
   margin: 14px 0;
 }
 .editor-layout {
-  grid-row: 3;
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 18px;
-  height: 0;
+  height: calc(100dvh - 220px);
   min-height: 0;
-  flex: 1 1 0;
+  flex: none;
 }
 .panel {
   display: flex;
@@ -1748,19 +1747,12 @@ loadList();
 }
 @media (min-width: 901px) {
   :global(.editor-dialog) {
-    display: grid;
     height: calc(100dvh - 48px);
     margin-bottom: 0;
-    grid-template-rows: auto minmax(0, 1fr);
   }
   :global(.editor-dialog .el-dialog__body) {
     box-sizing: border-box;
-    display: grid;
-    height: 100%;
-    min-height: 0 !important;
-    overflow: hidden;
     padding: 0 24px 24px;
-    grid-template-rows: auto auto minmax(0, 1fr);
   }
 }
 @media (max-width: 900px) {
