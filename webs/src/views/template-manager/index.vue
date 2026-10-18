@@ -44,6 +44,7 @@ const mode = ref<"visual" | "yaml">("visual"),
   syncing = ref(false);
 const expandedGroups = ref<number[]>([]);
 const expandedRules = ref<number[]>([]);
+const disabledRules = ref<string[]>([]);
 const ruleEditorVisible = ref(false),
   editingRuleIndex = ref<number | null>(null),
   ruleTarget = ref("");
@@ -386,6 +387,7 @@ function reset() {
   filename.value = "untitled.yaml";
   root.value = blank();
   groups.value = [];
+  disabledRules.value = [];
   yamlText.value = stringify(root.value, { lineWidth: 0 });
   parseError.value = "";
   visualReady.value = true;
@@ -420,10 +422,21 @@ function parse(showError = true) {
     if (showError) ElMessage.error(parseError.value);
     return false;
   }
+  const marker = "# 已停用规则（打开开关可恢复）";
+  const markerAt = yamlText.value.indexOf(marker);
+  disabledRules.value =
+    markerAt < 0
+      ? []
+      : yamlText.value
+          .slice(markerAt + marker.length)
+          .split("\n")
+          .map((line) => line.match(/^\s*#\s*-\s*(.+)$/)?.[1]?.trim())
+          .filter((line): line is string => Boolean(line));
   syncing.value = true;
   root.value = value;
   groups.value = parsedGroups.map((item) => ({ proxies: [], ...item }));
   expandedGroups.value = [];
+  expandedRules.value = [];
   syncing.value = false;
   parseError.value = "";
   visualReady.value = true;
@@ -441,7 +454,7 @@ function sync() {
     });
     return item;
   });
-  yamlText.value = stringify(root.value, { lineWidth: 0 });
+  yamlText.value = renderYaml();
   dirty.value = true;
 }
 watch(groups, sync, { deep: true });
@@ -586,27 +599,54 @@ function ruleTargetOf(line: string) {
 function allRules() {
   return Array.isArray(root.value.rules) ? root.value.rules.map(String) : [];
 }
+function renderYaml() {
+  const content = stringify(root.value, { lineWidth: 0 });
+  return disabledRules.value.length
+    ? `${content.trimEnd()}\n\n# 已停用规则（打开开关可恢复）\n${disabledRules.value.map((rule) => `# - ${rule}`).join("\n")}\n`
+    : content;
+}
 function rulesForTarget(target: string) {
-  return allRules()
+  const active = allRules()
     .map((line, index) => ({
       line,
       index,
+      disabled: false,
       type: splitRule(line)[0],
       value: splitRule(line)[1] || "",
     }))
     .filter((rule) => ruleTargetOf(rule.line) === target);
+  return [
+    ...active,
+    ...disabledRules.value
+      .map((line, index) => ({
+        line,
+        index: -index - 1,
+        disabled: true,
+        type: splitRule(line)[0],
+        value: splitRule(line)[1] || "",
+      }))
+      .filter((rule) => ruleTargetOf(rule.line) === target),
+  ];
+}
+function ruleDescription(type: string) {
+  return ruleTypes.find((item) => item[1] === type)?.[2] || "高级规则";
 }
 function syncRules(rules: string[]) {
   root.value.rules = rules;
   syncing.value = true;
-  yamlText.value = stringify(root.value, { lineWidth: 0 });
+  yamlText.value = renderYaml();
   syncing.value = false;
   dirty.value = true;
 }
 function openRule(target: string, index: number | null = null) {
   ruleTarget.value = target;
   editingRuleIndex.value = index;
-  const line = index === null ? "" : allRules()[index];
+  const line =
+    index === null
+      ? ""
+      : index >= 0
+        ? allRules()[index]
+        : disabledRules.value[-index - 1];
   const parts = splitRule(line);
   ruleForm.type = parts[0] || "DOMAIN-SUFFIX";
   ruleForm.value = parts[1] || "";
@@ -674,13 +714,23 @@ function saveRule() {
       : `${type},${value},${ruleTarget.value}${ruleForm.noResolve ? ",no-resolve" : ""}`;
   const rules = allRules();
   if (editingRuleIndex.value === null) rules.push(line);
-  else rules[editingRuleIndex.value] = line;
+  else if (editingRuleIndex.value >= 0) rules[editingRuleIndex.value] = line;
+  else disabledRules.value.splice(-editingRuleIndex.value - 1, 1, line);
   syncRules(rules);
   ruleEditorVisible.value = false;
 }
 function deleteRule(index: number) {
   const rules = allRules();
-  rules.splice(index, 1);
+  if (index >= 0) rules.splice(index, 1);
+  else disabledRules.value.splice(-index - 1, 1);
+  syncRules(rules);
+}
+function toggleRule(index: number, enabled: boolean) {
+  const rules = allRules();
+  if (enabled && index < 0)
+    rules.push(disabledRules.value.splice(-index - 1, 1)[0]);
+  if (!enabled && index >= 0)
+    disabledRules.value.push(rules.splice(index, 1)[0]);
   syncRules(rules);
 }
 function switchMode(value: string | number | boolean | undefined) {
@@ -1133,14 +1183,24 @@ loadList();
                               class="rule-row"
                             >
                               <div>
-                                <small>{{ rule.type }}</small
+                                <small
+                                  >{{ rule.type }}（{{
+                                    ruleDescription(rule.type)
+                                  }}）</small
                                 ><strong>{{
                                   rule.value || "匹配所有剩余流量"
                                 }}</strong
                                 ><code>{{ rule.line }}</code>
                               </div>
                               <span
-                                ><el-button
+                                ><el-switch
+                                  :model-value="!rule.disabled"
+                                  size="small"
+                                  @change="
+                                    toggleRule(rule.index, Boolean($event))
+                                  "
+                                />
+                                <el-button
                                   link
                                   @click="openRule(group.name, rule.index)"
                                   >编辑</el-button
@@ -1187,7 +1247,7 @@ loadList();
       append-to-body
     >
       <el-form label-position="top"
-        ><el-form-item label="规则类型（白话）"
+        ><el-form-item label="规则类型"
           ><el-select
             v-model="ruleForm.type"
             filterable
@@ -1319,8 +1379,9 @@ loadList();
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 18px;
+  height: 0;
   min-height: 0;
-  flex: 1;
+  flex: 1 1 0;
 }
 .panel {
   display: flex;
@@ -1632,11 +1693,13 @@ loadList();
     margin-bottom: 0;
   }
   :global(.editor-dialog .el-dialog__body) {
+    box-sizing: border-box;
     display: flex;
     min-height: 0;
     flex: 1;
     flex-direction: column;
     overflow: hidden;
+    padding: 0 24px 24px;
   }
 }
 @media (max-width: 900px) {
