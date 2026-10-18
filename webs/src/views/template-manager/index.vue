@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { computed, nextTick, ref, watch } from "vue";
 import { parseDocument, stringify } from "yaml";
 import YamlEditor from "@/components/YamlEditor/index.vue";
 import { getTemp } from "@/api/subcription/temp";
@@ -35,6 +35,7 @@ const createMode = ref<"blank" | "import" | "paste" | "subscription">("blank"),
 const selectedFile = ref(""),
   filename = ref(""),
   yamlText = ref("");
+const cleanYamlText = ref("");
 const root = ref<Record<string, any>>({}),
   groups = ref<Group[]>([]);
 const mode = ref<"visual" | "yaml">("visual"),
@@ -45,6 +46,7 @@ const mode = ref<"visual" | "yaml">("visual"),
 const expandedGroups = ref<number[]>([]);
 const expandedRules = ref<number[]>([]);
 const disabledRules = ref<string[]>([]);
+const disabledRulePositions = ref<number[]>([]);
 const ruleEditorVisible = ref(false),
   editingRuleIndex = ref<number | null>(null),
   ruleTarget = ref("");
@@ -348,6 +350,12 @@ const ruleTypes = [
 const selectedRuleType = computed(
   () => ruleTypes.find((item) => item[1] === ruleForm.type) || ruleTypes[0]
 );
+const ruleProviderNames = computed(() => {
+  const providers = root.value["rule-providers"];
+  return providers && typeof providers === "object" && !Array.isArray(providers)
+    ? Object.keys(providers).sort((left, right) => left.localeCompare(right))
+    : [];
+});
 const types = [
   { value: "select", label: "手动选择" },
   { value: "url-test", label: "自动测速" },
@@ -388,6 +396,7 @@ function reset() {
   root.value = blank();
   groups.value = [];
   disabledRules.value = [];
+  disabledRulePositions.value = [];
   yamlText.value = stringify(root.value, { lineWidth: 0 });
   parseError.value = "";
   visualReady.value = true;
@@ -432,6 +441,9 @@ function parse(showError = true) {
           .split("\n")
           .map((line) => line.match(/^\s*#\s*-\s*(.+)$/)?.[1]?.trim())
           .filter((line): line is string => Boolean(line));
+  disabledRulePositions.value = disabledRules.value.map(
+    () => Number.MAX_SAFE_INTEGER
+  );
   syncing.value = true;
   root.value = value;
   groups.value = parsedGroups.map((item) => ({ proxies: [], ...item }));
@@ -544,6 +556,10 @@ async function edit(file: string) {
     mode.value = visualReady.value ? "visual" : "yaml";
     dirty.value = false;
     editorVisible.value = true;
+    await nextTick();
+    await nextTick();
+    cleanYamlText.value = yamlText.value;
+    dirty.value = false;
   } finally {
     loading.value = false;
   }
@@ -606,10 +622,16 @@ function renderYaml() {
     : content;
 }
 function rulesForTarget(target: string) {
+  const activePosition = (index: number) => {
+    let position = index;
+    while (disabledRulePositions.value.includes(position)) position++;
+    return position;
+  };
   const active = allRules()
     .map((line, index) => ({
       line,
       index,
+      order: activePosition(index),
       disabled: false,
       type: splitRule(line)[0],
       value: splitRule(line)[1] || "",
@@ -621,12 +643,13 @@ function rulesForTarget(target: string) {
       .map((line, index) => ({
         line,
         index: -index - 1,
+        order: disabledRulePositions.value[index],
         disabled: true,
         type: splitRule(line)[0],
         value: splitRule(line)[1] || "",
       }))
       .filter((rule) => ruleTargetOf(rule.line) === target),
-  ];
+  ].sort((left, right) => left.order - right.order);
 }
 function ruleDescription(type: string) {
   return ruleTypes.find((item) => item[1] === type)?.[2] || "高级规则";
@@ -659,6 +682,8 @@ function validateRule() {
   const value = ruleForm.value.trim();
   if (kind === "none") return true;
   if (!value) return "请输入匹配内容";
+  if (ruleForm.type === "RULE-SET" && !ruleProviderNames.value.includes(value))
+    return "请选择当前模板 rule-providers 中已有的规则集";
   if (kind === "cidr") {
     const [address, bits] = value.split("/");
     const isV4 =
@@ -722,15 +747,33 @@ function saveRule() {
 function deleteRule(index: number) {
   const rules = allRules();
   if (index >= 0) rules.splice(index, 1);
-  else disabledRules.value.splice(-index - 1, 1);
+  else {
+    disabledRules.value.splice(-index - 1, 1);
+    disabledRulePositions.value.splice(-index - 1, 1);
+  }
   syncRules(rules);
 }
 function toggleRule(index: number, enabled: boolean) {
   const rules = allRules();
-  if (enabled && index < 0)
-    rules.push(disabledRules.value.splice(-index - 1, 1)[0]);
-  if (!enabled && index >= 0)
+  if (enabled && index < 0) {
+    const disabledIndex = -index - 1;
+    const position = disabledRulePositions.value.splice(disabledIndex, 1)[0];
+    const line = disabledRules.value.splice(disabledIndex, 1)[0];
+    const insertAt = rules.findIndex((_, activeIndex) => {
+      let order = activeIndex;
+      while (disabledRulePositions.value.includes(order)) order++;
+      return order > position;
+    });
+    rules.splice(insertAt < 0 ? rules.length : insertAt, 0, line);
+  }
+  if (!enabled && index >= 0) {
     disabledRules.value.push(rules.splice(index, 1)[0]);
+    disabledRulePositions.value.push(
+      index +
+        disabledRulePositions.value.filter((position) => position <= index)
+          .length
+    );
+  }
   syncRules(rules);
 }
 function switchMode(value: string | number | boolean | undefined) {
@@ -782,6 +825,7 @@ async function save() {
       await createVisualTemplate({ filename: name, content: yamlText.value });
     selectedFile.value = /.ya?ml$/i.test(name) ? name : `${name}.yaml`;
     filename.value = selectedFile.value;
+    cleanYamlText.value = yamlText.value;
     dirty.value = false;
     await loadList();
     ElMessage.success("模板已保存");
@@ -789,9 +833,10 @@ async function save() {
     saving.value = false;
   }
 }
-async function close() {
-  if (!dirty.value) {
+async function close(done?: () => void) {
+  if (!dirty.value || yamlText.value === cleanYamlText.value) {
     editorVisible.value = false;
+    done?.();
     return;
   }
   try {
@@ -801,8 +846,10 @@ async function close() {
       { type: "warning" }
     );
     editorVisible.value = false;
+    done?.();
   } catch {}
 }
+function requestClose() { return close(); }
 async function remove(file: string) {
   try {
     await ElMessageBox.confirm(`确定删除模板「${file}」吗？`, "删除模板", {
@@ -952,7 +999,7 @@ loadList();
       top="24px"
       :close-on-click-modal="false"
       destroy-on-close
-      @close="close"
+      :before-close="close"
     >
       <template #header
         ><div class="editor-title">
@@ -963,7 +1010,7 @@ loadList();
           <div class="actions">
             <el-button type="primary" :loading="saving" @click="save"
               >保存</el-button
-            ><el-button @click="close">关闭</el-button>
+            ><el-button @click="requestClose">关闭</el-button>
           </div>
         </div></template
       >
@@ -1268,7 +1315,18 @@ loadList();
           v-if="selectedRuleType[3] !== 'none'"
           :label="selectedRuleType[2]"
           ><el-select
-            v-if="selectedRuleType[3] === 'country'"
+            v-if="ruleForm.type === 'RULE-SET'"
+            v-model="ruleForm.value"
+            filterable
+            placeholder="选择当前模板的规则集"
+            no-data-text="当前模板未定义 rule-providers"
+            ><el-option
+              v-for="name in ruleProviderNames"
+              :key="name"
+              :value="name"
+              :label="name" /></el-select
+          ><el-select
+            v-else-if="selectedRuleType[3] === 'country'"
             v-model="ruleForm.value"
             filterable
             placeholder="选择国家/地区"
@@ -1366,6 +1424,7 @@ loadList();
   font-size: 13px;
 }
 .toolbar {
+  grid-row: 1;
   padding-bottom: 14px;
   border-bottom: 1px solid var(--el-border-color-lighter);
 }
@@ -1373,9 +1432,11 @@ loadList();
   max-width: 440px;
 }
 .parse-error {
+  grid-row: 2;
   margin: 14px 0;
 }
 .editor-layout {
+  grid-row: 3;
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 18px;
@@ -1687,19 +1748,19 @@ loadList();
 }
 @media (min-width: 901px) {
   :global(.editor-dialog) {
-    display: flex;
+    display: grid;
     height: calc(100dvh - 48px);
-    flex-direction: column;
     margin-bottom: 0;
+    grid-template-rows: auto minmax(0, 1fr);
   }
   :global(.editor-dialog .el-dialog__body) {
     box-sizing: border-box;
-    display: flex;
-    min-height: 0;
-    flex: 1;
-    flex-direction: column;
+    display: grid;
+    height: 100%;
+    min-height: 0 !important;
     overflow: hidden;
     padding: 0 24px 24px;
+    grid-template-rows: auto auto minmax(0, 1fr);
   }
 }
 @media (max-width: 900px) {
