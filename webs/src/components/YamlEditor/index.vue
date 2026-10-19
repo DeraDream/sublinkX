@@ -5,9 +5,7 @@ import { indentWithTab } from "@codemirror/commands";
 import { yaml } from "@codemirror/lang-yaml";
 import {
   HighlightStyle,
-  StreamLanguage,
   syntaxHighlighting,
-  type StreamParser,
 } from "@codemirror/language";
 import {
   highlightSelectionMatches,
@@ -15,7 +13,7 @@ import {
   search,
   searchKeymap,
 } from "@codemirror/search";
-import { Compartment, EditorState, type Extension } from "@codemirror/state";
+import { Compartment, EditorState, type Extension, type Range } from "@codemirror/state";
 import {
   Decoration,
   type DecorationSet,
@@ -42,47 +40,6 @@ const editorElement = ref<HTMLElement>();
 let editorView: EditorView | undefined;
 let removeWheelGuard: (() => void) | undefined;
 const languageCompartment = new Compartment();
-
-type IniState = { inValue: boolean };
-const iniParser: StreamParser<IniState> = {
-  startState: () => ({ inValue: false }),
-  token(stream, state) {
-    if (stream.sol()) state.inValue = false;
-    if (stream.eatSpace()) return null;
-
-    if (!state.inValue && stream.peek() === "[") {
-      stream.next();
-      stream.skipTo("]");
-      stream.eat("]");
-      return "heading";
-    }
-    if (stream.peek() === ";" || stream.peek() === "#") {
-      stream.skipToEnd();
-      return "comment";
-    }
-    if (!state.inValue && stream.match(/^[^=\s][^=]*?(?=\s*=)/)) {
-      return "propertyName";
-    }
-    if (!state.inValue && stream.eat("=")) {
-      state.inValue = true;
-      return "operator";
-    }
-    if (state.inValue && stream.eat(",")) return "punctuation";
-    if (stream.match(/^"(?:[^"\\]|\\.)*"/) || stream.match(/^'(?:[^'\\]|\\.)*'/)) {
-      return "string";
-    }
-    if (stream.match(/^(?:true|false|yes|no|on|off)\b/i)) return "bool";
-    if (stream.match(/^[-+]?\d+(?:\.\d+)?\b/)) return "number";
-    if (stream.match(/^https?:\/\/[^,\s]+/i)) return "url";
-    if (stream.match(/^__[A-Z0-9_]+__(?=\s*(?:,|$))/)) return "variableName";
-    if (stream.match(/^[A-Za-z][\w-]*(?=\s*(?:,|$))/)) return "keyword";
-    stream.next();
-    return "string";
-  },
-};
-const iniLanguage = StreamLanguage.define(iniParser);
-const languageExtension = (language: "yaml" | "ini"): Extension =>
-  language === "ini" ? iniLanguage : yaml();
 
 const installWheelGuard = (view: EditorView) => {
   const scroller = view.scrollDOM;
@@ -153,7 +110,7 @@ const indentationGuides = ViewPlugin.fromClass(
     }
 
     buildDecorations(view: EditorView) {
-      const ranges = [];
+      const ranges: Range<Decoration>[] = [];
 
       for (const { from, to } of view.visibleRanges) {
         let line = view.state.doc.lineAt(from);
@@ -179,6 +136,62 @@ const indentationGuides = ViewPlugin.fromClass(
     decorations: (value) => value.decorations,
   }
 );
+
+const iniHighlighting = ViewPlugin.fromClass(
+  class {
+    decorations: DecorationSet;
+
+    constructor(view: EditorView) {
+      this.decorations = this.buildDecorations(view);
+    }
+
+    update(update: ViewUpdate) {
+      if (update.docChanged || update.viewportChanged) {
+        this.decorations = this.buildDecorations(update.view);
+      }
+    }
+
+    buildDecorations(view: EditorView) {
+      const ranges: Range<Decoration>[] = [];
+      const mark = (className: string, from: number, to: number) => {
+        if (to > from) ranges.push(Decoration.mark({ class: className }).range(from, to));
+      };
+      for (const { from, to } of view.visibleRanges) {
+        let line = view.state.doc.lineAt(from);
+        while (line.from <= to) {
+          const text = line.text;
+          const leading = text.search(/\S/);
+          if (leading >= 0) {
+            const trimmed = text.slice(leading);
+            if (/^\[[^\]]+\]/.test(trimmed)) mark("cm-ini-section", line.from + leading, line.to);
+            else if (/^[#;]/.test(trimmed)) mark("cm-ini-comment", line.from + leading, line.to);
+            else {
+              const equals = text.indexOf("=");
+              if (equals >= 0) {
+                mark("cm-ini-key", line.from + leading, line.from + equals);
+                mark("cm-ini-operator", line.from + equals, line.from + equals + 1);
+                const values = text.slice(equals + 1);
+                const matcher = /https?:\/\/[^,\s]+|__[A-Z0-9_]+__|"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|\b(?:true|false|yes|no|on|off)\b|[-+]?\d+(?:\.\d+)?\b|[^,\s]+/gi;
+                for (const token of values.matchAll(matcher)) {
+                  const value = token[0], tokenFrom = line.from + equals + 1 + (token.index || 0);
+                  const className = /^https?:/i.test(value) ? "cm-ini-url" : /^__/.test(value) ? "cm-ini-variable" : /^(true|false|yes|no|on|off)$/i.test(value) || /^[-+]?\d/.test(value) ? "cm-ini-literal" : "cm-ini-string";
+                  mark(className, tokenFrom, tokenFrom + value.length);
+                }
+              }
+            }
+          }
+          if (line.to >= to || line.number === view.state.doc.lines) break;
+          line = view.state.doc.line(line.number + 1);
+        }
+      }
+      return Decoration.set(ranges, true);
+    }
+  },
+  { decorations: (value) => value.decorations }
+);
+
+const languageExtension = (language: "yaml" | "ini"): Extension =>
+  language === "ini" ? iniHighlighting : yaml();
 
 const chinesePhrases = EditorState.phrases.of({
   Find: "查找",
@@ -325,6 +338,14 @@ onMounted(() => {
             borderLeft:
               "1px solid color-mix(in srgb, var(--el-text-color-placeholder) 30%, transparent)",
           },
+          ".cm-ini-key": { color: "var(--editor-key)" },
+          ".cm-ini-string": { color: "var(--editor-string)" },
+          ".cm-ini-literal": { color: "var(--editor-literal)" },
+          ".cm-ini-url": { color: "var(--editor-url)" },
+          ".cm-ini-variable": { color: "var(--editor-variable)" },
+          ".cm-ini-section": { color: "var(--editor-section)" },
+          ".cm-ini-comment": { color: "var(--editor-comment)" },
+          ".cm-ini-operator": { color: "var(--editor-operator)" },
           ".cm-panels": {
             color: "var(--el-text-color-primary)",
             backgroundColor: "var(--el-fill-color-light)",

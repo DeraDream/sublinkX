@@ -30,7 +30,7 @@ var embeddedFiles embed.FS
 var Template embed.FS
 
 // version is overridden from the release tag by GitHub Actions.
-var version = "4.62"
+var version = "4.63"
 
 func Templateinit() {
 	// 设置template路径
