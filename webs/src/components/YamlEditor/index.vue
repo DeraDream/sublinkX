@@ -3,14 +3,19 @@ import { onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { basicSetup } from "codemirror";
 import { indentWithTab } from "@codemirror/commands";
 import { yaml } from "@codemirror/lang-yaml";
-import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
+import {
+  HighlightStyle,
+  StreamLanguage,
+  syntaxHighlighting,
+  type StreamParser,
+} from "@codemirror/language";
 import {
   highlightSelectionMatches,
   openSearchPanel,
   search,
   searchKeymap,
 } from "@codemirror/search";
-import { EditorState } from "@codemirror/state";
+import { Compartment, EditorState, type Extension } from "@codemirror/state";
 import {
   Decoration,
   type DecorationSet,
@@ -21,9 +26,13 @@ import {
 } from "@codemirror/view";
 import { tags } from "@lezer/highlight";
 
-const props = defineProps<{
-  modelValue: string;
-}>();
+const props = withDefaults(
+  defineProps<{
+    modelValue: string;
+    language?: "yaml" | "ini";
+  }>(),
+  { language: "yaml" }
+);
 
 const emit = defineEmits<{
   "update:modelValue": [value: string];
@@ -32,6 +41,48 @@ const emit = defineEmits<{
 const editorElement = ref<HTMLElement>();
 let editorView: EditorView | undefined;
 let removeWheelGuard: (() => void) | undefined;
+const languageCompartment = new Compartment();
+
+type IniState = { inValue: boolean };
+const iniParser: StreamParser<IniState> = {
+  startState: () => ({ inValue: false }),
+  token(stream, state) {
+    if (stream.sol()) state.inValue = false;
+    if (stream.eatSpace()) return null;
+
+    if (!state.inValue && stream.peek() === "[") {
+      stream.next();
+      stream.skipTo("]");
+      stream.eat("]");
+      return "heading";
+    }
+    if (stream.peek() === ";" || stream.peek() === "#") {
+      stream.skipToEnd();
+      return "comment";
+    }
+    if (!state.inValue && stream.match(/^[^=\s][^=]*?(?=\s*=)/)) {
+      return "propertyName";
+    }
+    if (!state.inValue && stream.eat("=")) {
+      state.inValue = true;
+      return "operator";
+    }
+    if (state.inValue && stream.eat(",")) return "punctuation";
+    if (stream.match(/^"(?:[^"\\]|\\.)*"/) || stream.match(/^'(?:[^'\\]|\\.)*'/)) {
+      return "string";
+    }
+    if (stream.match(/^(?:true|false|yes|no|on|off)\b/i)) return "bool";
+    if (stream.match(/^[-+]?\d+(?:\.\d+)?\b/)) return "number";
+    if (stream.match(/^https?:\/\/[^,\s]+/i)) return "url";
+    if (stream.match(/^__[A-Z0-9_]+__(?=\s*(?:,|$))/)) return "variableName";
+    if (stream.match(/^[A-Za-z][\w-]*(?=\s*(?:,|$))/)) return "keyword";
+    stream.next();
+    return "string";
+  },
+};
+const iniLanguage = StreamLanguage.define(iniParser);
+const languageExtension = (language: "yaml" | "ini"): Extension =>
+  language === "ini" ? iniLanguage : yaml();
 
 const installWheelGuard = (view: EditorView) => {
   const scroller = view.scrollDOM;
@@ -152,7 +203,7 @@ onMounted(() => {
       doc: props.modelValue,
       extensions: [
         basicSetup,
-        yaml(),
+        languageCompartment.of(languageExtension(props.language)),
         search({
           top: true,
         }),
@@ -165,16 +216,30 @@ onMounted(() => {
         syntaxHighlighting(
           HighlightStyle.define([
             {
-              tag: [tags.propertyName, tags.variableName, tags.typeName],
-              color: "var(--editor-keyword)",
+              tag: [tags.propertyName, tags.typeName],
+              color: "var(--editor-key)",
             },
             {
-              tag: [tags.string, tags.special(tags.string)],
+              tag: [tags.string, tags.special(tags.string), tags.content],
               color: "var(--editor-string)",
             },
             {
               tag: [tags.number, tags.bool, tags.null],
               color: "var(--editor-number)",
+            },
+            {
+              tag: [tags.atom, tags.literal],
+              color: "var(--editor-literal)",
+            },
+            { tag: tags.url, color: "var(--editor-url)" },
+            { tag: tags.heading, color: "var(--editor-section)" },
+            {
+              tag: [tags.keyword, tags.operator, tags.punctuation],
+              color: "var(--editor-operator)",
+            },
+            {
+              tag: tags.variableName,
+              color: "var(--editor-variable)",
             },
             {
               tag: tags.comment,
@@ -349,6 +414,14 @@ onBeforeUnmount(() => {
   removeWheelGuard?.();
   editorView?.destroy();
 });
+
+watch(
+  () => props.language,
+  (language) =>
+    editorView?.dispatch({
+      effects: languageCompartment.reconfigure(languageExtension(language)),
+    })
+);
 </script>
 
 <template>

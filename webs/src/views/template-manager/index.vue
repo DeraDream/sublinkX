@@ -409,6 +409,11 @@ function filenameForType(name: string, kind: TemplateKind) {
   if (kind !== "loon" && /\.conf$/i.test(name)) return name.replace(/\.conf$/i, ".yaml");
   return /\.(ya?ml|conf)$/i.test(name) ? name : `${name}.${kind === "loon" ? "conf" : "yaml"}`;
 }
+function setCreateType(kind: string | number | boolean | undefined) {
+  if (kind !== "clash" && kind !== "egern" && kind !== "loon") return;
+  createType.value = kind;
+  createFilename.value = filenameForType(createFilename.value, kind);
+}
 
 function reset() {
   selectedFile.value = "";
@@ -528,7 +533,7 @@ async function openCreate() {
   createVisible.value = true;
   const { data } = await getTemp();
   legacy.value = (data || []).filter((item: Legacy) =>
-    /.ya?ml$/i.test(item.file)
+    /\.(?:ya?ml|conf)$/i.test(item.file)
   );
 }
 function selectLegacy(file: string) {
@@ -536,6 +541,7 @@ function selectLegacy(file: string) {
   if (item) {
     createFilename.value = item.file;
     pastedYaml.value = item.text;
+    createType.value = detectTemplateType(item.file, item.text);
   }
 }
 async function fetchSubscription() {
@@ -946,14 +952,13 @@ loadList();
       destroy-on-close
     >
       <p class="intro">
-        创建空白 Clash/Mihomo YAML，或从当前项目的“模板列表”导入一个 YAML 模板。
+        创建或导入 Clash/Mihomo、Egern、Loon 模板。
       </p>
       <el-form label-position="top"
         ><el-form-item label="模板文件名"
           ><el-input
             v-model="createFilename"
             placeholder="例如 my-template.yaml" /></el-form-item
-        ><el-form-item label="模板类型"><el-radio-group v-model="createType"><el-radio-button value="clash">Clash / Mihomo</el-radio-button><el-radio-button value="egern">Egern</el-radio-button><el-radio-button value="loon">Loon</el-radio-button></el-radio-group></el-form-item
       ></el-form>
       <el-radio-group v-model="createMode" class="create-tabs"
         ><el-radio-button value="blank">创建空白模板</el-radio-button
@@ -964,6 +969,7 @@ loadList();
         ></el-radio-group
       >
       <div v-if="createMode === 'blank'" class="create-option">
+        <el-form label-position="top"><el-form-item label="模板类型"><el-radio-group :model-value="createType" @change="setCreateType"><el-radio-button value="clash">Clash / Mihomo</el-radio-button><el-radio-button value="egern">Egern</el-radio-button><el-radio-button value="loon">Loon</el-radio-button></el-radio-group></el-form-item></el-form>
         <el-alert
           type="info"
           :closable="false"
@@ -973,7 +979,7 @@ loadList();
       </div>
       <div v-else-if="createMode === 'import'" class="create-option">
         <el-form label-position="top"
-          ><el-form-item label="选择现有 YAML 模板"
+          ><el-form-item label="选择现有模板"
             ><el-select
               v-model="importedFile"
               filterable
@@ -989,11 +995,12 @@ loadList();
           type="warning"
           :closable="false"
           show-icon
-          title="仅显示 YAML 模板；导入后另存为可视化模板，不会修改原模板。"
+          title="支持 YAML 和 Loon CONF 模板。类型会根据导入内容自动识别；导入后另存为可视化模板，不会修改原模板。"
         />
       </div>
       <div v-else-if="createMode === 'paste'" class="create-option">
         <el-form label-position="top"
+          ><el-form-item label="模板类型"><el-radio-group :model-value="createType" @change="setCreateType"><el-radio-button value="clash">Clash / Mihomo</el-radio-button><el-radio-button value="egern">Egern</el-radio-button><el-radio-button value="loon">Loon</el-radio-button></el-radio-group></el-form-item
           ><el-form-item :label="createType === 'loon' ? '粘贴 Loon CONF 内容' : '粘贴 YAML 内容'"
             ><el-input
               v-model="pastedYaml"
@@ -1004,6 +1011,7 @@ loadList();
       </div>
       <div v-else class="create-option">
         <el-form label-position="top"
+          ><el-form-item label="模板类型"><el-radio-group :model-value="createType" @change="setCreateType"><el-radio-button value="clash">Clash / Mihomo</el-radio-button><el-radio-button value="egern">Egern</el-radio-button><el-radio-button value="loon">Loon</el-radio-button></el-radio-group></el-form-item
           ><el-form-item label="订阅地址"
             ><div class="subscription-input">
               <el-input
@@ -1317,7 +1325,9 @@ loadList();
             ><LoonVisualEditor v-model="yamlText" @update:model-value="onExternalVisualChange" @error="parseError = $event" /></template
           ><template v-else
             ><div class="panel-title">{{ codeModeLabel }}</div>
-            <YamlEditor v-model="yamlText"
+            <YamlEditor
+              v-model="yamlText"
+              :language="templateType === 'loon' ? 'ini' : 'yaml'"
           /></template>
         </section>
         <section class="panel preview">

@@ -246,9 +246,14 @@ body {
   color-scheme: light;
   --editor-active-line: #eff6ff;
   --editor-selection: #bfdbfe;
-  --editor-keyword: #1d4ed8;
-  --editor-string: #047857;
-  --editor-number: #b45309;
+  --editor-key: #2563eb;
+  --editor-string: #0f766e;
+  --editor-number: #c2410c;
+  --editor-literal: #9333ea;
+  --editor-url: #7c3aed;
+  --editor-section: #be185d;
+  --editor-operator: #64748b;
+  --editor-variable: #b45309;
   --editor-comment: #94a3b8;
 }
 
@@ -268,9 +273,14 @@ html.dark {
   --el-text-color-secondary: #94a3b8;
   --editor-active-line: #1b2638;
   --editor-selection: #294a73;
-  --editor-keyword: #7dd3fc;
-  --editor-string: #86efac;
+  --editor-key: #7dd3fc;
+  --editor-string: #5eead4;
   --editor-number: #fdba74;
+  --editor-literal: #c4b5fd;
+  --editor-url: #c4b5fd;
+  --editor-section: #f9a8d4;
+  --editor-operator: #94a3b8;
+  --editor-variable: #fbbf24;
   --editor-comment: #64748b;
 }
 

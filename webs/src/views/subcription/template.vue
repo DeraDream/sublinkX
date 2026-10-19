@@ -421,7 +421,11 @@ const toggleMobileTemplateSelection = (row: Temp, checked: boolean) => {
             </div>
           </div>
           <div class="editor-content">
-            <YamlEditor ref="yamlEditor" v-model="TempText" />
+            <YamlEditor
+              ref="yamlEditor"
+              v-model="TempText"
+              :language="/\.(?:conf|list)$/i.test(Tempname) ? 'ini' : 'yaml'"
+            />
           </div>
         </section>
 
@@ -757,10 +761,14 @@ const toggleMobileTemplateSelection = (row: Temp, checked: boolean) => {
 
 @media (min-width: 901px) {
   :deep(.template-editor-dialog) {
+    /* The overlay provides the viewport gutter. Keep the dialog itself within
+       that space so its header, body, and footer do not overflow the viewport. */
     display: flex;
-    height: calc(100dvh - 64px);
+    box-sizing: border-box;
+    height: calc(100dvh - 48px);
+    min-height: 0;
     flex-direction: column;
-    margin-bottom: 0;
+    margin: 0 auto !important;
   }
 
   :deep(.template-editor-dialog .el-dialog__header),
@@ -770,6 +778,10 @@ const toggleMobileTemplateSelection = (row: Temp, checked: boolean) => {
 
   :deep(.template-editor-dialog .el-dialog__body) {
     display: flex;
+    box-sizing: border-box;
+    /* This editor intentionally fills its dialog; do not inherit the global
+       body height cap that is intended for regular dialogs. */
+    max-height: none;
     min-height: 0;
     flex: 1;
     flex-direction: column;
@@ -777,7 +789,9 @@ const toggleMobileTemplateSelection = (row: Temp, checked: boolean) => {
   }
 
   .editor-layout {
+    height: auto;
     min-height: 0;
+    flex: 1;
   }
 }
 

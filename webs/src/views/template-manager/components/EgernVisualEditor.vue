@@ -1,70 +1,30 @@
 <script setup lang="ts">
 import { parseDocument, stringify } from "yaml";
-
-type PolicyGroup = { name: string; type: string; policies: string[]; [key: string]: any };
+type Group = { name: string; type: string; policies: string[]; [key: string]: any };
 type Rule = { type: string; match?: string; policy: string; disabled?: boolean; [key: string]: any };
 const props = defineProps<{ modelValue: string }>();
 const emit = defineEmits<{ "update:modelValue": [value: string]; error: [value: string] }>();
-const root = ref<Record<string, any>>({});
-const groups = ref<PolicyGroup[]>([]);
-const rules = ref<Rule[]>([]);
-const syncing = ref(false);
+const root = ref<Record<string, any>>({}), groups = ref<Group[]>([]), rules = ref<Rule[]>([]), expanded = ref<number[]>([]), expandedRules = ref<number[]>([]), syncing = ref(false);
+let emittedValue: string | undefined;
 const groupTypes = ["select", "auto_test", "smart", "fallback", "load_balance", "external", "conditional"];
 const ruleTypes = ["domain", "domain_suffix", "domain_keyword", "domain_regex", "domain_wildcard", "geoip", "ip_cidr", "ip_cidr6", "asn", "url_regex", "user_agent", "dest_port", "protocol", "rule_set", "default"];
-
-function normaliseRule(value: any): Rule {
-  const entry = value && typeof value === "object" ? Object.entries(value)[0] : undefined;
-  if (!entry) return { type: "domain_suffix", match: "", policy: "DIRECT" };
-  const [type, fields] = entry;
-  return { type, ...(fields && typeof fields === "object" ? fields : {}) } as Rule;
-}
-function normaliseGroup(value: any): PolicyGroup {
-  const entry = value && typeof value === "object" ? Object.entries(value)[0] : undefined;
-  if (!entry) return { name: "", type: "select", policies: [] };
-  const [type, settings] = entry;
-  return { name: "", type, policies: [], ...(settings && typeof settings === "object" ? settings : {}) } as PolicyGroup;
-}
-function load(value: string) {
-  const doc = parseDocument(value, { prettyErrors: false, strict: true });
-  if (doc.errors.length) { emit("error", String(doc.errors[0].message)); return; }
-  const parsed = doc.toJS();
-  if (!parsed || Array.isArray(parsed) || typeof parsed !== "object") { emit("error", "Egern 根配置必须是 YAML 对象"); return; }
-  if (parsed.policy_groups !== undefined && !Array.isArray(parsed.policy_groups)) { emit("error", "policy_groups 必须是数组"); return; }
-  syncing.value = true;
-  root.value = parsed;
-  groups.value = (parsed.policy_groups || []).map(normaliseGroup);
-  rules.value = (parsed.rules || []).map(normaliseRule);
-  syncing.value = false;
-}
-function write() {
-  if (syncing.value) return;
-  root.value.policy_groups = groups.value.map(({ type, policies, ...settings }) => ({
-    [type]: { ...settings, ...(policies?.length ? { policies } : {}) },
-  }));
-  root.value.rules = rules.value.map(({ type, ...fields }) => ({ [type]: fields }));
-  emit("update:modelValue", stringify(root.value, { lineWidth: 0 }));
-}
+const normaliseGroup = (value: any): Group => { const entry = value && typeof value === "object" ? Object.entries(value)[0] : undefined; if (!entry) return { name: "", type: "select", policies: [] }; const [type, settings] = entry; return { name: "", type, policies: [], ...(settings && typeof settings === "object" ? settings : {}) } as Group; };
+const normaliseRule = (value: any): Rule => { const entry = value && typeof value === "object" ? Object.entries(value)[0] : undefined; if (!entry) return { type: "domain_suffix", match: "", policy: "DIRECT" }; const [type, settings] = entry; return { type, ...(settings && typeof settings === "object" ? settings : {}) } as Rule; };
+function load(value: string) { const doc = parseDocument(value, { prettyErrors: false, strict: true }); if (doc.errors.length) return emit("error", String(doc.errors[0].message)); const parsed = doc.toJS(); if (!parsed || Array.isArray(parsed) || typeof parsed !== "object") return emit("error", "Egern 根配置必须是 YAML 对象"); if (parsed.policy_groups !== undefined && !Array.isArray(parsed.policy_groups)) return emit("error", "policy_groups 必须是数组"); if (parsed.rules !== undefined && !Array.isArray(parsed.rules)) return emit("error", "rules 必须是规则数组"); syncing.value = true; root.value = parsed; groups.value = (parsed.policy_groups || []).map(normaliseGroup); rules.value = (parsed.rules || []).map(normaliseRule); expanded.value = []; expandedRules.value = []; syncing.value = false; }
+function write() { if (syncing.value) return; root.value.policy_groups = groups.value.map(({ type, policies, ...settings }) => ({ [type]: { ...settings, ...(policies?.length ? { policies } : {}) } })); root.value.rules = rules.value.map(({ type, ...fields }) => ({ [type]: fields })); const value = stringify(root.value, { lineWidth: 0 }); if (value !== props.modelValue) { emittedValue = value; emit("update:modelValue", value); } }
+const isExpanded = (index: number) => expanded.value.includes(index);
+const toggleGroup = (index: number) => expanded.value = expanded.value.includes(index) ? expanded.value.filter((item) => item !== index) : [...expanded.value, index];
+const toggleRuleList = (index: number) => expandedRules.value = expandedRules.value.includes(index) ? expandedRules.value.filter((item) => item !== index) : [...expandedRules.value, index];
+const groupRules = (name: string) => rules.value.map((rule, index) => ({ rule, index })).filter(({ rule }) => rule.policy === name);
 function addGroup() { groups.value.push({ name: `策略组 ${groups.value.length + 1}`, type: "select", policies: ["DIRECT"] }); }
-function addRule() { rules.value.push({ type: "domain_suffix", match: "", policy: groups.value[0]?.name || "DIRECT" }); }
-watch(() => props.modelValue, load, { immediate: true });
-watch([groups, rules], write, { deep: true });
+function addRule(policy: string) { rules.value.push({ type: "domain_suffix", match: "", policy }); }
+watch(() => props.modelValue, (value) => { if (value === emittedValue) { emittedValue = undefined; return; } load(value); }, { immediate: true }); watch([groups, rules], write, { deep: true });
 </script>
-
 <template>
-  <section class="egern-editor">
-    <header><div><strong>Egern 策略组</strong><small>独立 Egern YAML 编辑器</small></div><el-button type="primary" size="small" @click="addGroup">添加策略组</el-button></header>
-    <el-scrollbar class="body"><div class="list">
-      <article v-for="(group, index) in groups" :key="index" class="card">
-        <div class="row"><el-input v-model="group.name" placeholder="策略组名称"/><el-select v-model="group.type"><el-option v-for="type in groupTypes" :key="type" :label="type" :value="type"/></el-select><el-button link type="danger" @click="groups.splice(index, 1)">删除</el-button></div>
-        <el-select v-model="group.policies" multiple filterable allow-create default-first-option placeholder="代理、策略组、DIRECT 或 REJECT" class="wide" />
-      </article>
-      <el-empty v-if="!groups.length" description="暂无策略组" :image-size="58" />
-      <div class="rule-header"><div><strong>Egern 规则</strong><small>规则的 policy 可指向策略组、代理、DIRECT 或 REJECT</small></div><el-button size="small" @click="addRule">添加规则</el-button></div>
-      <article v-for="(rule, index) in rules" :key="index" class="card rule"><el-switch v-model="rule.disabled" :active-value="false" :inactive-value="true"/><el-select v-model="rule.type"><el-option v-for="type in ruleTypes" :key="type" :label="type" :value="type"/></el-select><el-input v-if="rule.type !== 'default'" v-model="rule.match" placeholder="匹配内容"/><el-input v-model="rule.policy" placeholder="策略"/><el-button link type="danger" @click="rules.splice(index, 1)">删除</el-button></article>
-    </div></el-scrollbar>
-  </section>
+  <section class="egern-editor"><header><div><strong>Egern 策略组</strong><small>按策略组管理成员与流量规则</small></div><el-button type="primary" size="small" @click="addGroup">添加策略组</el-button></header><el-scrollbar class="body"><div class="groups"><el-empty v-if="!groups.length" description="暂无策略组" :image-size="58" />
+    <article v-for="(group, index) in groups" :key="index" class="group" :class="{ expanded: isExpanded(index) }"><div class="group-head"><button class="group-toggle" @click="toggleGroup(index)"><strong>{{ group.name || `未命名策略组 ${index + 1}` }}</strong><small>{{ group.type }}</small><span class="chevron" /></button><el-button link type="danger" @click.stop="groups.splice(index, 1)">删除</el-button></div><transition name="expand"><div v-if="isExpanded(index)" class="fields"><div class="field-grid"><label>策略组名称<el-input v-model="group.name" /></label><label>组类型<el-select v-model="group.type"><el-option v-for="type in groupTypes" :key="type" :value="type" /></el-select></label></div><label>策略组成员<el-select v-model="group.policies" multiple filterable allow-create placeholder="代理、策略组、DIRECT 或 REJECT" /></label><div class="rules-block"><button class="rules-toggle" @click="toggleRuleList(index)"><span>流量规则（{{ groupRules(group.name).length }}）</span><small>{{ expandedRules.includes(index) ? "收起" : "展开" }}</small></button><transition name="expand"><div v-if="expandedRules.includes(index)" class="rules-list"><el-button size="small" type="primary" plain @click="addRule(group.name)">添加规则</el-button><div v-if="!groupRules(group.name).length" class="empty">暂无引用此策略组的规则</div><div v-for="entry in groupRules(group.name)" :key="entry.index" class="rule"><el-switch :model-value="!entry.rule.disabled" size="small" @change="entry.rule.disabled = !Boolean($event)" /><el-select v-model="entry.rule.type"><el-option v-for="type in ruleTypes" :key="type" :value="type" /></el-select><el-input v-if="entry.rule.type !== 'default'" v-model="entry.rule.match" placeholder="匹配内容" /><span v-else>匹配所有剩余流量</span><el-button link type="danger" @click="rules.splice(entry.index, 1)">删除</el-button></div></div></transition></div></div></transition></article>
+  </div></el-scrollbar></section>
 </template>
-
 <style scoped>
-.egern-editor{display:flex;min-height:0;height:100%;flex-direction:column;border:1px solid var(--el-border-color);border-radius:4px}.egern-editor header,.rule-header{display:flex;align-items:center;justify-content:space-between;padding:14px;border-bottom:1px solid var(--el-border-color-lighter)}small{display:block;margin-top:4px;color:var(--el-text-color-secondary);font-size:12px}.body{min-height:0;flex:1}.list{display:grid;gap:10px;padding:14px}.card,.row,.rule{display:flex;align-items:center;gap:10px}.card{flex-wrap:wrap;padding:12px;border:1px solid var(--el-border-color-lighter);border-radius:4px}.row{width:100%}.row .el-input{flex:1}.row .el-select{width:150px}.wide{width:100%}.rule{display:grid;grid-template-columns:auto 160px minmax(140px,1fr) minmax(130px,1fr) auto;width:auto}.rule-header{margin-top:8px;border:1px solid var(--el-border-color-lighter);border-radius:4px}@media(max-width:800px){.rule{grid-template-columns:auto 1fr 1fr}.rule .el-button{grid-column:3}.row .el-select{width:120px}}
+.egern-editor{display:flex;min-height:0;height:100%;flex-direction:column;border:1px solid var(--el-border-color);border-radius:4px}.egern-editor header,.group-head,.rules-toggle{display:flex;align-items:center;justify-content:space-between}.egern-editor header{padding:14px;border-bottom:1px solid var(--el-border-color-lighter)}small{display:block;margin-top:4px;color:var(--el-text-color-secondary);font-size:12px}.body{min-height:0;flex:1}.groups{display:grid;gap:12px;padding:14px}.group{overflow:hidden;border:1px solid var(--el-border-color-lighter);border-radius:4px}.group.expanded{border-color:var(--el-color-primary-light-5)}.group-head{min-height:52px;padding:0 12px;background:var(--el-fill-color-light)}.group-toggle,.rules-toggle{min-width:0;flex:1;gap:8px;padding:0;border:0;color:var(--el-text-color-primary);background:transparent;text-align:left;cursor:pointer}.group-toggle strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.group-toggle small{margin:0 0 0 auto;padding:3px 6px;border-radius:2px;background:var(--el-fill-color)}.chevron{width:8px;height:8px;flex:none;margin:0 8px 4px;border-right:2px solid var(--el-text-color-secondary);border-bottom:2px solid var(--el-text-color-secondary);transform:rotate(45deg)}.expanded .chevron{margin-top:5px;margin-bottom:0;transform:rotate(225deg)}.fields{display:grid;gap:16px;padding:16px}.field-grid{display:grid;grid-template-columns:1fr 180px;gap:12px}label{display:grid;gap:7px;font-size:13px;font-weight:650}label :deep(.el-select){width:100%}.rules-block{border-top:1px solid var(--el-border-color-lighter);padding-top:5px}.rules-toggle{width:100%;min-height:36px;font-weight:700}.rules-toggle small{margin:0;color:var(--el-color-primary);font-weight:500}.rules-list{display:grid;gap:8px;padding:3px 0 6px}.empty{padding:8px;color:var(--el-text-color-secondary);font-size:13px}.rule{display:grid;grid-template-columns:auto 150px minmax(0,1fr) auto;align-items:center;gap:8px;padding:8px;border:1px solid var(--el-border-color-lighter);border-radius:4px}.rule :deep(.el-select){width:100%}.rule span{color:var(--el-text-color-secondary);font-size:13px}.expand-enter-active,.expand-leave-active{overflow:hidden;transition:max-height .25s ease,opacity .2s}.expand-enter-from,.expand-leave-to{max-height:0;opacity:0}.expand-enter-to,.expand-leave-from{max-height:1800px;opacity:1}@media(max-width:800px){.field-grid{grid-template-columns:1fr}.rule{grid-template-columns:auto 1fr}.rule :deep(.el-input),.rule span{grid-column:1/-1}.rule .el-button{grid-column:2;justify-self:end}}
 </style>
