@@ -47,7 +47,12 @@ func EncodeLoon(urls []string, sqlconfig SqlConfig) (string, error) {
 	profile = replaceSurgeSection(profile, "Proxy", func(lines []string) []string {
 		return injectLoonProxies(lines, proxies)
 	})
-	profile, err := renderLoonPolicyGroups(profile, proxyNames, loonProxyNames(profile))
+	profile, err := renderLoonPolicyGroups(
+		profile,
+		proxyNames,
+		loonProxyNames(profile),
+		policyGroupRulesForTemplate(sqlconfig, sqlconfig.Loon),
+	)
 	if err != nil {
 		return "", err
 	}
@@ -145,14 +150,19 @@ func loonProxyNames(profile string) []string {
 	return names
 }
 
-func renderLoonPolicyGroups(profile string, proxyNames, existingProxyNames []string) (string, error) {
+func renderLoonPolicyGroups(profile string, proxyNames, existingProxyNames []string, rules map[string]PolicyGroupNodeRule) (string, error) {
 	groupNames := loonPolicyGroupNames(profile)
 	dynamicGroup := false
 	profile = replaceSurgeSection(profile, "Proxy Group", func(lines []string) []string {
 		for i, line := range lines {
 			if strings.Contains(line, "__LOON_ALL_NODES__") {
 				dynamicGroup = true
-				line = strings.ReplaceAll(line, "__LOON_ALL_NODES__", strings.Join(proxyNames, ","))
+				groupName := ""
+				if parts := strings.SplitN(line, "=", 2); len(parts) == 2 {
+					groupName = strings.TrimSpace(parts[0])
+				}
+				selected := selectedProxyNamesForGroup(groupName, proxyNames, rules)
+				line = strings.ReplaceAll(line, "__LOON_ALL_NODES__", strings.Join(selected, ","))
 			}
 			lines[i] = validateLoonPolicyGroupLine(line, existingProxyNames, groupNames)
 		}
