@@ -248,6 +248,7 @@ body {
   --editor-selection: #bfdbfe;
   --editor-key: #2563eb;
   --editor-string: #0f766e;
+  --editor-quoted: #0f766e;
   --editor-number: #c2410c;
   --editor-literal: #9333ea;
   --editor-url: #7c3aed;
@@ -255,6 +256,8 @@ body {
   --editor-operator: #64748b;
   --editor-variable: #b45309;
   --editor-comment: #94a3b8;
+  --editor-directive: #db2777;
+  --editor-cursor: var(--el-color-primary);
 }
 
 html.dark {
@@ -275,6 +278,7 @@ html.dark {
   --editor-selection: #294a73;
   --editor-key: #7dd3fc;
   --editor-string: #5eead4;
+  --editor-quoted: #67e8f9;
   --editor-number: #fdba74;
   --editor-literal: #c4b5fd;
   --editor-url: #c4b5fd;
@@ -282,6 +286,8 @@ html.dark {
   --editor-operator: #94a3b8;
   --editor-variable: #fbbf24;
   --editor-comment: #64748b;
+  --editor-directive: #f472b6;
+  --editor-cursor: #fff;
 }
 
 html.dark {

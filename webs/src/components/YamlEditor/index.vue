@@ -171,10 +171,20 @@ const iniHighlighting = ViewPlugin.fromClass(
                 mark("cm-ini-key", line.from + leading, line.from + equals);
                 mark("cm-ini-operator", line.from + equals, line.from + equals + 1);
                 const values = text.slice(equals + 1);
-                const matcher = /https?:\/\/[^,\s]+|__[A-Z0-9_]+__|"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|\b(?:true|false|yes|no|on|off)\b|[-+]?\d+(?:\.\d+)?\b|[^,\s]+/gi;
+                const matcher = /https?:\/\/[^,\s]+|__[A-Z0-9_]+__|\$\{[^}]+\}|\{\{[^}]+\}\}|"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|\b(?:DIRECT|REJECT|REJECT-DROP|PROXY|URL-REJECT|COMPATIBLE)\b|\b(?:true|false|yes|no|on|off)\b|(?:\d{1,3}\.){3}\d{1,3}(?:\/\d{1,2})?|[-+]?\d+(?:\.\d+)?\b|[^,\s]+/gi;
                 for (const token of values.matchAll(matcher)) {
                   const value = token[0], tokenFrom = line.from + equals + 1 + (token.index || 0);
-                  const className = /^https?:/i.test(value) ? "cm-ini-url" : /^__/.test(value) ? "cm-ini-variable" : /^(true|false|yes|no|on|off)$/i.test(value) || /^[-+]?\d/.test(value) ? "cm-ini-literal" : "cm-ini-string";
+                  const className = /^https?:/i.test(value)
+                    ? "cm-ini-url"
+                    : /^__|^\$\{|^\{\{/.test(value)
+                      ? "cm-ini-variable"
+                      : /^(DIRECT|REJECT|REJECT-DROP|PROXY|URL-REJECT|COMPATIBLE)$/i.test(value)
+                        ? "cm-ini-directive"
+                        : /^(true|false|yes|no|on|off)$/i.test(value) || /^[-+]?\d/.test(value)
+                          ? "cm-ini-literal"
+                          : /^["']/.test(value)
+                            ? "cm-ini-quoted"
+                            : "cm-ini-string";
                   mark(className, tokenFrom, tokenFrom + value.length);
                 }
               }
@@ -229,8 +239,9 @@ onMounted(() => {
         syntaxHighlighting(
           HighlightStyle.define([
             {
-              tag: [tags.propertyName, tags.typeName],
+              tag: [tags.propertyName, tags.typeName, tags.labelName],
               color: "var(--editor-key)",
+              fontWeight: "600",
             },
             {
               tag: [tags.string, tags.special(tags.string), tags.content],
@@ -244,10 +255,11 @@ onMounted(() => {
               tag: [tags.atom, tags.literal],
               color: "var(--editor-literal)",
             },
-            { tag: tags.url, color: "var(--editor-url)" },
-            { tag: tags.heading, color: "var(--editor-section)" },
+            { tag: tags.url, color: "var(--editor-url)", textDecoration: "underline" },
+            { tag: [tags.heading, tags.definition], color: "var(--editor-section)", fontWeight: "600" },
+            { tag: [tags.meta, tags.special(tags.variableName)], color: "var(--editor-variable)" },
             {
-              tag: [tags.keyword, tags.operator, tags.punctuation],
+              tag: [tags.keyword, tags.operator, tags.punctuation, tags.separator],
               color: "var(--editor-operator)",
             },
             {
@@ -257,6 +269,7 @@ onMounted(() => {
             {
               tag: tags.comment,
               color: "var(--editor-comment)",
+              fontStyle: "italic",
             },
           ])
         ),
@@ -287,7 +300,10 @@ onMounted(() => {
             minHeight: "100%",
             boxSizing: "border-box",
             padding: "14px 0 22px",
-            caretColor: "var(--el-color-primary)",
+            caretColor: "var(--editor-cursor)",
+          },
+          ".cm-cursor": {
+            borderLeftColor: "var(--editor-cursor)",
           },
           ".cm-line": {
             padding: "0 16px",
@@ -340,9 +356,11 @@ onMounted(() => {
           },
           ".cm-ini-key": { color: "var(--editor-key)" },
           ".cm-ini-string": { color: "var(--editor-string)" },
+          ".cm-ini-quoted": { color: "var(--editor-quoted)" },
           ".cm-ini-literal": { color: "var(--editor-literal)" },
           ".cm-ini-url": { color: "var(--editor-url)" },
           ".cm-ini-variable": { color: "var(--editor-variable)" },
+          ".cm-ini-directive": { color: "var(--editor-directive)" },
           ".cm-ini-section": { color: "var(--editor-section)" },
           ".cm-ini-comment": { color: "var(--editor-comment)" },
           ".cm-ini-operator": { color: "var(--editor-operator)" },
