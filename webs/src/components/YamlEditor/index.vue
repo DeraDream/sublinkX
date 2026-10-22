@@ -256,7 +256,7 @@ onMounted(() => {
               color: "var(--editor-literal)",
             },
             { tag: tags.url, color: "var(--editor-url)", textDecoration: "underline" },
-            { tag: [tags.heading, tags.definition], color: "var(--editor-section)", fontWeight: "600" },
+            { tag: tags.heading, color: "var(--editor-section)", fontWeight: "600" },
             { tag: [tags.meta, tags.special(tags.variableName)], color: "var(--editor-variable)" },
             {
               tag: [tags.keyword, tags.operator, tags.punctuation, tags.separator],
